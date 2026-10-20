@@ -1,0 +1,22 @@
+.form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.label {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.error {
+  color: var(--status-failed);
+  font-size: var(--text-sm);
+}

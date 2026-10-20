@@ -102,6 +102,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@helix/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@helix/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

@@ -11,9 +11,19 @@ interface SidebarProps {
   selected: string | null;
   onSelect: (id: string) => void;
   demo?: boolean;
+  /** Live event stream status (live mode only). */
+  stream?: 'connecting' | 'live' | 'reconnecting' | 'closed';
 }
 
-export function Sidebar({ project, cards, needsYou, selected, onSelect, demo }: SidebarProps) {
+export function Sidebar({
+  project,
+  cards,
+  needsYou,
+  selected,
+  onSelect,
+  demo,
+  stream,
+}: SidebarProps) {
   const active = cards.filter((c) => c.column !== 'archive');
   const done = cards.filter((c) => c.column === 'archive');
   return (
@@ -21,6 +31,11 @@ export function Sidebar({ project, cards, needsYou, selected, onSelect, demo }: 
       <div className={s.brand}>
         <span className={s.wordmark}>helix</span>
         {demo && <span className={s.demo}>demo</span>}
+        {stream && (
+          <span className={cx(s.stream, s[stream])} title={`Event stream: ${stream}`}>
+            {stream === 'live' ? 'live' : stream === 'closed' ? 'offline' : 'connecting'}
+          </span>
+        )}
       </div>
 
       <button type="button" className={s.search}>

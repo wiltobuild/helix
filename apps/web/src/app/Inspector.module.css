@@ -276,3 +276,145 @@
     transform: translateX(12px);
   }
 }
+
+.rewound {
+  color: var(--status-needs);
+  font-size: var(--text-xs);
+}
+
+.error {
+  color: var(--status-failed);
+  font-size: var(--text-xs);
+}
+
+/* activity tab: scrolling log + pinned composer */
+.activity {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.activity > .panel {
+  overflow-y: auto;
+}
+
+.composer {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.composerInput {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunk);
+  font-size: var(--text-md);
+  line-height: var(--leading-read);
+  resize: none;
+  outline: none;
+}
+
+.composerInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composerInput:disabled {
+  opacity: 0.6;
+}
+
+.composerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* files tab */
+.files {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.fileList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fileList li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  gap: var(--space-2);
+  align-items: center;
+  font: var(--text-xs) var(--font-mono);
+}
+
+.fileStatus {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.fileStatus[data-status='added'],
+.fileStatus[data-status='untracked'] {
+  background: var(--status-ready-soft);
+  color: var(--status-ready);
+}
+
+.fileStatus[data-status='deleted'] {
+  background: var(--status-failed-soft);
+  color: var(--status-failed);
+}
+
+.filePath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.diff {
+  max-height: 420px;
+  margin: 0;
+  padding: var(--space-2) 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunk);
+  font: var(--text-xs) / 1.55 var(--font-mono);
+}
+
+.diff span {
+  display: block;
+  padding: 0 var(--space-3);
+  white-space: pre;
+}
+
+.lineAdd {
+  background: var(--status-ready-soft);
+  color: var(--status-ready);
+}
+
+.lineDel {
+  background: var(--status-failed-soft);
+  color: var(--status-failed);
+}
+
+.lineHunk {
+  color: var(--status-review);
+}

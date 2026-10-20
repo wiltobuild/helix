@@ -67,3 +67,9 @@
     grid-template-columns: 220px minmax(0, 1fr);
   }
 }
+
+.loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
