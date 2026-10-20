@@ -216,3 +216,28 @@
     transform: translateY(4px);
   }
 }
+
+@media (max-width: 760px) {
+  .bar {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .clock {
+    display: none;
+  }
+
+  .track {
+    margin: 0 var(--space-1);
+  }
+}
+
+@media (max-width: 760px) {
+  .controls > button:first-child,
+  .controls > button:nth-child(3) {
+    display: none;
+  }
+
+  .sentence {
+    font-size: var(--text-sm);
+  }
+}

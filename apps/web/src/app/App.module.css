@@ -73,3 +73,49 @@
   place-items: center;
   height: 100%;
 }
+
+/* Narrow windows (side panes, small laptops split-screen): board first, sidebar hidden,
+   inspector slides over the board instead of squeezing it. */
+@media (max-width: 760px) {
+  .shell,
+  .shell[data-inspector='open'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell > nav {
+    display: none;
+  }
+
+  .shell > aside {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: var(--z-dialog);
+    width: min(420px, 100vw);
+    box-shadow: var(--shadow-pop);
+  }
+
+  .header {
+    flex-wrap: wrap;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .titleBlock h1 {
+    font-size: var(--text-lg);
+  }
+
+  .content {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+@media (max-width: 760px) {
+  .main {
+    overflow: hidden;
+  }
+
+  .actions {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: space-between;
+  }
+}
