@@ -1,7 +1,7 @@
 /*
  * Helix design tokens.
  * Dark-first. Neutrals carry a slight teal bias so the UI feels of a piece with the two agent strands:
- *   strand A (teal)  = Claude Code      strand B (coral) = Codex
+ *   Claude Code = Claude orange      Codex = teal
  * Status colors are semantic and always paired with an icon + label (see StatusPill).
  * Theme resolution: [data-theme] on <html> wins; otherwise prefers-color-scheme.
  */
@@ -80,8 +80,8 @@
   --accent-soft: rgb(67 194 187 / 0.14);
   --focus: #43c2bb;
 
-  --strand-claude: #43c2bb;
-  --strand-codex: #f0805f;
+  --strand-claude: #d97757;
+  --strand-codex: #43c2bb;
 
   --status-pending: #8a9894;
   --status-working: #6e9cf2;
@@ -124,8 +124,8 @@
     --accent-soft: rgb(14 118 114 / 0.1);
     --focus: #0e7672;
 
-    --strand-claude: #0e7672;
-    --strand-codex: #c9502f;
+    --strand-claude: #c96442;
+    --strand-codex: #0e7672;
 
     --status-pending: #6b7a75;
     --status-working: #2c66d0;
@@ -168,8 +168,8 @@
   --accent-soft: rgb(14 118 114 / 0.1);
   --focus: #0e7672;
 
-  --strand-claude: #0e7672;
-  --strand-codex: #c9502f;
+  --strand-claude: #c96442;
+  --strand-codex: #0e7672;
 
   --status-pending: #6b7a75;
   --status-working: #2c66d0;

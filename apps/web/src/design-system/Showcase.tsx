@@ -170,7 +170,7 @@ export function Showcase() {
           </div>
         </Section>
 
-        <Section id="agents" title="Agents" note="Two strands. Teal is Claude Code, coral is Codex.">
+        <Section id="agents" title="Agents" note="Two strands. Claude orange is Claude Code, teal is Codex.">
           <div className={s.wrap}>
             <AgentBadge agent="claude-code" variant="full" model="opus" />
             <AgentBadge agent="codex" variant="full" model="gpt-6-astra" />
