@@ -84,6 +84,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@helix/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@helix/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -214,6 +217,9 @@ importers:
       '@fontsource/ibm-plex-sans':
         specifier: 5.3.0
         version: 5.3.0
+      '@helix/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       clsx:
         specifier: 2.1.1
         version: 2.1.1

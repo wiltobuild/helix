@@ -12,6 +12,7 @@
     "test": "node -e \"console.log('no UI tests yet')\""
   },
   "dependencies": {
+    "@helix/contracts": "workspace:*",
     "@helix/ui": "workspace:*",
     "lucide-react": "1.52.0",
     "react": "19.3.0",
