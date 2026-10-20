@@ -1,0 +1,193 @@
+/*
+ * Helix design tokens.
+ * Dark-first. Neutrals carry a slight teal bias so the UI feels of a piece with the two agent strands:
+ *   strand A (teal)  = Claude Code      strand B (coral) = Codex
+ * Status colors are semantic and always paired with an icon + label (see StatusPill).
+ * Theme resolution: [data-theme] on <html> wins; otherwise prefers-color-scheme.
+ */
+
+:root {
+  /* ---- type ---- */
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', ui-monospace, Consolas, monospace;
+  --font-display: 'Bricolage Grotesque Variable', 'IBM Plex Sans', system-ui, sans-serif;
+
+  --text-2xs: 11px; /* mono micro labels, column headers */
+  --text-xs: 12px; /* metadata */
+  --text-sm: 13px; /* default UI text */
+  --text-md: 14px; /* reading text: chat, descriptions */
+  --text-lg: 16px; /* panel titles */
+  --text-xl: 20px; /* page titles */
+  --text-2xl: 28px; /* empty-state headlines, onboarding */
+
+  --leading-tight: 1.25;
+  --leading-ui: 1.4;
+  --leading-read: 1.6;
+  --tracking-label: 0.06em;
+
+  /* ---- space (4-pt grid) ---- */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* ---- shape ---- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-full: 999px;
+
+  --control-sm: 26px;
+  --control-md: 32px;
+  --row: 36px;
+  --row-compact: 30px;
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.6, 0, 0.3, 1);
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 280ms;
+
+  /* ---- layers ---- */
+  --z-sticky: 10;
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+
+  /* ---- color: dark (default) ---- */
+  color-scheme: dark;
+  --bg: #0b1110;
+  --bg-sunk: #080d0c;
+  --surface: #111917;
+  --surface-2: #16201e;
+  --surface-3: #1c2826;
+  --border: #22302d;
+  --border-strong: #2f403c;
+  --text: #e4ecea;
+  --text-2: #a9b8b4;
+  --text-3: #75857f;
+  --text-on-accent: #04201e;
+
+  --accent: #43c2bb;
+  --accent-hover: #5fd1ca;
+  --accent-soft: rgb(67 194 187 / 0.14);
+  --focus: #43c2bb;
+
+  --strand-claude: #43c2bb;
+  --strand-codex: #f0805f;
+
+  --status-pending: #8a9894;
+  --status-working: #6e9cf2;
+  --status-needs: #e3a53f;
+  --status-failed: #f06b55;
+  --status-review: #ae8cf5;
+  --status-ready: #55c487;
+  --status-merged: #7fb59a;
+
+  --status-pending-soft: rgb(138 152 148 / 0.14);
+  --status-working-soft: rgb(110 156 242 / 0.14);
+  --status-needs-soft: rgb(227 165 63 / 0.15);
+  --status-failed-soft: rgb(240 107 85 / 0.14);
+  --status-review-soft: rgb(174 140 245 / 0.14);
+  --status-ready-soft: rgb(85 196 135 / 0.14);
+  --status-merged-soft: rgb(127 181 154 / 0.12);
+
+  --overlay: rgb(3 7 6 / 0.6);
+  --shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.65), 0 0 0 1px var(--border-strong);
+  --shadow-card-hover: 0 6px 18px -10px rgb(0 0 0 / 0.7);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --bg: #f4f7f6;
+    --bg-sunk: #ebf0ee;
+    --surface: #ffffff;
+    --surface-2: #f6f9f8;
+    --surface-3: #e7efec;
+    --border: #dbe3e0;
+    --border-strong: #c3d0cb;
+    --text: #13201e;
+    --text-2: #4a5b56;
+    --text-3: #74847e;
+    --text-on-accent: #ffffff;
+
+    --accent: #0e7672;
+    --accent-hover: #0b625f;
+    --accent-soft: rgb(14 118 114 / 0.1);
+    --focus: #0e7672;
+
+    --strand-claude: #0e7672;
+    --strand-codex: #c9502f;
+
+    --status-pending: #6b7a75;
+    --status-working: #2c66d0;
+    --status-needs: #9a5f0a;
+    --status-failed: #be3b27;
+    --status-review: #7148c7;
+    --status-ready: #237a4b;
+    --status-merged: #4d7f66;
+
+    --status-pending-soft: rgb(107 122 117 / 0.1);
+    --status-working-soft: rgb(44 102 208 / 0.1);
+    --status-needs-soft: rgb(168 106 16 / 0.12);
+    --status-failed-soft: rgb(190 59 39 / 0.1);
+    --status-review-soft: rgb(113 72 199 / 0.1);
+    --status-ready-soft: rgb(35 122 75 / 0.1);
+    --status-merged-soft: rgb(77 127 102 / 0.1);
+
+    --overlay: rgb(19 32 30 / 0.35);
+    --shadow-pop: 0 16px 40px -12px rgb(19 32 30 / 0.25), 0 0 0 1px var(--border);
+    --shadow-card-hover: 0 6px 18px -10px rgb(19 32 30 / 0.25);
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f7f6;
+  --bg-sunk: #ebf0ee;
+  --surface: #ffffff;
+  --surface-2: #f6f9f8;
+  --surface-3: #e7efec;
+  --border: #dbe3e0;
+  --border-strong: #c3d0cb;
+  --text: #13201e;
+  --text-2: #4a5b56;
+  --text-3: #74847e;
+  --text-on-accent: #ffffff;
+
+  --accent: #0e7672;
+  --accent-hover: #0b625f;
+  --accent-soft: rgb(14 118 114 / 0.1);
+  --focus: #0e7672;
+
+  --strand-claude: #0e7672;
+  --strand-codex: #c9502f;
+
+  --status-pending: #6b7a75;
+  --status-working: #2c66d0;
+  --status-needs: #9a5f0a;
+  --status-failed: #be3b27;
+  --status-review: #7148c7;
+  --status-ready: #237a4b;
+  --status-merged: #4d7f66;
+
+  --status-pending-soft: rgb(107 122 117 / 0.1);
+  --status-working-soft: rgb(44 102 208 / 0.1);
+  --status-needs-soft: rgb(168 106 16 / 0.12);
+  --status-failed-soft: rgb(190 59 39 / 0.1);
+  --status-review-soft: rgb(113 72 199 / 0.1);
+  --status-ready-soft: rgb(35 122 75 / 0.1);
+  --status-merged-soft: rgb(77 127 102 / 0.1);
+
+  --overlay: rgb(19 32 30 / 0.35);
+  --shadow-pop: 0 16px 40px -12px rgb(19 32 30 / 0.25), 0 0 0 1px var(--border);
+  --shadow-card-hover: 0 6px 18px -10px rgb(19 32 30 / 0.25);
+}
