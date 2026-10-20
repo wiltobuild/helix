@@ -1,0 +1,593 @@
+<title>Helix PRD</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: sticky section rail on the left, one reading column; two-strand helix motif = two agents (Claude Code, Codex) */
+:root{
+  --bg:#F3F6F5; --surface:#FFFFFF; --sunk:#E9EFED; --ink:#13201E; --muted:#56655F; --line:#D7E0DD;
+  --a:#0E7672; --b:#C9502F; --a-soft:#0E767214; --b-soft:#C9502F14;
+  --s-work:#2C66D0; --s-need:#A86A10; --s-fail:#BE3B27; --s-rev:#7148C7; --s-done:#26804F; --s-idle:#7D8A86;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0B1211; --surface:#121B1A; --sunk:#0F1716; --ink:#E3ECE9; --muted:#93A6A0; --line:#22302E;
+  --a:#43C2BB; --b:#F0805F; --a-soft:#43C2BB1F; --b-soft:#F0805F1F;
+  --s-work:#6E9CF2; --s-need:#E3A53F; --s-fail:#F06B55; --s-rev:#AE8CF5; --s-done:#55C487; --s-idle:#8A9894;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0B1211; --surface:#121B1A; --sunk:#0F1716; --ink:#E3ECE9; --muted:#93A6A0; --line:#22302E;
+  --a:#43C2BB; --b:#F0805F; --a-soft:#43C2BB1F; --b-soft:#F0805F1F;
+  --s-work:#6E9CF2; --s-need:#E3A53F; --s-fail:#F06B55; --s-rev:#AE8CF5; --s-done:#55C487; --s-idle:#8A9894;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+a{color:var(--a);text-underline-offset:3px}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offset:3px;border-radius:4px}
+h1,h2,h3{font-family:var(--display);font-weight:700;text-wrap:balance;line-height:1.12;margin:0}
+p{margin:0}
+.mono{font-family:var(--mono)}
+.eyebrow{font:500 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+#progress{position:fixed;top:0;left:0;height:3px;width:100%;transform-origin:0 50%;transform:scaleX(0);
+  background:linear-gradient(90deg,var(--a),var(--b));z-index:20;margin-top:env(safe-area-inset-top,0px)}
+
+/* hero */
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:56px 40px}
+#helix{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hero-inner{position:relative;max-width:1120px;margin:0 auto;display:grid;gap:22px}
+.hero h1{font-size:clamp(56px,11vw,128px);letter-spacing:-.035em;font-weight:700}
+.hero h1 span{background:linear-gradient(100deg,var(--a) 10%,var(--b) 90%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .lede{font-size:clamp(18px,2.3vw,22px);line-height:1.45;max-width:34ch;color:var(--ink)}
+.meta{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:6px}
+.meta div{display:grid;gap:2px}
+.meta b{font:500 15px/1.3 var(--body)}
+.strands{display:flex;gap:16px;flex-wrap:wrap;font:500 13px/1 var(--mono);color:var(--muted)}
+.strands i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:-1px}
+
+/* shell */
+.shell{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:56px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:48px 96px}
+nav.rail{position:sticky;top:calc(24px + env(safe-area-inset-top,0px));align-self:start;display:grid;gap:2px;font-size:14px}
+nav.rail a{display:flex;gap:10px;padding:6px 10px;border-radius:6px;color:var(--muted);text-decoration:none;transition:color .15s,background .15s}
+nav.rail a span{font-family:var(--mono);font-size:12px;min-width:22px;padding-top:1px}
+nav.rail a.sub{padding-left:22px;font-size:13px}
+nav.rail a:hover{color:var(--ink)}
+nav.rail a.on{color:var(--ink);background:var(--a-soft)}
+nav.rail a.on span{color:var(--a)}
+main{min-width:0;display:grid;gap:72px}
+@media (max-width:860px){.shell{grid-template-columns:minmax(0,1fr);gap:24px}nav.rail{display:none}}
+
+section{display:grid;gap:22px;scroll-margin-top:24px}
+.sec-head{display:grid;gap:8px}
+.sec-head h2{font-size:clamp(30px,4.4vw,42px);letter-spacing:-.02em}
+.sec-head .num{font:500 13px/1 var(--mono);color:var(--a)}
+h3{font-size:22px;letter-spacing:-.01em}
+.sub-sec{display:grid;gap:16px;padding-top:8px}
+.prose{max-width:66ch;display:grid;gap:14px;font-size:17px}
+.big{font-size:clamp(20px,2.4vw,24px);line-height:1.45;font-family:var(--body);max-width:40ch}
+.big strong{font-weight:600;box-shadow:inset 0 -.38em 0 var(--b-soft)}
+
+/* data points */
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:grid;gap:8px;align-content:start}
+.fact .fig{font:700 34px/1 var(--display);letter-spacing:-.02em;color:var(--a)}
+.fact:nth-child(2) .fig{color:var(--b)}
+.fact p{font-size:14.5px;line-height:1.5}
+.fact cite{font:400 12px/1.4 var(--mono);color:var(--muted);font-style:normal}
+
+/* users */
+.users{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.user{border-top:3px solid var(--a);background:var(--surface);border-radius:0 0 var(--r) var(--r);padding:18px;display:grid;gap:6px}
+.user.sec{border-top-color:var(--b)}
+.needs{display:grid;gap:10px;counter-reset:n}
+.need{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:baseline;padding:14px 0;border-bottom:1px dashed var(--line)}
+.need:before{counter-increment:n;content:"N" counter(n);font:500 12px/1 var(--mono);color:var(--a);padding:5px 7px;border:1px solid var(--a);border-radius:5px}
+.need em{font-style:normal;color:var(--muted)}
+
+/* scrubber demo */
+.demo{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.demo-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line);align-items:center}
+.demo-top .title{font:500 13px/1.3 var(--mono)}
+.live{font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.live.is-live{color:var(--s-done)}
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:16px 18px;min-height:190px}
+.col{display:grid;gap:8px;align-content:start;min-width:0}
+.col h4{margin:0;font:500 11.5px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;gap:6px;align-items:center}
+.col h4 i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:5px;font-size:13px;line-height:1.35;
+  animation:land .35s cubic-bezier(.2,.8,.2,1)}
+.card .who{display:flex;gap:6px;align-items:center;font:500 11px/1 var(--mono);color:var(--muted)}
+.card .who i{width:8px;height:8px;border-radius:50%}
+.card .st{font:500 11px/1.2 var(--mono)}
+@keyframes land{from{transform:translateY(6px) scale(.98)}to{transform:none}}
+@media (max-width:640px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.why{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px 18px;border-top:1px solid var(--line);background:var(--sunk);font-size:14px}
+.why .tag{font:500 11px/1 var(--mono);padding:6px 8px;border-radius:5px;background:var(--b-soft);color:var(--b);align-self:start;letter-spacing:.06em}
+.why .cause{color:var(--muted);font:400 12.5px/1.5 var(--mono);margin-top:4px}
+.scrub{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 18px;border-top:1px solid var(--line)}
+.scrub button{font:500 13px/1 var(--body);background:var(--ink);color:var(--bg);border:0;border-radius:7px;padding:9px 13px;cursor:pointer}
+.scrub button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.track{position:relative;min-width:0}
+.ticks{position:absolute;left:8px;right:8px;top:50%;height:14px;transform:translateY(-50%);pointer-events:none}
+.ticks b{position:absolute;width:2px;height:14px;border-radius:1px;transform:translateX(-1px)}
+input[type=range]{width:100%;appearance:none;-webkit-appearance:none;background:transparent;height:28px;position:relative;z-index:1;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--line);border-radius:2px}
+input[type=range]::-moz-range-track{height:4px;background:var(--line);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--ink);margin-top:-6px;border:3px solid var(--surface);box-shadow:0 0 0 1px var(--ink)}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--ink);border:3px solid var(--surface)}
+.clock{font:500 12px/1 var(--mono);color:var(--muted);min-width:64px;text-align:right}
+.caption{font-size:13.5px;color:var(--muted)}
+
+/* value props */
+.vp{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.vp article{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;display:grid;gap:10px;align-content:start;
+  transition:transform .2s ease,border-color .2s ease}
+.vp article:hover{transform:translateY(-3px);border-color:var(--a)}
+.vp .kind{font:500 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.vp .kind small{display:block;margin-top:6px;letter-spacing:0;text-transform:none;color:var(--muted);font-family:var(--body);font-size:13px}
+.vp article:nth-child(1) .kind{color:var(--s-done)}
+.vp article:nth-child(2) .kind{color:var(--b)}
+.vp article:nth-child(3) .kind{color:var(--a)}
+.vp article:nth-child(3){background:linear-gradient(160deg,var(--a-soft),var(--b-soft)),var(--surface)}
+
+/* goals */
+.gn{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:28px}
+.gn ul{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.gn li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;font-size:15.5px}
+.gn li:before{content:"";width:14px;height:14px;margin-top:5px;border-radius:50%;border:2px solid var(--a)}
+.gn .non li:before{border-radius:3px;border-color:var(--muted);background:linear-gradient(45deg,transparent 45%,var(--muted) 45% 55%,transparent 55%)}
+.gn .non li{color:var(--muted)}
+.gn .non li b{color:var(--ink);font-weight:500}
+
+/* tables */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14.5px}
+th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 11.5px/1.2 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.target{font:500 14px/1.4 var(--mono);color:var(--a);white-space:nowrap}
+.yes{color:var(--s-done);font-weight:600}.no{color:var(--muted)}
+
+/* requirements */
+.filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filter button{font:500 13px/1 var(--mono);padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:background .15s,color .15s}
+.filter button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.filter .count{color:var(--muted);font:400 13px/1 var(--mono);margin-left:4px}
+.journey{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.journey > header{padding:20px 22px;display:grid;gap:8px;border-bottom:1px solid var(--line)}
+.journey > header .eyebrow{color:var(--a)}
+.journey.stretch > header .eyebrow{color:var(--b)}
+.journey > header p{color:var(--muted);font-size:15px;max-width:70ch}
+.subj{padding:16px 22px 18px;display:grid;gap:10px;border-bottom:1px solid var(--line)}
+.subj:last-child{border-bottom:0}
+.subj h4{margin:0;font:600 15px/1.3 var(--body)}
+.reqs{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.reqs li{display:grid;grid-template-columns:38px minmax(0,1fr);gap:12px;align-items:baseline;font-size:15px}
+.reqs li[hidden]{display:none}
+.p{font:500 11px/1 var(--mono);padding:4px 0;border-radius:4px;text-align:center}
+.p0{background:var(--a);color:var(--surface)}
+.p1{background:var(--a-soft);color:var(--a);box-shadow:inset 0 0 0 1px var(--a)}
+.p2{color:var(--muted);box-shadow:inset 0 0 0 1px var(--line)}
+
+/* plan graph */
+.graph{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;overflow-x:auto}
+.graph svg{display:block;width:100%;min-width:560px;height:auto}
+.edge{fill:none;stroke:var(--line);stroke-width:2}
+.flow{fill:none;stroke-width:2;stroke-dasharray:6 10;animation:flow 1.6s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-32}}
+.node rect{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.node text{fill:var(--ink);font:500 13px var(--body)}
+.node .small{fill:var(--muted);font:400 11px var(--mono)}
+.pulse{animation:pulse 2.2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+.appx{display:grid;gap:28px}
+.risk{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.risk div{border-left:3px solid var(--b);padding:4px 0 4px 14px;display:grid;gap:4px;font-size:14.5px}
+.risk b{font-weight:600}
+ol.q{margin:0;padding-left:20px;display:grid;gap:8px}
+.sources{display:grid;gap:6px;font-size:14px}
+.arch{font:400 12.5px/1.55 var(--mono);background:var(--sunk);border:1px solid var(--line);border-radius:var(--r);padding:18px;overflow-x:auto;white-space:pre;margin:0;color:var(--ink)}
+footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));text-align:center;color:var(--muted);font:400 13px/1.5 var(--mono)}
+
+@media (prefers-reduced-motion: reduce){
+  .flow,.pulse,.card{animation:none}
+  .vp article{transition:none}
+}
+</style>
+
+<div id="progress" aria-hidden="true"></div>
+
+<header class="hero">
+  <canvas id="helix" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <p class="eyebrow">Product Requirements Document · Net New Build</p>
+    <h1><span>Helix</span></h1>
+    <p class="lede">Run Claude Code and Codex in parallel, then see the plan, rewind any moment, and ask why.</p>
+    <div class="strands"><span><i style="background:var(--a)"></i>Strand A · Claude Code</span><span><i style="background:var(--b)"></i>Strand B · Codex</span></div>
+    <div class="meta">
+      <div><span class="eyebrow">Build name</span><b>Helix</b></div>
+      <div><span class="eyebrow">Owner</span><b>Wil Sheppard &amp; Abheeshu Dhungana</b></div>
+      <div><span class="eyebrow">Date</span><b>October 20, 2026</b></div>
+      <div><span class="eyebrow">Stage</span><b>MVP · 2-week demo</b></div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Sections">
+    <a href="#problem"><span>1</span>Problem</a>
+    <a class="sub" href="#opportunity"><span>1a</span>Opportunity</a>
+    <a class="sub" href="#users"><span>1b</span>Users &amp; Needs</a>
+    <a href="#solution"><span>2</span>Proposed Solution</a>
+    <a class="sub" href="#value"><span>2a</span>Value Proposition</a>
+    <a class="sub" href="#mvp"><span>2b</span>MVP Value Props</a>
+    <a class="sub" href="#goals"><span>2c</span>Goals</a>
+    <a class="sub" href="#metrics"><span>2d</span>Success Metrics</a>
+    <a href="#requirements"><span>3</span>Requirements</a>
+    <a href="#appendix"><span>4</span>Appendix</a>
+  </nav>
+
+  <main>
+    <!-- 1 PROBLEM -->
+    <section id="problem">
+      <div class="sec-head"><span class="num">01</span><h2>Problem</h2></div>
+      <p class="big">Developers who run several AI coding agents at once <strong>lose track of what each agent is doing and why</strong>. The work is spread across separate terminals, branches and pull-request tabs, with no shared record of the plan or the decisions behind each change. They end up babysitting sessions, relaying CI errors by hand, and reverse-engineering intent from diffs, so they hesitate to merge agent work they can't follow.</p>
+
+      <div class="sub-sec">
+        <h3>Supporting context</h3>
+        <div class="facts">
+          <div class="fact"><span class="fig">46%</span><p>of developers actively distrust the accuracy of AI tools, compared with 33% who trust it.</p><cite>Stack Overflow Developer Survey 2025 · 49,009 responses</cite></div>
+          <div class="fact"><span class="fig">84%</span><p>of developers use or plan to use AI tools, and 51% of professional developers use them daily. Use is rising faster than trust.</p><cite>Stack Overflow Developer Survey 2025</cite></div>
+          <div class="fact"><span class="fig">13.4k</span><p>GitHub stars for Agent Orchestrator, which runs agent fleets but gives the desktop app concise status summaries, not the plan or reasoning behind changes.</p><cite>orchestrator.inc · docs.orchestrator.inc/architecture</cite></div>
+        </div>
+      </div>
+
+      <div class="sub-sec" id="opportunity">
+        <h3><span class="mono" style="color:var(--a);font-size:14px;margin-right:10px">1a</span>Opportunity</h3>
+        <p class="prose">If parallel agent work becomes legible, developers can delegate whole features instead of single prompts and merge the results with confidence. That moves AI coding from "watch it type" to "review what it decided", for individual developers now and for teams that already pay for orchestration.</p>
+        <div class="facts">
+          <div class="fact"><span class="fig">$8.1B → $127B</span><p>AI code assistant market, 2025 to 2032 projection.</p><cite>MarketsandMarkets, AI Code Assistants report</cite></div>
+          <div class="fact"><span class="fig">$500–2,000/mo</span><p>Agent Orchestrator's design-partner pilot price for teams of 10–100 engineers. Teams pay for orchestration today.</p><cite>orchestrator.inc/design-partners</cite></div>
+        </div>
+      </div>
+
+      <div class="sub-sec" id="users">
+        <h3><span class="mono" style="color:var(--a);font-size:14px;margin-right:10px">1b</span>Users &amp; Needs</h3>
+        <div class="users">
+          <div class="user"><span class="eyebrow">Primary users</span><p>Developers (indie builders, startup engineers, students on project teams) who already use Claude Code or Codex and run two or more agent sessions at a time. They want to ship more without losing control of their codebase.</p></div>
+          <div class="user sec"><span class="eyebrow">Secondary users</span><p>Teammates who review agent-made pull requests, and instructors, classmates or hiring reviewers who watch a recorded run to understand how the agents worked.</p></div>
+        </div>
+        <div class="needs" role="list">
+          <p class="need" role="listitem"><span>As a developer running several agents, I need to see in one place which agent is waiting on me <em>because blocked agents sit unnoticed in background terminals.</em></span></p>
+          <p class="need" role="listitem"><span>As a developer, I need to see the orchestrator's plan before and during execution <em>because I can't trust work I can't follow.</em></span></p>
+          <p class="need" role="listitem"><span>As a developer reviewing an agent's pull request, I need to know why each change was made <em>because reverse-engineering intent from a diff is the slowest part of review.</em></span></p>
+          <p class="need" role="listitem"><span>As a developer, I need CI failures sent back to the agent that caused them <em>because copying error logs between windows is pure babysitting.</em></span></p>
+          <p class="need" role="listitem"><span>As a reviewer or classmate, I need to replay a run without installing anything <em>because setting up agent CLIs and logins is a barrier just to look.</em></span></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 SOLUTION -->
+    <section id="solution">
+      <div class="sec-head"><span class="num">02</span><h2>Proposed Solution</h2></div>
+      <p class="big"><strong>Helix is a web app that runs on your computer</strong> and coordinates Claude Code and Codex agents working in parallel on your repository. You describe the outcome you want; an orchestrator agent breaks it into tasks, gives each task its own agent and git branch, and carries each one through pull request, CI and merge. Every step is recorded, so Helix can show the plan as a live graph, rewind the whole project to any moment, and explain why each change happened. You can delegate bigger work and merge it with confidence instead of babysitting terminals.</p>
+
+      <div class="demo" aria-label="Interactive example of the Helix timeline">
+        <div class="demo-top">
+          <span class="title">helix · add-password-reset</span>
+          <span class="live" id="liveTag">Rewound</span>
+        </div>
+        <div class="board" id="board"></div>
+        <div class="why" aria-live="polite">
+          <span class="tag">WHY</span>
+          <div><div id="whyText"></div><div class="cause" id="whyCause"></div></div>
+        </div>
+        <div class="scrub">
+          <button type="button" id="playBtn">Play</button>
+          <div class="track"><div class="ticks" id="ticks"></div><input id="t" type="range" min="0" max="11" value="5" aria-label="Timeline position"></div>
+          <span class="clock" id="clock"></span>
+        </div>
+      </div>
+      <p class="caption">Example run, illustrative. Drag the timeline to rewind the board and read the Why line for each event. This is the core Helix interaction.</p>
+
+      <div class="sub-sec" id="value">
+        <h3><span class="mono" style="color:var(--a);font-size:14px;margin-right:10px">2a</span>Value Proposition</h3>
+        <p class="prose">Developers who juggle multiple AI coding agents and lose track of what each one is doing use <b>Helix</b>, a local web app for orchestrating Claude Code and Codex, to delegate a feature and follow it from plan to merged pull request. Unlike terminal multiplexers and existing orchestrators that show status but not reasoning, Helix records every event so you can see the plan, rewind any moment, and ask why. Developers review agent work faster and trust what they merge.</p>
+      </div>
+
+      <div class="sub-sec" id="mvp">
+        <h3><span class="mono" style="color:var(--a);font-size:14px;margin-right:10px">2b</span>Top 3 MVP Value Props</h3>
+        <div class="vp">
+          <article><span class="kind">The Vitamin<small>must-have baseline</small></span><p>Run several Claude Code and Codex agents in parallel, each on its own branch, with one board that shows the status of every task.</p></article>
+          <article><span class="kind">The Painkiller<small>solves the core pain</small></span><p>CI failures and review comments go straight back to the agent that owns the branch, so you only step in when Helix says <b>Needs you</b>.</p></article>
+          <article><span class="kind">The Steroid<small>the magic moment</small></span><p>Drag the timeline back to any moment and watch the board, plan graph and conversation rewind together, with a Why panel explaining every decision.</p></article>
+        </div>
+      </div>
+
+      <div class="sub-sec">
+        <h3>The plan, as a live graph</h3>
+        <div class="graph" role="img" aria-label="Example plan graph: the orchestrator plan splits into an API task by Codex and a UI task by Claude Code, both feeding a tests task, then merge.">
+          <svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg">
+            <path class="edge" d="M150 115 C210 115 210 60 270 60"/>
+            <path class="edge" d="M150 115 C210 115 210 170 270 170"/>
+            <path class="edge" d="M450 60 C500 60 500 115 540 115"/>
+            <path class="edge" d="M450 170 C500 170 500 115 540 115"/>
+            <path class="flow" style="stroke:var(--b)" d="M150 115 C210 115 210 60 270 60"/>
+            <path class="flow" style="stroke:var(--a)" d="M150 115 C210 115 210 170 270 170"/>
+            <path class="flow" style="stroke:var(--b)" d="M450 60 C500 60 500 115 540 115"/>
+            <g class="node"><rect x="10" y="85" width="140" height="60" rx="9"/><circle cx="30" cy="104" r="5" style="fill:var(--s-done)"/><text x="42" y="108">Plan</text><text class="small" x="22" y="131">orchestrator</text></g>
+            <g class="node"><rect x="270" y="30" width="180" height="60" rx="9"/><circle class="pulse" cx="290" cy="49" r="5" style="fill:var(--s-work)"/><text x="302" y="53">Reset-token API</text><text class="small" x="282" y="76">codex · CI fixing</text></g>
+            <g class="node"><rect x="270" y="140" width="180" height="60" rx="9"/><circle cx="290" cy="159" r="5" style="fill:var(--s-need)"/><text x="302" y="163">Reset form UI</text><text class="small" x="282" y="186">claude · needs you</text></g>
+            <g class="node"><rect x="540" y="85" width="200" height="60" rx="9"/><circle cx="560" cy="104" r="5" style="fill:var(--s-idle)"/><text x="572" y="108">E2E tests + merge</text><text class="small" x="552" y="131">waits on both</text></g>
+          </svg>
+        </div>
+        <p class="caption">Nodes are tasks with their agent and live status; edges are dependencies. Selecting a node opens that agent's session.</p>
+      </div>
+
+      <div class="sub-sec" id="goals">
+        <h3><span class="mono" style="color:var(--a);font-size:14px;margin-right:10px">2c</span>Goals &amp; Non-Goals</h3>
+        <div class="gn">
+          <div><p class="eyebrow" style="margin-bottom:12px">Goals</p>
+            <ul>
+              <li><span>Developers can delegate a multi-part feature and get merged pull requests while stepping in only when asked.</span></li>
+              <li><span>Developers can explain any agent change (what changed, why, and what triggered it) without reading the full transcript.</span></li>
+              <li><span>Anyone can experience Helix from a link, with nothing installed.</span></li>
+              <li><span>The full loop runs reliably enough to demo live on a real repository.</span></li>
+            </ul></div>
+          <div class="non"><p class="eyebrow" style="margin-bottom:12px">Non-Goals</p>
+            <ul>
+              <li><span><b>Agents beyond Claude Code and Codex.</b> The adapter interface is ready; other agents are deferred.</span></li>
+              <li><span><b>Desktop, mobile or cloud versions.</b> A local web app keeps setup and demos simple.</span></li>
+              <li><span><b>Cost and token tracking.</b> Provider numbers are inconsistent, and Agent Orchestrator removed theirs for overstating spend.</span></li>
+              <li><span><b>Scheduled automations and team accounts.</b> Single-user, on-demand work only for the MVP.</span></li>
+              <li><span><b>Agent bake-off</b> (same task run by both agents and compared). Stretch goal after the demo.</span></li>
+            </ul></div>
+        </div>
+      </div>
+
+      <div class="sub-sec" id="metrics">
+        <h3><span class="mono" style="color:var(--a);font-size:14px;margin-right:10px">2d</span>Success Metrics</h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Goal</th><th>Signal</th><th>Metric</th><th>Target</th></tr></thead>
+            <tbody>
+              <tr><td>Delegate with minimal babysitting</td><td>Tasks reach a merged PR without the developer stepping in</td><td>Share of demo-repo tasks merged with at most one human intervention</td><td class="target">≥ 4 of 5 tasks</td></tr>
+              <tr><td>Explain any change</td><td>Users answer "why did the agent do this?" from the UI</td><td>Usability test: 5 participants, 3 why-questions each, using the Why panel and timeline</td><td class="target">≥ 80% correct<br>median &lt; 30 s</td></tr>
+              <tr><td>Zero-install experience</td><td>Reviewers open and play a recorded run</td><td>Hosted replay load time on a laptop; setup steps required</td><td class="target">&lt; 3 s · 0 installs</td></tr>
+              <tr><td>Reliable demo</td><td>Live state matches replayed state; live runs finish</td><td>Replay-determinism tests; consecutive clean end-to-end runs</td><td class="target">100% pass<br>3 clean runs in a row</td></tr>
+              <tr><td>Portfolio reach</td><td>Developers find and save the project</td><td>GitHub stars after publishing</td><td class="target">≥ 50 in 60 days</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 REQUIREMENTS -->
+    <section id="requirements">
+      <div class="sec-head"><span class="num">03</span><h2>Requirements</h2></div>
+      <div class="filter" role="group" aria-label="Filter by priority">
+        <button type="button" data-f="all" aria-pressed="true">All<span class="count" data-c="all"></span></button>
+        <button type="button" data-f="0" aria-pressed="false">P0 · must ship<span class="count" data-c="0"></span></button>
+        <button type="button" data-f="1" aria-pressed="false">P1 · important<span class="count" data-c="1"></span></button>
+        <button type="button" data-f="2" aria-pressed="false">P2 · if time<span class="count" data-c="2"></span></button>
+      </div>
+      <div id="journeys" style="display:grid;gap:18px"></div>
+    </section>
+
+    <!-- 4 APPENDIX -->
+    <section id="appendix">
+      <div class="sec-head"><span class="num">04</span><h2>Appendix</h2></div>
+      <div class="appx">
+        <div class="sub-sec">
+          <h3>Competitive landscape</h3>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Product</th><th>Parallel isolated agents</th><th>PR / CI feedback loop</th><th>Plan graph</th><th>Rewind / replay</th><th>Why explanations</th></tr></thead>
+              <tbody>
+                <tr><td>Agent Orchestrator</td><td class="yes">Yes, worktrees</td><td class="yes">Yes</td><td class="no">Not documented</td><td class="no">Not documented</td><td class="no">Not documented</td></tr>
+                <tr><td>Conductor</td><td class="yes">Yes, workspaces</td><td class="yes">PR flow</td><td class="no">Not documented</td><td class="no">Not documented</td><td class="no">Not documented</td></tr>
+                <tr><td>Vibe Kanban</td><td class="yes">Yes, worktrees</td><td class="yes">PR flow</td><td class="no">Kanban only</td><td class="no">Not documented</td><td class="no">Not documented</td></tr>
+                <tr><td>Claude Squad</td><td class="yes">Yes, tmux + worktrees</td><td class="no">Not documented</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+                <tr><td><b>Helix</b></td><td class="yes">Yes, worktrees</td><td class="yes">Yes</td><td class="yes">Live</td><td class="yes">Full timeline</td><td class="yes">Per event</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">"Not documented" means we found no public evidence of the feature in October 2026 research. It does not mean the feature is absent.</p>
+        </div>
+
+        <div class="sub-sec">
+          <h3>Technical approach</h3>
+          <pre class="arch">Browser (React) ──HTTP/SSE──▶ helixd (Node daemon, localhost only) ──▶ SQLite event log
+      │    └──WebSocket──▶ terminal host (node-pty / ConPTY)   ├─▶ Claude Code + Codex adapters
+      │                                                         ├─▶ git worktree manager
+ same app, static ◀── recorded .helixlog (demo mode)            ├─▶ GitHub PR / CI observer
+                                                                └─▶ helix CLI ◀── orchestrator agent</pre>
+          <p class="prose" style="font-size:15.5px">Every action is an append-only event, and each event can point to the event that caused it. The screen is computed from events up to a moment in time, so the live view, timeline rewind, demo replay and the future bake-off comparison all use one mechanism. Status labels are always derived, never stored. Codex agents build the daemon and integrations in parallel work packages; Claude owns the interface and reviews every package before merge.</p>
+        </div>
+
+        <div class="sub-sec">
+          <h3>Risks</h3>
+          <div class="risk">
+            <div><b>Live agents misbehave during the demo</b><span>Recorded replay is the fallback, rehearsed in advance.</span></div>
+            <div><b>Agent CLIs change their output</b><span>Adapters sit behind one interface with recorded test fixtures.</span></div>
+            <div><b>An agent doesn't expose reasoning</b><span>The Why panel still shows plan rationale and the trigger chain.</span></div>
+            <div><b>Two-week timeline</b><span>Feature freeze on day 12; bake-off stays post-demo.</span></div>
+          </div>
+        </div>
+
+        <div class="sub-sec">
+          <h3>Open questions</h3>
+          <ol class="q">
+            <li>Final split of ownership between the two team members.</li>
+            <li>Default orchestrator agent: Claude Code (proposed) or Codex.</li>
+            <li>Where the GitHub repository and hosted demo will live.</li>
+          </ol>
+        </div>
+
+        <div class="sub-sec">
+          <h3>Sources</h3>
+          <div class="sources">
+            <a href="https://orchestrator.inc/" target="_blank" rel="noopener">orchestrator.inc: product site</a>
+            <a href="https://docs.orchestrator.inc/architecture/" target="_blank" rel="noopener">Agent Orchestrator: architecture docs</a>
+            <a href="https://orchestrator.inc/design-partners/" target="_blank" rel="noopener">Agent Orchestrator: design partner program</a>
+            <a href="https://www.techrepublic.com/article/news-developer-trust-in-ai-declines/" target="_blank" rel="noopener">TechRepublic: Stack Overflow 2025 survey on AI trust</a>
+            <a href="https://infoworld.com/article/4031673/ai-use-among-software-developers-grows-but-trust-remains-an-issue-stack-overflow-survey.html" target="_blank" rel="noopener">InfoWorld: AI use grows, trust remains an issue</a>
+            <a href="https://www.marketsandmarkets.com/Market-Reports/ai-coding-assistant-market-184785126.html" target="_blank" rel="noopener">MarketsandMarkets: AI code assistants market</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>Helix · Product Requirements Document · Net New Build</footer>
+
+<script>
+(function(){
+  /* ---------- helix canvas ---------- */
+  var cv=document.getElementById('helix'), ctx=cv.getContext('2d');
+  var reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
+  var colA,colB,colLine,W,H,dpr,phase=0,running=true;
+  function readColors(){var s=getComputedStyle(document.documentElement);colA=s.getPropertyValue('--a').trim();colB=s.getPropertyValue('--b').trim();colLine=s.getPropertyValue('--line').trim();}
+  function size(){dpr=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    var narrow=W<700, x0=narrow?W*0.05:W*0.42, x1=W*1.02, cy=narrow?H*0.82:H*0.52, amp=narrow?26:Math.min(78,H*0.26);
+    var n=Math.floor((x1-x0)/14), k=0.045, pts=[];
+    for(var i=0;i<=n;i++){
+      var x=x0+i*14, t=x*k+phase;
+      var ya=cy+Math.sin(t)*amp, yb=cy+Math.sin(t+Math.PI)*amp, za=Math.cos(t), fade=Math.min(1,i/10);
+      pts.push([x,ya,yb,za,fade]);
+      if(i%2===0){ctx.strokeStyle=colLine;ctx.globalAlpha=0.9*fade;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,ya);ctx.lineTo(x,yb);ctx.stroke();}
+    }
+    for(var j=0;j<pts.length;j++){
+      var p=pts[j], back=p[3]<0;
+      // draw back strand first
+      dot(p[0], back?p[1]:p[2], back?colA:colB, back?p[3]:-p[3], p[4]);
+    }
+    for(var m=0;m<pts.length;m++){
+      var q=pts[m], back2=q[3]<0;
+      dot(q[0], back2?q[2]:q[1], back2?colB:colA, back2?-q[3]:q[3], q[4]);
+    }
+    ctx.globalAlpha=1;
+  }
+  function dot(x,y,c,z,f){var r=2.2+1.8*(z+1);ctx.fillStyle=c;ctx.globalAlpha=(0.35+0.55*(z+1)/2)*f;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
+  function loop(){if(!running)return;phase+=0.012;draw();requestAnimationFrame(loop);}
+  function start(){readColors();size();draw();if(!reduce.matches){running=true;requestAnimationFrame(loop);}else{running=false;}}
+  window.addEventListener('resize',function(){size();draw();});
+  try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){readColors();draw();});}catch(e){}
+  new MutationObserver(function(){readColors();draw();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+  if('IntersectionObserver' in window){new IntersectionObserver(function(es){var vis=es[0].isIntersecting;if(vis&&!running&&!reduce.matches){running=true;requestAnimationFrame(loop);}else if(!vis){running=false;}}).observe(cv);}
+  start();
+
+  /* ---------- scroll progress + rail ---------- */
+  var bar=document.getElementById('progress'), links=[].slice.call(document.querySelectorAll('nav.rail a'));
+  var targets=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  function onScroll(){
+    var h=document.documentElement.scrollHeight-innerHeight;bar.style.transform='scaleX('+(h>0?scrollY/h:0)+')';
+    var cur=0;targets.forEach(function(t,i){if(t&&t.getBoundingClientRect().top<innerHeight*0.35)cur=i;});
+    links.forEach(function(a,i){a.classList.toggle('on',i===cur);});
+  }
+  addEventListener('scroll',onScroll,{passive:true});onScroll();
+
+  /* ---------- timeline demo ---------- */
+  var tasks={api:{t:'Reset-token API',a:'codex',c:'b'},ui:{t:'Reset form UI',a:'claude',c:'a'},e2e:{t:'E2E tests',a:'claude',c:'a'}};
+  var cols=[{k:'work',n:'Working',v:'--s-work'},{k:'need',n:'Needs you',v:'--s-need'},{k:'rev',n:'In review',v:'--s-rev'},{k:'done',n:'Merged',v:'--s-done'}];
+  var E=[
+    {ts:'00:00',why:'Orchestrator split "Add password reset" into 3 tasks: API, form UI, E2E tests.',cause:'plan.submitted · rationale: API and UI are independent; tests depend on both',set:{}},
+    {ts:'00:04',why:'Codex started the reset-token API on branch reset/api.',cause:'caused by #0 plan node "Reset-token API"',set:{api:['work','Writing token service']}},
+    {ts:'00:05',why:'Claude Code started the reset form on branch reset/ui.',cause:'caused by #0 plan node "Reset form UI"',set:{ui:['work','Building form component']}},
+    {ts:'00:19',why:'Codex opened PR #12 for the API.',cause:'caused by #1 · agent reported task complete',set:{api:['rev','PR #12 · CI running']}},
+    {ts:'00:23',why:'CI failed on PR #12: token.test.ts expects tokens to expire after 15 minutes.',cause:'ci.updated · check "unit" failed',set:{api:['rev','PR #12 · CI failed','fail']}},
+    {ts:'00:23',why:'Helix sent the failing test back to Codex, which owns branch reset/api.',cause:'feedback.routed · caused by #4 CI failure',set:{api:['work','Fixing token expiry']}},
+    {ts:'00:27',why:'Claude Code opened PR #13 for the form UI.',cause:'caused by #2 · agent reported task complete',set:{ui:['rev','PR #13 · CI running']}},
+    {ts:'00:31',why:'Codex pushed a fix; CI passed on PR #12.',cause:'caused by #5 feedback · check "unit" passed',set:{api:['rev','PR #12 · CI passed']}},
+    {ts:'00:33',why:'Claude Code asked to run a database migration. Helix escalated it to you.',cause:'approval.requested · migrations need human approval (project rule)',set:{ui:['need','Approve migration?']}},
+    {ts:'00:35',why:'You approved the migration once; Claude Code continued.',cause:'approval.decided · caused by #8',set:{ui:['rev','PR #13 · CI passed']}},
+    {ts:'00:36',why:'PR #12 merged. E2E tests are unblocked, one dependency still open.',cause:'pr.merged · plan edge API → E2E satisfied',set:{api:['done','Merged #12'],e2e:['work','Waiting on #13']}},
+    {ts:'00:41',why:'PR #13 merged. Orchestrator started E2E tests on the merged branch.',cause:'pr.merged · plan edge UI → E2E satisfied',set:{ui:['done','Merged #13'],e2e:['work','Running Playwright suite']}}
+  ];
+  var board=document.getElementById('board'),range=document.getElementById('t'),whyT=document.getElementById('whyText'),whyC=document.getElementById('whyCause'),
+      clock=document.getElementById('clock'),live=document.getElementById('liveTag'),play=document.getElementById('playBtn'),ticks=document.getElementById('ticks');
+  var tickColor={0:'--a',4:'--s-fail',5:'--b',8:'--s-need',10:'--s-done',11:'--s-done'};
+  E.forEach(function(e,i){var b=document.createElement('b');b.style.left=(i/(E.length-1)*100)+'%';b.style.background='var('+(tickColor[i]||'--line')+')';ticks.appendChild(b);});
+  var prev={};
+  function render(t){
+    var st={};for(var i=0;i<=t;i++){for(var k in E[i].set)st[k]=E[i].set[k];}
+    var html='';
+    cols.forEach(function(c){
+      html+='<div class="col"><h4><i style="background:var('+c.v+')"></i>'+c.n+'</h4>';
+      Object.keys(st).forEach(function(k){var s=st[k];if(s[0]!==c.k)return;var tk=tasks[k];
+        var stc=s[2]==='fail'?'--s-fail':c.v;var key=k+s[0]+s[1];
+        html+='<div class="card"'+(prev[k]===key?' style="animation:none"':'')+'><span class="who"><i style="background:var(--'+tk.c+')"></i>'+tk.a+'</span><span>'+tk.t+'</span><span class="st" style="color:var('+stc+')">'+s[1]+'</span></div>';
+      });
+      html+='</div>';
+    });
+    board.innerHTML=html;
+    Object.keys(st).forEach(function(k){prev[k]=k+st[k][0]+st[k][1];});
+    whyT.textContent='#'+t+' · '+E[t].why; whyC.textContent=E[t].cause; clock.textContent='t = '+E[t].ts;
+    var isLive=t===E.length-1; live.textContent=isLive?'● Live':'Rewound'; live.classList.toggle('is-live',isLive);
+  }
+  range.addEventListener('input',function(){stop();render(+range.value);});
+  var timer=null;
+  function stop(){if(timer){clearInterval(timer);timer=null;play.textContent='Play';}}
+  play.addEventListener('click',function(){
+    if(timer){stop();return;}
+    if(+range.value>=E.length-1)range.value=0;
+    play.textContent='Pause';render(+range.value);
+    timer=setInterval(function(){var v=+range.value+1;if(v>E.length-1){stop();return;}range.value=v;render(v);},reduce.matches?1600:1100);
+  });
+  render(+range.value);
+
+  /* ---------- requirements ---------- */
+  var J=[
+    {name:'Developer delegating a feature to a team of agents',ctx:'The core loop. We optimize for getting from a one-sentence goal to merged pull requests with the fewest human interruptions.',subs:[
+      ['Setting up a project',[[0,'User can add a local git repository as a project.'],[0,'User can see which agents (Claude Code, Codex) are installed and signed in.'],[0,'User can connect GitHub so Helix can open and track pull requests.'],[1,'User can set a default agent and model per project.'],[2,'User can save project rules the agents must follow, such as "ask before migrations".']]],
+      ['Delegating work',[[0,'User can describe a task and start it with a chosen agent and model.'],[0,'User can ask the orchestrator to split a larger goal into tasks with dependencies.'],[0,'User can see each task get its own branch and isolated workspace.'],[1,'User can review and edit the proposed plan before agents start.'],[2,'User can start a task from a GitHub issue.']]],
+      ['Supervising agents',[[0,'User can see every task on one board grouped by status: working, needs you, in review, ready to merge.'],[0,'User can see a list of everything waiting on them.'],[0,'User can open a task and follow the agent\'s conversation or terminal live.'],[0,'User can answer an agent\'s question or approve or reject an action.'],[1,'User can choose between queuing a follow-up and interrupting the agent.'],[1,'User can stop or archive a task without losing its branch.'],[2,'User can get a browser notification when an agent needs them.']]],
+      ['Shipping the work',[[0,'User can view the changed files for any task, from the workspace or the pull request.'],[0,'User can see pull request, CI and review status for each task.'],[0,'User can rely on Helix to send CI failures back to the agent that owns the branch.'],[0,'User can merge a ready pull request from Helix.'],[1,'User can run a reviewer agent on a pull request and send its findings to the worker.'],[2,'User can resolve review comments from Helix.']]]
+    ]},
+    {name:'Developer understanding why the agents did what they did',ctx:'This is what sets Helix apart. We optimize for answering "what happened and why" in seconds, without reading transcripts.',subs:[
+      ['Following the plan',[[0,'User can see the orchestrator\'s plan as a graph of tasks and dependencies.'],[0,'User can see each task\'s live status and agent on the graph.'],[0,'User can open a task\'s session by selecting it on the graph.'],[1,'User can read the rationale for each task by hovering or selecting it.']]],
+      ['Rewinding time',[[0,'User can drag a timeline to see the board, graph and conversation as they were at any moment.'],[0,'User can return to the live view in one action.'],[1,'User can step forward and back one event at a time.'],[1,'User can filter timeline events by type, such as CI, approvals and plan changes.']]],
+      ['Asking why',[[0,'User can open a Why panel for any event or task that shows its intent and what triggered it.'],[0,'User can follow the chain of causes back to the original plan step.'],[1,'User can see the agent\'s reasoning summary when the agent provides one.'],[2,'User can copy a link to a specific moment in a run.']]]
+    ]},
+    {name:'Reviewer or classmate exploring a recorded run',ctx:'Graders, teammates and recruiters can\'t install agent tools. We optimize for zero setup.',subs:[
+      ['Watching a replay',[[0,'User can open a hosted demo and replay a full recorded run with nothing installed.'],[0,'User can play, pause and scrub the recording, using the same interface as a live run.'],[1,'User can open a recorded .helixlog file in their own Helix.'],[1,'User can export a run as a .helixlog with secrets and local paths removed.']]]
+    ]},
+    {name:'Developer comparing agents head to head (stretch)',ctx:'The bake-off. Built after the demo if time allows, using the same event log.',stretch:true,subs:[
+      ['Running a bake-off',[[2,'User can run the same task with Claude Code and Codex at the same time.'],[2,'User can compare both results side by side: diff size, tests passed, time and interventions.'],[2,'User can merge the better result and archive the other.']]]
+    ]}
+  ];
+  var root=document.getElementById('journeys'),counts={all:0,0:0,1:0,2:0},out='';
+  J.forEach(function(j,ji){
+    out+='<article class="journey'+(j.stretch?' stretch':'')+'"><header><span class="eyebrow">User Journey '+(ji+1)+'</span><h3>'+j.name+'</h3><p><b style="color:var(--ink);font-weight:500">Context:</b> '+j.ctx+'</p></header>';
+    j.subs.forEach(function(s){
+      out+='<div class="subj"><h4>'+s[0]+'</h4><ul class="reqs">';
+      s[1].forEach(function(r){counts.all++;counts[r[0]]++;out+='<li data-p="'+r[0]+'"><span class="p p'+r[0]+'">P'+r[0]+'</span><span>'+r[1]+'</span></li>';});
+      out+='</ul></div>';
+    });
+    out+='</article>';
+  });
+  root.innerHTML=out;
+  document.querySelectorAll('[data-c]').forEach(function(el){el.textContent=counts[el.getAttribute('data-c')];});
+  var btns=[].slice.call(document.querySelectorAll('.filter button'));
+  btns.forEach(function(b){b.addEventListener('click',function(){
+    var f=b.getAttribute('data-f');
+    btns.forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});
+    root.querySelectorAll('li[data-p]').forEach(function(li){li.hidden=!(f==='all'||li.getAttribute('data-p')===f);});
+    root.querySelectorAll('.subj').forEach(function(s){s.hidden=!s.querySelector('li:not([hidden])');});
+    root.querySelectorAll('.journey').forEach(function(a){a.hidden=!a.querySelector('.subj:not([hidden])');});
+  });});
+})();
+</script>
