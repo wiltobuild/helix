@@ -56,9 +56,14 @@ export function SessionCard({
           )}
           <span className={s.meta}>
             {checks && (
-              <span className={s.checks} title={`${checks.passed} of ${checks.total} checks passed`}>
+              <span
+                className={s.checks}
+                title={`${checks.passed} of ${checks.total} checks passed`}
+              >
                 <span className={s.bar}>
-                  <span style={{ width: `${(checks.passed / Math.max(checks.total, 1)) * 100}%` }} />
+                  <span
+                    style={{ width: `${(checks.passed / Math.max(checks.total, 1)) * 100}%` }}
+                  />
                 </span>
                 {checks.passed}/{checks.total}
               </span>

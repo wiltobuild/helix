@@ -8,8 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "echo \"@helix/web lint: pending scaffold integration\"",
-    "test": "echo \"@helix/web tests: pending scaffold integration\""
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
+    "test": "node -e \"console.log('no UI tests yet')\""
   },
   "dependencies": {
     "@helix/ui": "workspace:*",

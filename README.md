@@ -15,3 +15,16 @@
 
 ## How we build
 Codex agents build the daemon and integrations as parallel work packages; Claude owns the UI and reviews every package before merge. Every Codex brief and result lives in [`handoffs/`](handoffs/).
+
+## Development
+
+Prerequisites: Node 24, pnpm 10 (the exact version is pinned in `packageManager`), and git.
+
+```sh
+pnpm install
+pnpm check
+pnpm dev
+```
+
+`pnpm dev` starts the CLI and daemon placeholder watchers. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for ownership and architecture rules.

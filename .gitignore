@@ -11,3 +11,7 @@ coverage/
 Thumbs.db
 .wt/
 *.helixlog.tmp
+
+.pnpm-store/
+.cache/
+*.tsbuildinfo

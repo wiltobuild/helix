@@ -26,12 +26,7 @@ export type DisplayStatus =
   | 'archived';
 
 export type BoardColumn =
-  | 'pending'
-  | 'working'
-  | 'needs_you'
-  | 'in_review'
-  | 'ready_to_merge'
-  | 'archive';
+  'pending' | 'working' | 'needs_you' | 'in_review' | 'ready_to_merge' | 'archive';
 
 export type AgentKind = 'claude-code' | 'codex';
 

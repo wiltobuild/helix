@@ -15,9 +15,16 @@ export interface StatusPillProps {
 export function StatusPill({ status, variant = 'pill', label, className }: StatusPillProps) {
   const meta = statusMeta[status];
   const Icon = meta.icon;
-  const style = { '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties;
+  const style = {
+    '--tone': toneVar(meta.tone),
+    '--tone-soft': toneSoftVar(meta.tone),
+  } as CSSProperties;
   return (
-    <span className={cx(s.root, variant === 'pill' && s.filled, className)} style={style} data-status={status}>
+    <span
+      className={cx(s.root, variant === 'pill' && s.filled, className)}
+      style={style}
+      data-status={status}
+    >
       <Icon className={cx(s.icon, meta.live && s.live)} size={13} strokeWidth={2.2} aria-hidden />
       <span className={s.text}>{label ?? meta.label}</span>
     </span>

@@ -12,8 +12,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "echo \"@helix/ui lint: pending scaffold integration\"",
-    "test": "echo \"@helix/ui tests: pending scaffold integration\""
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
+    "test": "node -e \"console.log('no UI tests yet')\""
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "5.3.0",

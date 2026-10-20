@@ -51,7 +51,17 @@ import s from './Showcase.module.css';
 const STATUSES = Object.keys(statusMeta) as DisplayStatus[];
 const COLUMNS: BoardColumn[] = ['pending', 'working', 'needs_you', 'in_review', 'ready_to_merge'];
 
-function Section({ id, title, note, children }: { id: string; title: string; note?: string; children: ReactNode }) {
+function Section({
+  id,
+  title,
+  note,
+  children,
+}: {
+  id: string;
+  title: string;
+  note?: string;
+  children: ReactNode;
+}) {
   return (
     <section id={id} className={s.section}>
       <header className={s.sectionHead}>
@@ -108,7 +118,11 @@ export function Showcase() {
       </header>
 
       <main className={s.main}>
-        <Section id="board" title="Board" note="The home screen. Attention first: what needs you is visible in two seconds.">
+        <Section
+          id="board"
+          title="Board"
+          note="The home screen. Attention first: what needs you is visible in two seconds."
+        >
           <div className={s.boardBar}>
             <Segmented
               label="View"
@@ -120,7 +134,11 @@ export function Showcase() {
               ]}
             />
             <div className={s.row}>
-              <TextField placeholder="Filter tasks" icon={<Search size={14} />} aria-label="Filter tasks" />
+              <TextField
+                placeholder="Filter tasks"
+                icon={<Search size={14} />}
+                aria-label="Filter tasks"
+              />
               <Button variant="primary" icon={<Plus size={14} />} shortcut="⌘N">
                 New task
               </Button>
@@ -132,7 +150,10 @@ export function Showcase() {
               return (
                 <div key={col} className={s.column}>
                   <div className={s.columnHead}>
-                    <span className={s.columnDot} style={{ background: toneVar(columnMeta[col].tone) }} />
+                    <span
+                      className={s.columnDot}
+                      style={{ background: toneVar(columnMeta[col].tone) }}
+                    />
                     <SectionLabel count={cards.length}>{columnMeta[col].label}</SectionLabel>
                   </div>
                   {cards.map((c) => (
@@ -150,7 +171,11 @@ export function Showcase() {
           </div>
         </Section>
 
-        <Section id="status" title="Status" note="Derived, never stored. Always icon + label; color reinforces, never carries meaning alone.">
+        <Section
+          id="status"
+          title="Status"
+          note="Derived, never stored. Always icon + label; color reinforces, never carries meaning alone."
+        >
           <div className={s.wrap}>
             {STATUSES.map((st) => (
               <StatusPill key={st} status={st} />
@@ -170,7 +195,11 @@ export function Showcase() {
           </div>
         </Section>
 
-        <Section id="agents" title="Agents" note="Two strands. Claude orange is Claude Code, teal is Codex.">
+        <Section
+          id="agents"
+          title="Agents"
+          note="Two strands. Claude orange is Claude Code, teal is Codex."
+        >
           <div className={s.wrap}>
             <AgentBadge agent="claude-code" variant="full" model="opus" />
             <AgentBadge agent="codex" variant="full" model="gpt-6-astra" />
@@ -283,7 +312,11 @@ export function Showcase() {
                   hint="Enter to start · Shift+Enter for a new line"
                   placeholder="Describe the outcome, not the steps."
                 />
-                <TextField label="Base branch" defaultValue="main" error="Branch main has uncommitted changes in your checkout." />
+                <TextField
+                  label="Base branch"
+                  defaultValue="main"
+                  error="Branch main has uncommitted changes in your checkout."
+                />
                 <div className={s.row}>
                   <Button variant="primary" onClick={() => setDialog(true)}>
                     Open dialog
@@ -338,13 +371,28 @@ export function Showcase() {
           <div className={s.tokenGrid}>
             <div>
               <SectionLabel>Surfaces</SectionLabel>
-              {['--bg', '--bg-sunk', '--surface', '--surface-2', '--surface-3', '--border', '--border-strong'].map((n) => (
+              {[
+                '--bg',
+                '--bg-sunk',
+                '--surface',
+                '--surface-2',
+                '--surface-3',
+                '--border',
+                '--border-strong',
+              ].map((n) => (
                 <Swatch key={n} name={n} />
               ))}
             </div>
             <div>
               <SectionLabel>Text & accent</SectionLabel>
-              {['--text', '--text-2', '--text-3', '--accent', '--strand-claude', '--strand-codex'].map((n) => (
+              {[
+                '--text',
+                '--text-2',
+                '--text-3',
+                '--accent',
+                '--strand-claude',
+                '--strand-codex',
+              ].map((n) => (
                 <Swatch key={n} name={n} />
               ))}
             </div>

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { cx } from '../cx';
 import s from './Feedback.module.css';
 
@@ -12,7 +12,14 @@ export interface EmptyStateProps {
   className?: string;
 }
 
-export function EmptyState({ icon, title, description, action, tone = 'neutral', className }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  tone = 'neutral',
+  className,
+}: EmptyStateProps) {
   return (
     <div className={cx(s.empty, tone === 'calm' && s.calm, className)}>
       {icon && <div className={s.emptyIcon}>{icon}</div>}
@@ -23,12 +30,28 @@ export function EmptyState({ icon, title, description, action, tone = 'neutral',
   );
 }
 
-export function Skeleton({ width, height = 12, className }: { width?: number | string; height?: number; className?: string }) {
-  return <span className={cx(s.skeleton, className)} style={{ width, height } as CSSProperties} aria-hidden />;
+export function Skeleton({
+  width,
+  height = 12,
+  className,
+}: {
+  width?: number | string;
+  height?: number;
+  className?: string;
+}) {
+  return <span className={cx(s.skeleton, className)} style={{ width, height }} aria-hidden />;
 }
 
 /** Mono uppercase label for sections and column headers. */
-export function SectionLabel({ children, count, className }: { children: ReactNode; count?: number; className?: string }) {
+export function SectionLabel({
+  children,
+  count,
+  className,
+}: {
+  children: ReactNode;
+  count?: number;
+  className?: string;
+}) {
   return (
     <div className={cx(s.sectionLabel, className)}>
       <span>{children}</span>
@@ -39,6 +62,11 @@ export function SectionLabel({ children, count, className }: { children: ReactNo
 
 export function Spinner({ size = 14, label = 'Loading' }: { size?: number; label?: string }) {
   return (
-    <span className={s.spinner} style={{ width: size, height: size }} role="status" aria-label={label} />
+    <span
+      className={s.spinner}
+      style={{ width: size, height: size }}
+      role="status"
+      aria-label={label}
+    />
   );
 }

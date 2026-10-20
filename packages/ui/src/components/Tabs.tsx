@@ -35,7 +35,15 @@ export function Tabs({ value, onValueChange, items, children, className }: TabsP
   );
 }
 
-export function TabPanel({ value, children, className }: { value: string; children: ReactNode; className?: string }) {
+export function TabPanel({
+  value,
+  children,
+  className,
+}: {
+  value: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <T.Content value={value} className={cx(s.panel, className)}>
       {children}
