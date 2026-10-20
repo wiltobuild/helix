@@ -9,21 +9,11 @@ const allowed = {
   core: ['contracts', 'storage', 'harness', 'git', 'scm'],
   'api-client': ['contracts'],
   ui: ['contracts'],
-  daemon: [
-    'contracts',
-    'testing',
-    'storage',
-    'core',
-    'harness',
-    'pty-host',
-    'git',
-    'scm',
-    'api-client',
-  ],
+  daemon: ['contracts', 'storage', 'core', 'harness', 'pty-host', 'git', 'scm', 'api-client'],
   cli: ['contracts', 'api-client'],
   web: ['ui', 'contracts', 'api-client'],
 };
-const testConsumers = new Set(['storage', 'harness', 'pty-host', 'git', 'scm', 'core']);
+const testConsumers = new Set(['storage', 'harness', 'pty-host', 'git', 'scm', 'core', 'daemon']);
 const tests = String.raw`(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|/)(?:test|tests|__tests__)/)`;
 const root = (name) => (['daemon', 'cli', 'web'].includes(name) ? 'apps/' : 'packages/') + name;
 const target = (names) =>

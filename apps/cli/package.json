@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project @helix/cli",
-    "dev": "tsx watch src/main.ts"
+    "dev": "tsx watch src/main.ts",
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/cli"
   },
   "bin": {
     "helix": "./src/main.ts"

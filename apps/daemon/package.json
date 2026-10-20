@@ -10,11 +10,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project @helix/daemon",
-    "dev": "tsx watch src/main.ts"
+    "dev": "tsx watch src/main.ts",
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/daemon"
   },
   "dependencies": {
     "@helix/contracts": "workspace:*",
-    "@helix/testing": "workspace:*",
     "@helix/storage": "workspace:*",
     "@helix/core": "workspace:*",
     "@helix/harness": "workspace:*",
@@ -22,5 +22,8 @@
     "@helix/git": "workspace:*",
     "@helix/scm": "workspace:*",
     "@helix/api-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@helix/testing": "workspace:*"
   }
 }

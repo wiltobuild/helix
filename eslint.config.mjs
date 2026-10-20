@@ -26,7 +26,7 @@ export default tseslint.config(
       'packages/*/src/**/*.{ts,tsx}',
       'apps/*/src/**/*.{ts,tsx}',
       'apps/web/vite.config.ts',
-      'vitest.config.ts',
+      'vitest*.ts',
     ],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {

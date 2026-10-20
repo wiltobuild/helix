@@ -3,9 +3,10 @@
   "globalDependencies": [
     "tsconfig*.json",
     "eslint.config.mjs",
-    "vitest.config.ts",
+    "vitest*.ts",
     ".dependency-cruiser.mjs",
-    "scripts/check-boundaries.mjs"
+    "scripts/check-boundaries.mjs",
+    "scripts/run-e2e.mjs"
   ],
   "tasks": {
     "typecheck": {
@@ -13,11 +14,13 @@
       "outputs": []
     },
     "lint": {
-      "outputs": []
+      "outputs": [],
+      "dependsOn": ["^typecheck"]
     },
     "test": {
       "dependsOn": ["^typecheck"],
-      "outputs": []
+      "outputs": [],
+      "env": ["HELIX_E2E"]
     },
     "build": {
       "dependsOn": ["^build", "typecheck"],
@@ -26,6 +29,12 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "test:e2e": {
+      "dependsOn": ["^typecheck"],
+      "env": ["HELIX_E2E"],
+      "cache": false,
+      "outputs": []
     }
   },
   "agentGuidance": false

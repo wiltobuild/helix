@@ -77,6 +77,7 @@ importers:
       '@helix/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+    devDependencies:
       '@helix/testing':
         specifier: workspace:*
         version: link:../../packages/testing

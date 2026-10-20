@@ -10,12 +10,14 @@
     "dev": "turbo run dev",
     "build": "pnpm boundaries && turbo run typecheck build",
     "typecheck": "tsc --noEmit && turbo run typecheck",
-    "lint": "eslint \"*.mjs\" \"scripts/**/*.mjs\" \"vitest.config.ts\" --max-warnings 0 && turbo run lint",
-    "test": "turbo run test",
+    "lint": "eslint \"*.mjs\" \"scripts/**/*.mjs\" \"vitest*.ts\" --max-warnings 0 && turbo run lint",
+    "test": "pnpm test:tooling && turbo run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "boundaries": "node scripts/check-boundaries.mjs",
-    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries"
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries",
+    "test:tooling": "node --test \"scripts/*.test.mjs\"",
+    "test:e2e": "node scripts/run-e2e.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

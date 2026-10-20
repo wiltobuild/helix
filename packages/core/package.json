@@ -9,7 +9,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
-    "test": "vitest run --config ../../vitest.config.ts --project @helix/core"
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/core",
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/core"
   },
   "dependencies": {
     "@helix/contracts": "workspace:*",
