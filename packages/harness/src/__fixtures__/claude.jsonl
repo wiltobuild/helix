@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","session_id":"fixture-claude-session"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I will inspect the API."},{"type":"thinking","thinking":"The API handler is the smallest useful starting point. Then I can verify the behavior."},{"type":"tool_use","id":"tool-1","name":"Read","input":{"file_path":"src/api.ts","content":"PRIVATE FILE CONTENT MUST NOT APPEAR"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"PRIVATE FILE CONTENT MUST NOT APPEAR","is_error":false}]}}
+{"type":"control_request","request_id":"approval-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"npm test"},"decision_reason":"Run the test suite"}}
+{"type":"control_cancel_request","request_id":"approval-1"}
+{"type":"future_message","payload":{"unknown":true}}
+{"type":"result","subtype":"success","session_id":"fixture-claude-session","is_error":false,"result":"I will inspect the API."}
+{"type":"error","error":{"message":"Fixture error"}}
+{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["Fixture turn failed"]}
