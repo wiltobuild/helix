@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project @helix/scm",
     "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/scm"
