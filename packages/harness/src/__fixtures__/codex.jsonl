@@ -1,0 +1,15 @@
+{"method":"thread/started","params":{"thread":{"id":"fixture-codex-thread"}}}
+{"method":"thread/started","params":{"thread":{"id":"unrelated-subagent"}}}
+{"method":"item/completed","params":{"threadId":"unrelated-subagent","item":{"id":"child-message","type":"agentMessage","text":"Other thread must not appear"}}}
+{"method":"turn/started","params":{"threadId":"fixture-codex-thread","turn":{"id":"turn-1","status":"inProgress"}}}
+{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"I will inspect the API."}}
+{"method":"item/completed","params":{"item":{"id":"message-1","type":"agentMessage","text":"I will inspect the API."}}}
+{"method":"item/completed","params":{"item":{"id":"reason-1","type":"reasoning","summary":["The API handler is the smallest useful starting point."],"content":["RAW REASONING MUST NOT APPEAR"]}}}
+{"method":"item/started","params":{"item":{"id":"tool-1","type":"commandExecution","command":"npm test","status":"inProgress"}}}
+{"method":"item/completed","params":{"item":{"id":"tool-1","type":"commandExecution","command":"npm test","status":"completed","exitCode":0,"aggregatedOutput":"PRIVATE FILE CONTENT MUST NOT APPEAR"}}}
+{"method":"item/completed","params":{"item":{"id":"patch-1","type":"fileChange","changes":[{"path":"src/api.ts","kind":{"type":"update"},"diff":"PRIVATE PATCH CONTENT MUST NOT APPEAR"}],"status":"failed"}}}
+{"id":91,"method":"item/commandExecution/requestApproval","params":{"threadId":"fixture-codex-thread","turnId":"turn-1","itemId":"tool-2","command":"npm test","reason":"Run tests"}}
+{"id":"files-approval","method":"item/fileChange/requestApproval","params":{"threadId":"fixture-codex-thread","turnId":"turn-1","itemId":"patch-2","reason":"Update handler"}}
+{"method":"future/notification","params":{}}
+{"method":"error","params":{"error":{"message":"Fixture error"},"willRetry":true}}
+{"method":"turn/completed","params":{"threadId":"fixture-codex-thread","turn":{"id":"turn-1","status":"completed","error":null}}}
