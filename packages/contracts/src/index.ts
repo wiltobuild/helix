@@ -1,3 +1,4 @@
+export const HELIX_CONTRACTS_VERSION = 1;
 export * from './ids.js';
 export * from './entities.js';
 export * from './events.js';

@@ -16,6 +16,7 @@ if (api) console.log(deriveStatus(api)); // merged
 
 ## Public API
 
+- Contract generation: `HELIX_CONTRACTS_VERSION = 1`.
 - IDs: `ProjectId`, `SessionId`, `PlanId`, `PlanNodeId`, `ApprovalId`, `EventSeq`,
   `PullRequestNumber`, and corresponding lower-camel `*Schema` validators.
 - Entities and schemas: `Project`, `KnownAgentKind`, `AgentKind`, `SessionRole`,
@@ -26,7 +27,8 @@ if (api) console.log(deriveStatus(api)); // merged
   `UnsequencedEvent`, `ParseEventResult`, `eventTypeSchema`, `eventSchemas`,
   `helixEventSchema`, `parseEvent`, `isEventOf`.
 - Projection/status: `ProjectState`, `SessionState`, `Worktree`, `WorktreeState`,
-  `applyEvent`, `projectUpTo`, `DisplayStatus`, `BoardColumn`, their schemas,
+  `applyEvent`, `projectUpTo`, `createProjector`, `Projector`, `ProjectionOptions`,
+  `Anomaly`, `DisplayStatus`, `BoardColumn`, their schemas,
   `deriveStatus`, `boardColumn`, `whyChain`, `rationaleFor`.
 - HTTP/transport: `routes`, `RouteName`, `toJsonSchema`, `routeJsonSchemas`,
   `sse`, `backfill`, `HarnessInfo`, `HealthResponse`, `HarnessesResponse`,
@@ -52,22 +54,22 @@ if (api) console.log(deriveStatus(api)); // merged
 First matching rule wins. The agent's active repair takes precedence over a
 failed check or requested changes. A failed activity probe is `unknown`, not exit.
 
-| Priority | Condition | Status | Board column |
-| --- | --- | --- | --- |
-| 1 | Session archived | archived | archive |
-| 2 | PR merged | merged | archive |
-| 3 | Pending approval, waiting_input, or blocked | needs_you | needs_you |
-| 4 | active or starting | working | working |
-| 5 | Open PR with failed checks | ci_failed | in_review |
-| 6 | Open PR with changes_requested review | changes_requested | in_review |
-| 7 | Open PR, total > 0, all passed, none pending, approved/none review, mergeable | ready_to_merge | ready_to_merge |
-| 8 | Other open PR | in_review | in_review |
-| 9 | exited without open PR | exited | archive |
-| 10 | Everything else, including unknown without PR | pending | pending |
+| Priority | Condition                                                                                                      | Status            | Board column   |
+| -------- | -------------------------------------------------------------------------------------------------------------- | ----------------- | -------------- |
+| 1        | Session archived                                                                                               | archived          | archive        |
+| 2        | PR merged                                                                                                      | merged            | archive        |
+| 3        | Pending approval, waiting_input, or blocked                                                                    | needs_you         | needs_you      |
+| 4        | active or starting                                                                                             | working           | working        |
+| 5        | Open PR with failed checks                                                                                     | ci_failed         | in_review      |
+| 6        | Open PR with changes_requested review                                                                          | changes_requested | in_review      |
+| 7        | Open non-draft PR, total > 0, all passed, none pending, approved/none review, no unresolved threads, mergeable | ready_to_merge    | ready_to_merge |
+| 8        | Other open PR                                                                                                  | in_review         | in_review      |
+| 9        | exited without open PR                                                                                         | exited            | archive        |
+| 10       | Everything else, including unknown without PR                                                                  | pending           | pending        |
 
 `plans[*].nodeStatus` is a recomputed projection cache, never an event or persisted
-source of truth. Draft PRs and unresolved-thread counts do not add gates in the
-specified v1 precedence; Claude should review this before freezing the contract.
+source of truth. Draft PRs and unresolved review threads block readiness, so an
+otherwise ready PR remains `in_review` until both gates clear.
 
 ## Event and replay decisions
 
@@ -90,11 +92,16 @@ specified v1 precedence; Claude should review this before freezing the contract.
   `status: pending | running | succeeded | failed`. `plan_update` carries
   `{planId, nodeId?, text}`. Questions carry string options. These are summaries,
   not raw tool input/output or hidden reasoning.
-- `applyEvent` requires one project's ordered history beginning with
-  `project.added`. It throws for missing references, duplicate/reversed seqs or
-  mixed projects. Global daemon seq gaps are valid. `projectUpTo` sorts a copy,
-  includes events through the cursor, and throws for empty/before-genesis prefixes.
-  The caller must select a project before replaying a global SSE stream.
+- `applyEvent` requires one project's history beginning with `project.added`.
+  By default it skips invalid payloads, missing references and duplicate/reversed
+  seqs, appending `{seq, type, reason}` to `state.anomalies` (newest 100 retained).
+  References are validated before mutation, so skipped events have no partial
+  effects. `lastSeq` advances past a rejected event without ever moving backward.
+  Pass `{strict:true}` to `applyEvent`, `projectUpTo`, or `createProjector` for
+  fail-fast behavior. Missing genesis, mismatched project genesis and mixed
+  projects always throw: no valid project state can represent those inputs.
+  Global daemon seq gaps are valid. `projectUpTo` sorts a copy and includes events
+  through the cursor. Select a project before replaying a global SSE stream.
 - Events changing a session's activity, chat, worktree or PR need `sessionId` for
   projection. Approval and plan events can resolve ownership from their payloads.
   Envelope validation is structural; referential integrity requires prior history.
@@ -103,14 +110,27 @@ specified v1 precedence; Claude should review this before freezing the contract.
   `reasoning.summary`, approvals, routed feedback, plan updates and explain notes
   appear in projected chat. Emit these semantic events once; emitting an additional
   equivalent `chat.item` intentionally produces another chat entry.
+  An `explain.note` with only a `planNodeId` attaches to that plan's orchestrator
+  chat as a `plan_update` carrying the node ID.
 - Approval decisions clear the pending ID and use event time for `decidedAt`.
   They do not imply that a waiting/blocked agent resumed: emit `activity.changed`.
   PR merges preserve branch `headSha`; `mergeSha` remains in the event log.
-- All projections are detached clones. No input events or prior states are mutated.
+- No input events or prior states are mutated. `applyEvent` clones state once;
+  `projectUpTo` folds into one internal mutable state without repeatedly cloning
+  growing chat history. Each event is parsed once during a full replay.
   Terminal bytes are excluded; markers update last-event position only.
+- `createProjector(events)` eagerly validates and snapshots the supplied history,
+  caching checkpoints every 100 event positions (not numeric sequence values).
+  `at(seq)` binary-searches the cursor and folds at most 99 events. Shared immutable
+  history avoids deep-copying every chat item at every checkpoint or lookup.
+  Returned states are deeply frozen in all environments and must be treated as
+  read-only. Holding an earlier result is safe across later lookups. The projector
+  is a snapshot, not a live subscription; rebuild it when history changes. Strict
+  mode validates the entire supplied history during construction.
 - `whyChain` returns target first, then parents, including the root; it stops at a
   missing parent, cycle or 50 events. `rationaleFor` returns undefined if absent.
-- Check counts partition total. Plan submission validates unique node IDs,
+- Check counts partition total; SCM adapters normalize skipped/neutral checks as
+  passed. Plan submission validates unique node IDs,
   unique/known dependencies, and an acyclic graph. These semantic checks require
   Zod in addition to the generated structural JSON Schema.
 
@@ -160,46 +180,45 @@ are supported. Blank interior lines are rejected. A recording requires matching
 project genesis and increasing project-local event subsequences; gaps are valid.
 `serializeHelixlog({header, events})` validates and writes one trailing newline.
 It throws ZodError for invalid input. Neither function performs redaction or I/O.
-Recordings preserve original seqs; import conflict/remapping policy belongs to
-the daemon and recorder implementation, not this pure format layer.
+Imported recordings are replay-only and preserve original IDs, seqs and causal
+links. They must never be appended to the live daemon log or remapped on import.
 
 ## Verification and integration
 
-Run in this directory:
+Run from the workspace root:
 
 ```sh
-pnpm install --ignore-workspace
-pnpm typecheck
-pnpm test
+pnpm --filter @helix/contracts typecheck
+pnpm --filter @helix/contracts test
+pnpm format
+pnpm check
 ```
 
 On this Windows host, use `pnpm.cmd` because PowerShell script execution is
-disabled. Package-local `.npmrc` keeps pnpm's content store inside this package;
-the store, node_modules and package lockfile are ignored. Remove or reconcile the
-local store setting when integrating with the shared scaffold if appropriate.
+disabled. The package inherits the scaffold's strict TypeScript settings, including
+`exactOptionalPropertyTypes`. Tests and snapshots live under `src` and run through
+the root Vitest projects. Standalone Vitest, ignore and pnpm store configurations
+have been removed; the shared scaffold owns tooling and dependencies.
 
 Pinned versions: Zod 4.6.5 (2026-09-13), TypeScript 5.9.3 (2025-09-30),
 Vitest 4.1.11 (2026-08-18), verified against npm publication metadata on
 2026-10-20. Native JSON Schema export avoids a second runtime dependency.
 
-Tests cover every event payload, malformed envelopes, 53 precedence rows, all
+Tests cover every event payload, malformed envelopes, 57 precedence rows, all
 column mappings, four compact state snapshots, all-prefix live/replay equality,
 immutability, causality cycles/depth, recording errors and round trips, transport
 validation, JSON Schema generation, and source import boundaries. The import
 boundary check is the brief's grep-test alternative, not a real browser bundle.
 Snapshots retain board, chat, PR, worktree, approval and plan status facts.
+Checkpoint tests cover boundary cursors, sequence gaps, held-result immutability,
+anomaly recovery and a seeded 200-lookup benchmark over 5,000 events (under 1 second).
 
-Root lint/format/workspace checks are deferred until the scaffold is rebased.
 No adapter, network, storage, process management or actual redaction is implemented
 in this pure contracts package.
 
 ## Review questions before freezing
 
-1. Should draft PRs or approved reviews with unresolved threads prevent
-   `ready_to_merge`? The current implementation follows the requested precedence.
-2. Does `CheckSummary.total` count only passed/failed/pending checks, with skipped
-   and neutral checks normalized by the SCM adapter? Current validation assumes so.
-3. Should importing a recording be replay-only, or copy into the live daemon log
-   with ID/sequence/causality remapping? Current wire format preserves originals.
-4. Confirm chosen health/lifecycle/chat shapes, success responses, paging semantics,
-   and plan graph validation before the downstream agents depend on them.
+Draft/thread gating, skipped/neutral checks and replay-only imports are resolved
+by Claude's fix-round-1 review. Confirm the remaining chosen health/lifecycle/chat
+shapes, success responses, paging semantics, and plan graph validation before the
+downstream agents depend on them.

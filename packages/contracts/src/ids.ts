@@ -6,8 +6,18 @@ export const sessionIdSchema = id.brand<'SessionId'>();
 export const planIdSchema = id.brand<'PlanId'>();
 export const planNodeIdSchema = id.brand<'PlanNodeId'>();
 export const approvalIdSchema = id.brand<'ApprovalId'>();
-export const eventSeqSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).brand<'EventSeq'>();
-export const pullRequestNumberSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).brand<'PullRequestNumber'>();
+export const eventSeqSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(Number.MAX_SAFE_INTEGER)
+  .brand<'EventSeq'>();
+export const pullRequestNumberSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(Number.MAX_SAFE_INTEGER)
+  .brand<'PullRequestNumber'>();
 
 export type ProjectId = z.infer<typeof projectIdSchema>;
 export type SessionId = z.infer<typeof sessionIdSchema>;

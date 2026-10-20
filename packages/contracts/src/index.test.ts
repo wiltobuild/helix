@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { PACKAGE_NAME } from './index.js';
+import { HELIX_CONTRACTS_VERSION } from './index.js';
 
-test('identifies @helix/contracts', () => {
-  expect(PACKAGE_NAME).toBe('@helix/contracts');
+test('identifies contracts v1', () => {
+  expect(HELIX_CONTRACTS_VERSION).toBe(1);
 });

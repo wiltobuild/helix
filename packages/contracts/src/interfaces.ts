@@ -5,8 +5,11 @@ import type { ProjectId, PullRequestNumber, SessionId } from './ids.js';
 import type { Worktree } from './projection.js';
 
 export type Unsubscribe = () => void;
-export type HarnessEmissionType = 'chat.item' | 'activity.changed' | 'reasoning.summary' | 'approval.requested';
-export type HarnessEmission = { [K in HarnessEmissionType]: { type: K; payload: PayloadFor<K> } }[HarnessEmissionType];
+export type HarnessEmissionType =
+  'chat.item' | 'activity.changed' | 'reasoning.summary' | 'approval.requested';
+export type HarnessEmission = {
+  [K in HarnessEmissionType]: { type: K; payload: PayloadFor<K> };
+}[HarnessEmissionType];
 export type HarnessStartOptions = { session: Session; cwd: string; resumeToken?: string };
 export interface AgentHarness {
   readonly kind: AgentKind;
@@ -27,13 +30,32 @@ export interface WorktreeManager {
   /** Must reject dirty worktrees (tracked, untracked or staged). Never force deletion. */
   remove(path: string, options: { force: false }): Promise<void>;
 }
-export type OpenPrOptions = { project: Project; sessionId: SessionId; head: string; base: string; title: string; body: string; draft: boolean };
-export type MergePrOptions = { project: Project; prNumber: PullRequestNumber; expectedHeadSha: string; method: 'merge' | 'squash' | 'rebase' };
+export type OpenPrOptions = {
+  project: Project;
+  sessionId: SessionId;
+  head: string;
+  base: string;
+  title: string;
+  body: string;
+  draft: boolean;
+};
+export type MergePrOptions = {
+  project: Project;
+  prNumber: PullRequestNumber;
+  expectedHeadSha: string;
+  method: 'merge' | 'squash' | 'rebase';
+};
 export type ScmEmissionType = 'pr.updated' | 'ci.updated' | 'review.updated' | 'pr.merged';
-export type ScmEmission = { [K in ScmEmissionType]: { type: K; payload: PayloadFor<K> } }[ScmEmissionType];
+export type ScmEmission = {
+  [K in ScmEmissionType]: { type: K; payload: PayloadFor<K> };
+}[ScmEmissionType];
 export interface ScmObserver {
   /** Optional callback makes observed facts available without coupling to EventStore. */
-  watch(project: Project, prNumber: PullRequestNumber, onEvent?: (e: ScmEmission) => void): Unsubscribe;
+  watch(
+    project: Project,
+    prNumber: PullRequestNumber,
+    onEvent?: (e: ScmEmission) => void,
+  ): Unsubscribe;
   openPr(options: OpenPrOptions): Promise<PullRequestFacts>;
   merge(options: MergePrOptions): Promise<{ mergeSha: string }>;
 }
