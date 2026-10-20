@@ -1,10 +1,17 @@
 {
   "name": "@helix/contracts",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
-  "dependencies": { "zod": "4.6.5" },
-  "devDependencies": { "typescript": "5.9.3", "vitest": "4.1.11" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/contracts"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  }
 }

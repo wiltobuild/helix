@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+.cache/
+.turbo/
+dist/
+build/
+coverage/
+pnpm-lock.yaml
+# Existing planning documents and handoffs are owned by Claude.
+docs/
+handoffs/
+# Preserve the existing README content verbatim.
+/README.md
+# UI files are formatted by their owner.
+packages/ui/
+apps/web/
