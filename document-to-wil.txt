@@ -1,0 +1,176 @@
+================================================================================
+DOCUMENT TO WIL: HELIX PRD INTERPRETATION & ABHEESHU'S EXECUTION PLAN
+================================================================================
+
+From: Abheeshu Dhungana (@abheeshudhungana-source)
+To: Wil Sheppard (@wiltobuild)
+Project: Helix — Explainable Multi-Agent Orchestrator
+Reference: docs/PRD.html & docs/PLAN.md
+Date: October 20, 2026
+
+--------------------------------------------------------------------------------
+1. OVERVIEW & INTERPRETATION OF WIL'S PRD
+--------------------------------------------------------------------------------
+This document captures my interpretation of your Helix PRD (`docs/PRD.html`) and
+Implementation Plan (`docs/PLAN.md`), and lays out the complete blueprint for
+my end of the bargain so we can ship the 2-week MVP smoothly.
+
+Core Product Thesis (from the PRD):
+Developers running multiple coding agents in parallel lose track of what each
+agent is doing and why. Helix solves this by coordinating two agent strands in
+parallel isolated git worktrees:
+- Strand A: Claude Code (`--a`: Teal `#0E7672` light / `#43C2BB` dark)
+- Strand B: Codex (`--b`: Rust/Orange `#C9502F` light / `#F0805F` dark)
+
+An Orchestrator Agent decomposes a high-level feature into a dependency graph of
+tasks, assigns each task its own agent and git branch/worktree, and carries it
+through PR -> CI -> auto-fix -> merge.
+
+What makes Helix unique (The Vitamin, The Painkiller, The Steroid):
+1. The Vitamin (Baseline): Parallel Claude Code and Codex agents running in
+   isolated worktrees, tracked on a unified status board.
+2. The Painkiller (Core Pain): Automated PR/CI feedback loop — CI failures and
+   review comments route straight back to the owning agent session, while human
+   attention is only requested when Helix flags "Needs you" (e.g., migrations).
+3. The Steroid (The Magic Hook): Explainable orchestration powered by an
+   append-only SQLite event log:
+   - Live Plan Graph showing task nodes, agent strands, and dependency edges.
+   - Scrubbable Timeline (`UI_State(t) = project(events <= t)`) that rewinds the
+     board, plan graph, and session transcript together to any moment `t`.
+   - Why Panel explaining every change via Intent (plan rationale) -> Reasoning
+     (agent summary) -> Trigger Chain (`causedBy` links, e.g., `#4 CI failure`).
+   - Zero-Install Demo Replay (`?demo=<recording>`) loading recorded `.helixlog`
+     files in the static web build with 0 installs and <3s load time.
+
+--------------------------------------------------------------------------------
+2. ARCHITECTURAL CONTRACT BETWEEN BACKEND (`helixd`) & FRONTEND (`apps/web`)
+--------------------------------------------------------------------------------
+To build my end of the bargain without blocking on backend work packages, the UI
+and demo fixtures will strictly adhere to the core invariants in `docs/PLAN.md`:
+
+A. Append-Only Event Log (`events` table / `.helixlog` fixture format)
+   Every event follows the frozen envelope:
+   `{ seq, ts, projectId, sessionId?, planNodeId?, causedBy?: seq, type, payload }`
+
+   Core Event Types:
+   - Lifecycle: `project.added`, `session.created/started/exited/archived`,
+     `activity.changed` (`active` | `idle` | `waiting` | `blocked`)
+   - Conversation & Approvals: `chat.message`, `chat.tool_call`,
+     `chat.approval_requested`, `chat.approval_decided`
+   - Explainability & Planning: `plan.submitted`, `plan.node_updated`,
+     `reasoning.summary`, `explain.note`
+   - Git, PR & CI Loop: `worktree.created`, `worktree.diff_updated`,
+     `pr.opened`, `pr.updated`, `ci.updated`, `review.updated`,
+     `feedback.routed`, `pr.merged`
+
+B. Pure Derived State (Replay Determinism Invariant)
+   - Status is NEVER stored as mutable state; it is computed via the pure
+     function `deriveStatus(facts)` shared in `packages/contracts`.
+   - Live UI state at sequence `t` MUST equal replayed UI state at sequence `t`.
+   - Live updates stream over SSE (`/api/events?since=<seq>`); terminal I/O
+     streams over WebSocket (`/mux`).
+
+--------------------------------------------------------------------------------
+3. MY END OF THE BARGAIN: FRONTEND, EXPLAINABILITY UI, DEMO REPO & QA
+--------------------------------------------------------------------------------
+Below is the complete scope I am taking on to fulfill the PRD requirements:
+
+A. Frontend Application & Design System (`apps/web`)
+   - Stack: Vite + React 19 + TypeScript, TanStack Router & Query, Zustand
+     (event log store + `project(events, upToSeq)` time-travel selector),
+     Tailwind CSS v4 (CSS-variable tokens for Dark & Light themes), Radix UI,
+     React Flow + ELK (Plan Graph), `xterm.js` (Terminal), Shiki (Diff view),
+     `cmdk` (`Cmd+K` palette), and Motion.
+   - Status Color Semantics (always icon + label, AA contrast):
+     * Working: Blue (`#2C66D0` / `#6E9CF2`)
+     * Needs you: Amber (`#A86A10` / `#E3A53F`)
+     * Failed: Red (`#BE3B27` / `#F06B55`)
+     * In review: Violet (`#7148C7` / `#AE8CF5`)
+     * Ready to merge / Merged: Green (`#26804F` / `#55C487`)
+     * Pending / Idle: Gray (`#7D8A86` / `#8A9894`)
+
+B. Core UI Screens & PRD User Journeys Covered
+   1. App Shell & Navigation:
+      - Left Sidebar: `Needs you` badge counter, `Projects -> Sessions`, and
+        `Recordings` (`.helixlog` library).
+      - Center Main Area: Board View <-> Plan Graph View toggle, Session View.
+      - Right Inspector: Summary, Files/Diff (scoped by workspace, PR, or last
+        turn), PR & CI status, and the Why Panel.
+      - Global Keyboard Shortcuts: `Cmd+K` command palette, `Cmd+N` new task,
+        `J/K` navigation, `[` and `]` step one event back/forward, `L` jump back
+        to live, `?` shortcut modal.
+
+   2. Board View (Journey 1 — Supervising Agents):
+      - Columns: `Pending` | `Working` | `Needs you` | `In review` |
+        `Ready to merge` (+ `Archive`).
+      - Task Cards: Strand indicator (Claude Code / Codex), task title, branch
+        name, PR number, CI check count (`18/50`), current action, elapsed time.
+      - UX Rule: Cards never reorder under the user's cursor while hovering.
+
+   3. Plan Graph View (Journey 2 — Following the Plan):
+      - Renders `plan.submitted` nodes and dependency edges using React Flow +
+        ELK layout.
+      - Live status rings and animated flow edges on active dependencies;
+        hovering displays task rationale; clicking a node opens its session.
+
+   4. Timeline Scrubber Bar (Journey 2 & 3 — Rewinding Time & Watching Replays):
+      - Pinned to the bottom of every project view (`Live` by default).
+      - Play/Pause button, range scrubber with color-coded event ticks
+        (Plan, CI fail, Feedback routed, Approval needed, PR merged), clock
+        readout (`t = 00:23`), event type filter, and one-click `"Back to live"`
+        pill.
+      - Dragging `t` synchronously rewinds the Board, Plan Graph, Session Chat,
+        and Why Panel.
+
+   5. Why Panel (Journey 2 — Asking Why):
+      - Displays for any selected event or plan node:
+        * Intent: structured task rationale from `plan.submitted`.
+        * Reasoning: agent reasoning summary from `reasoning.summary` (with
+          clean fallback if a harness does not emit reasoning).
+        * Trigger Chain: clickable `causedBy` breadcrumbs that trace an action
+          back to its root cause (e.g., `#5 Fixing token expiry` <- caused by
+          `#4 CI failed on token.test.ts` <- caused by `#0 Plan node`), scrubbing
+          the timeline when clicked.
+
+   6. Session View, Approvals & Diff Inspector (Journey 1 — Delegating & Shipping):
+      - Chat stream with collapsed tool-call groups, plan checklists, and
+        `"N new events"` scroll pill.
+      - Inline Approval Cards (`chat.approval_requested` -> `Approve` / `Reject`
+        with scope, such as database migrations).
+      - Composer supporting `Queue` vs `Interrupt` message delivery.
+      - Live Terminal tab (`xterm.js`) + Shiki Diff Inspector + PR/CI merge gate.
+
+   7. Zero-Install Demo Mode (`?demo=<recording>`):
+      - Static build mode loading bundled `.helixlog` recordings (such as the
+         PRD's `"add-password-reset"` scenario: Reset-token API + Reset form UI +
+        E2E tests) so reviewers can play, pause, and scrub with zero setup.
+
+C. Demo Repository, Replay Fixtures & QA Ownership
+   - Build the sample Demo Repository with realistic multi-part issues (matching
+     the PRD's API + UI + E2E test flow, including a deterministic CI test
+     failure and a migration approval rule).
+   - Author the golden `.helixlog` fixture files so UI development and
+     replay-determinism tests run from Day 1.
+   - Own the 3-minute live/replay demo script and run usability/metric checks
+     against the PRD targets (>= 4/5 tasks merged with <= 1 intervention, >= 80%
+     Why-question accuracy in < 30s, < 3s static demo load time).
+
+--------------------------------------------------------------------------------
+4. PROPOSED FRONTEND FILE TREE (`apps/web`)
+--------------------------------------------------------------------------------
+apps/web/
+  src/
+    app/                  # Router, providers, demo-mode loader, keybindings
+    design-system/        # CSS variable tokens (PRD palette), badges, primitives
+    store/                # Event log store + pure `project(events, upToSeq)`
+    fixtures/             # Golden `.helixlog` recordings (e.g., password-reset)
+    features/
+      shell/              # Sidebar, top bar, 3-pane layout
+      board/              # Derived status columns & task cards
+      plan-graph/         # React Flow + ELK DAG view
+      session/            # Chat, approval cards, xterm terminal, diff & PR tabs
+      timeline/           # Pinned scrubber bar, play/pause, event ticks & filters
+      why-panel/          # Intent -> Reasoning -> `causedBy` causal chain view
+      inbox/              # "Needs you" human intervention queue
+      new-task/           # New task modal with "let orchestrator plan it" toggle
+================================================================================
