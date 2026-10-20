@@ -1,1 +1,12 @@
-export const PACKAGE_NAME = '@helix/contracts';
+export const HELIX_CONTRACTS_VERSION = 1;
+export * from './ids.js';
+export * from './entities.js';
+export * from './events.js';
+export * from './projection.js';
+export * from './status.js';
+export * from './causality.js';
+export * from './api.js';
+export * from './interfaces.js';
+export * from './errors.js';
+export * from './recording.js';
+export * as fixtures from './fixtures/index.js';
