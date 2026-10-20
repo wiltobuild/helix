@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "format": "prettier --write src README.md package.json tsconfig.json vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project @helix/daemon",
@@ -14,6 +15,10 @@
     "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/daemon"
   },
   "dependencies": {
+    "fastify": "5.12.5",
+    "@fastify/websocket": "11.3.3",
+    "@fastify/static": "10.1.5",
+    "zod": "4.6.5",
     "@helix/contracts": "workspace:*",
     "@helix/storage": "workspace:*",
     "@helix/core": "workspace:*",
@@ -24,6 +29,8 @@
     "@helix/api-client": "workspace:*"
   },
   "devDependencies": {
+    "ws": "8.22.0",
+    "@types/ws": "8.18.2",
     "@helix/testing": "workspace:*"
   }
 }
