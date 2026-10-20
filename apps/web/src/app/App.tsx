@@ -8,6 +8,7 @@ import { Sidebar } from './Sidebar';
 import { Board } from './Board';
 import { TimelineBar } from './TimelineBar';
 import { Inspector } from './Inspector';
+import { PlanView } from './PlanView';
 import s from './App.module.css';
 
 export function App() {
@@ -16,10 +17,8 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState('board');
 
-  const cards = useMemo(
-    () => boardCards(run.state, run.bySeq, run.current.ts),
-    [run.state, run.bySeq, run.current.ts],
-  );
+  const { state, bySeq, current } = run;
+  const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
   const needsYou = cards.filter((c) => c.column === 'needs_you');
   const selectedSession = selected
     ? run.state.sessions[selected as keyof typeof run.state.sessions]
@@ -83,9 +82,7 @@ export function App() {
           {view === 'board' ? (
             <Board cards={cards} selected={selected} onSelect={setSelected} columns={COLUMNS} />
           ) : (
-            <div className={s.placeholder}>
-              Plan graph lands next — the board shows the same run.
-            </div>
+            <PlanView state={run.state} selected={selected} onSelect={setSelected} />
           )}
         </div>
 
