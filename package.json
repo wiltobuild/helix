@@ -1,0 +1,32 @@
+{
+  "name": "helix",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "pnpm boundaries && turbo run typecheck build",
+    "typecheck": "tsc --noEmit && turbo run typecheck",
+    "lint": "eslint \"*.mjs\" \"scripts/**/*.mjs\" \"vitest.config.ts\" --max-warnings 0 && turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "boundaries": "node scripts/check-boundaries.mjs",
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.19.1",
+    "dependency-cruiser": "17.4.3",
+    "eslint": "9.39.5",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "turbo": "2.11.7",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "4.1.11"
+  }
+}
