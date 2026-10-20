@@ -7,5 +7,6 @@ export * from './status.js';
 export * from './causality.js';
 export * from './api.js';
 export * from './interfaces.js';
+export * from './errors.js';
 export * from './recording.js';
 export * as fixtures from './fixtures/index.js';
