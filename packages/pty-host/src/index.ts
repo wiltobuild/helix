@@ -1,1 +1,2 @@
-export const PACKAGE_NAME = '@helix/pty-host';
+export { NodePtyHost } from './host.js';
+export type { NodePtyHostOptions, PtyFactory, PtyProcess } from './host.js';
