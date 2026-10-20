@@ -1,0 +1,205 @@
+# @helix/contracts — draft v1
+
+Browser-safe shared contracts for the Helix daemon, CLI, adapters, UI and offline
+replay. Import only `@helix/contracts`; fixtures are the `fixtures` namespace on
+that entry. No workspace dependencies, I/O, clock reads, or random ID generation.
+
+```ts
+import { fixtures, parseEvent, projectUpTo, deriveStatus } from '@helix/contracts';
+
+const result = parseEvent(fixtures.passwordResetRun[0]);
+if (result.success) console.log(result.data.type);
+const state = projectUpTo(fixtures.passwordResetRun, 44);
+const api = state.sessions[fixtures.passwordResetIds.api];
+if (api) console.log(deriveStatus(api)); // merged
+```
+
+## Public API
+
+- IDs: `ProjectId`, `SessionId`, `PlanId`, `PlanNodeId`, `ApprovalId`, `EventSeq`,
+  `PullRequestNumber`, and corresponding lower-camel `*Schema` validators.
+- Entities and schemas: `Project`, `KnownAgentKind`, `AgentKind`, `SessionRole`,
+  `SessionInterface`, `Session`, `AgentActivity`, `PullRequestFacts`, `CheckSummary`,
+  `ReviewSummary`, `Plan`, `PlanNode`, `Approval`, `ApprovalDecision`, `ChatItem`.
+  Shared validators: `timestampSchema`, `countSchema`, `planNodesSchema`.
+- Events: `EventType`, `HelixEvent<T = EventType>`, `PayloadFor<T>`,
+  `UnsequencedEvent`, `ParseEventResult`, `eventTypeSchema`, `eventSchemas`,
+  `helixEventSchema`, `parseEvent`, `isEventOf`.
+- Projection/status: `ProjectState`, `SessionState`, `Worktree`, `WorktreeState`,
+  `applyEvent`, `projectUpTo`, `DisplayStatus`, `BoardColumn`, their schemas,
+  `deriveStatus`, `boardColumn`, `whyChain`, `rationaleFor`.
+- HTTP/transport: `routes`, `RouteName`, `toJsonSchema`, `routeJsonSchemas`,
+  `sse`, `backfill`, `HarnessInfo`, `HealthResponse`, `HarnessesResponse`,
+  `ProjectsResponse`, `CreateProjectRequest`, `CreateSessionRequest`,
+  `MessageMode`, `SendMessageRequest`, `ApprovalDecisionRequest`,
+  `SubmitPlanRequest`, `ExplainRequest`, `AcceptedResponse`, `MergeResponse`,
+  `DiffScope`, `DiffFile`, `DiffResponse`, `EventsResponse`, `EventsQuery`,
+  `SseQuery`, `SseMessage`, `TerminalInput`, `TerminalOutput`, `TerminalMessage`,
+  `ErrorCode`, `ApiError`, `RecordingImportRequest`, `RecordingImportResponse`,
+  and corresponding schemas; `cursorStringSchema`, `idempotencyHeadersSchema`,
+  `sseHeadersSchema`.
+- Adapters (types only): `Unsubscribe`, `HarnessEmissionType`, `HarnessEmission`,
+  `HarnessStartOptions`, `AgentHarness`, `HarnessSession`, `WorktreeManager`,
+  `OpenPrOptions`, `MergePrOptions`, `ScmEmissionType`, `ScmEmission`,
+  `ScmObserver`, `EventStore`.
+- Recording: `HelixlogHeader`, `Helixlog`, `HelixlogParseResult`,
+  `helixlogHeaderSchema`, `helixlogSchema`, `parseHelixlog`, `serializeHelixlog`.
+- `fixtures`: `passwordResetRun`, `passwordResetProject`, `passwordResetPlan`,
+  `passwordResetIds`, `passwordResetMilestones`.
+
+## Status precedence
+
+First matching rule wins. The agent's active repair takes precedence over a
+failed check or requested changes. A failed activity probe is `unknown`, not exit.
+
+| Priority | Condition | Status | Board column |
+| --- | --- | --- | --- |
+| 1 | Session archived | archived | archive |
+| 2 | PR merged | merged | archive |
+| 3 | Pending approval, waiting_input, or blocked | needs_you | needs_you |
+| 4 | active or starting | working | working |
+| 5 | Open PR with failed checks | ci_failed | in_review |
+| 6 | Open PR with changes_requested review | changes_requested | in_review |
+| 7 | Open PR, total > 0, all passed, none pending, approved/none review, mergeable | ready_to_merge | ready_to_merge |
+| 8 | Other open PR | in_review | in_review |
+| 9 | exited without open PR | exited | archive |
+| 10 | Everything else, including unknown without PR | pending | pending |
+
+`plans[*].nodeStatus` is a recomputed projection cache, never an event or persisted
+source of truth. Draft PRs and unresolved-thread counts do not add gates in the
+specified v1 precedence; Claude should review this before freezing the contract.
+
+## Event and replay decisions
+
+- IDs are branded at parsing boundaries. String IDs accept 1–64 characters;
+  numeric IDs are positive safe integers. Sequence cursors may be zero. SHA fields
+  are nonempty strings so adapters are not coupled to one Git hash length.
+- `AgentKind` accepts future nonempty strings. `knownAgentKindSchema` lists current
+  capabilities. Consumers must use capability detection and a fallback label for
+  an unknown agent; widening this list does not invalidate older readers.
+- Schemas reject unknown object fields except HTTP headers. UTC timestamps require
+  `Z`. Event payload versions other than `v: 1` are rejected.
+- `eventSchemas[type]` validates a full envelope;
+  `eventSchemas[type].shape.payload` validates its payload. `parseEvent` returns
+  Zod's `{ success, data | error }` result. `isEventOf` narrows already-typed events.
+- Lifecycle payloads: `project.added: {project}`, `session.created: {session}`,
+  `session.started: {}`, `session.archived: {}`, `session.exited: {code, signal?}`.
+  A null exit code means no numeric exit code was available. Start changes activity
+  to `starting`; a separate activity event reports `active`.
+- Chat tool calls use `inputSummary`, `outputSummary?`, and
+  `status: pending | running | succeeded | failed`. `plan_update` carries
+  `{planId, nodeId?, text}`. Questions carry string options. These are summaries,
+  not raw tool input/output or hidden reasoning.
+- `applyEvent` requires one project's ordered history beginning with
+  `project.added`. It throws for missing references, duplicate/reversed seqs or
+  mixed projects. Global daemon seq gaps are valid. `projectUpTo` sorts a copy,
+  includes events through the cursor, and throws for empty/before-genesis prefixes.
+  The caller must select a project before replaying a global SSE stream.
+- Events changing a session's activity, chat, worktree or PR need `sessionId` for
+  projection. Approval and plan events can resolve ownership from their payloads.
+  Envelope validation is structural; referential integrity requires prior history.
+- New sessions have `unknown` activity. Unstarted plan nodes show `pending`.
+  Session creation and `plan.node_updated` associate sessions with plan nodes.
+  `reasoning.summary`, approvals, routed feedback, plan updates and explain notes
+  appear in projected chat. Emit these semantic events once; emitting an additional
+  equivalent `chat.item` intentionally produces another chat entry.
+- Approval decisions clear the pending ID and use event time for `decidedAt`.
+  They do not imply that a waiting/blocked agent resumed: emit `activity.changed`.
+  PR merges preserve branch `headSha`; `mergeSha` remains in the event log.
+- All projections are detached clones. No input events or prior states are mutated.
+  Terminal bytes are excluded; markers update last-event position only.
+- `whyChain` returns target first, then parents, including the root; it stops at a
+  missing parent, cycle or 50 events. `rationaleFor` returns undefined if absent.
+- Check counts partition total. Plan submission validates unique node IDs,
+  unique/known dependencies, and an acyclic graph. These semantic checks require
+  Zod in addition to the generated structural JSON Schema.
+
+## HTTP and adapter decisions
+
+- The route table contains 18 entries with method/path, request/response schemas,
+  success status, and params/query/headers where applicable. No-body HTTP requests
+  normalize to `{}`. Every failure uses `apiErrorSchema`.
+- Health returns `{status:'ok', version}`; `/api/harnesses` returns the harness
+  array. Create operations return the created entity. Message/stop return
+  `{accepted:true}` with 202. Archive/approval return the updated entity. Merge
+  returns `{mergeSha}`. Explain returns the appended `explain.note` envelope.
+- Query/header values are wire strings. Headers must be normalized to lowercase.
+  Session creation requires `idempotency-key`; the daemon owns key scoping,
+  retention, and request fingerprint validation.
+- Backfill `since` is exclusive (default 0), `limit` defaults to 100 with max 1000.
+  `lastSeq` means the final returned event seq, or requested since for an empty
+  page. It is not the daemon high-water mark; this prevents skipped pages.
+- SSE is `/api/events`, optionally filtered by `projectId`, with `since` fallback.
+  `Last-Event-ID` takes precedence. Frames use `id: <seq>`, `event: helix`, and
+  JSON event data; a comment heartbeat is sent every 15 seconds. `sseMessageSchema`
+  describes a decoded frame and validates id/data agreement.
+- Diff scope is required; a diff contains `unifiedDiff` and file entries with path,
+  optional oldPath, status, insertions/deletions, and binary flag.
+- WebSocket `/mux?sessionId=` has separate input and output unions. Data is UTF-8
+  text, including terminal escape sequences. Resize dimensions are positive
+  integers; exit code may be null when unavailable.
+- `routeJsonSchemas()` generates JSON Schema draft 2020-12 via Zod's native export.
+  Refinements (count sums, DAGs, SSE id equality, cursor numeric bounds) are not
+  representable there; handlers must also validate with the Zod schemas.
+- `HarnessEmission` and `ScmEmission` carry `{type,payload}` without sequence,
+  clock or storage concerns. The daemon supplies envelope metadata. `watch` keeps
+  the two required arguments and accepts an optional event callback.
+- `EventStore.append` uses a distributive `UnsequencedEvent` rather than plain
+  `Omit<HelixEvent,'seq'>` to retain discriminant/payload correlation. Append is
+  atomic. Subscribe catches up and switches to live delivery without gaps.
+- Worktree removal's only force option is the literal `false`, and adapters must
+  reject dirty tracked, staged and untracked files. SCM merge uses expectedHeadSha
+  to guard against merging a branch that changed after validation.
+
+## Recordings
+
+Import/export bodies use raw UTF-8 JSON Lines (`application/x-helixlog`). The first
+line is the header; later lines are events. `parseHelixlog` is nonthrowing and
+reports a one-based line on failure. CRLF, a BOM, and an optional trailing newline
+are supported. Blank interior lines are rejected. A recording requires matching
+project genesis and increasing project-local event subsequences; gaps are valid.
+`serializeHelixlog({header, events})` validates and writes one trailing newline.
+It throws ZodError for invalid input. Neither function performs redaction or I/O.
+Recordings preserve original seqs; import conflict/remapping policy belongs to
+the daemon and recorder implementation, not this pure format layer.
+
+## Verification and integration
+
+Run in this directory:
+
+```sh
+pnpm install --ignore-workspace
+pnpm typecheck
+pnpm test
+```
+
+On this Windows host, use `pnpm.cmd` because PowerShell script execution is
+disabled. Package-local `.npmrc` keeps pnpm's content store inside this package;
+the store, node_modules and package lockfile are ignored. Remove or reconcile the
+local store setting when integrating with the shared scaffold if appropriate.
+
+Pinned versions: Zod 4.6.5 (2026-09-13), TypeScript 5.9.3 (2025-09-30),
+Vitest 4.1.11 (2026-08-18), verified against npm publication metadata on
+2026-10-20. Native JSON Schema export avoids a second runtime dependency.
+
+Tests cover every event payload, malformed envelopes, 53 precedence rows, all
+column mappings, four compact state snapshots, all-prefix live/replay equality,
+immutability, causality cycles/depth, recording errors and round trips, transport
+validation, JSON Schema generation, and source import boundaries. The import
+boundary check is the brief's grep-test alternative, not a real browser bundle.
+Snapshots retain board, chat, PR, worktree, approval and plan status facts.
+
+Root lint/format/workspace checks are deferred until the scaffold is rebased.
+No adapter, network, storage, process management or actual redaction is implemented
+in this pure contracts package.
+
+## Review questions before freezing
+
+1. Should draft PRs or approved reviews with unresolved threads prevent
+   `ready_to_merge`? The current implementation follows the requested precedence.
+2. Does `CheckSummary.total` count only passed/failed/pending checks, with skipped
+   and neutral checks normalized by the SCM adapter? Current validation assumes so.
+3. Should importing a recording be replay-only, or copy into the live daemon log
+   with ID/sequence/causality remapping? Current wire format preserves originals.
+4. Confirm chosen health/lifecycle/chat shapes, success responses, paging semantics,
+   and plan graph validation before the downstream agents depend on them.
