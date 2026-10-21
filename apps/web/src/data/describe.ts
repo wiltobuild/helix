@@ -108,7 +108,7 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
     case 'worktree.created':
       return `${who} got its own branch, ${e.payload.branch}.`;
     case 'worktree.diff_updated':
-      return `${who} changed ${e.payload.filesChanged} files (+${e.payload.insertions} −${e.payload.deletions}).`;
+      return `${who} changed ${e.payload.filesChanged} ${e.payload.filesChanged === 1 ? 'file' : 'files'} (+${e.payload.insertions} −${e.payload.deletions}).`;
     case 'pr.opened':
       return `${who} opened PR #${e.payload.pr.number}.`;
     case 'pr.updated':

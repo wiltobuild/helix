@@ -150,7 +150,7 @@ export function Inspector({
               <>
                 <dt>Changes</dt>
                 <dd className={s.mono}>
-                  {session.worktree.diff.filesChanged} files{' '}
+                  {plural(session.worktree.diff.filesChanged, 'file')}{' '}
                   <span className={s.add}>+{session.worktree.diff.insertions}</span>{' '}
                   <span className={s.del}>−{session.worktree.diff.deletions}</span>
                 </dd>
@@ -256,6 +256,8 @@ export function Inspector({
     </aside>
   );
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 function reviewLabel(d: string) {
   return d === 'approved'
@@ -403,7 +405,7 @@ function FilesPanel({
                         : undefined
                 }
               >
-                {line + '\n'}
+                {line || ' '}
               </span>
             ))}
           </pre>
