@@ -345,6 +345,33 @@ export class GitWorktreeManager implements GitService {
       return this.headSha(path);
     });
   }
+  /** Fetches origin/<branch> and returns its SHA; never touches the local branch or working tree. */
+  async fetchBase(repoPath: string, branch: string): Promise<string> {
+    ref(branch);
+    return this.locked(repoPath, async () => {
+      if (!(await this.remoteUrl(repoPath))) {
+        return (
+          await this.git(repoPath, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+        ).trim();
+      }
+      await this.git(
+        repoPath,
+        ['fetch', '--no-tags', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
+        {
+          GIT_TERMINAL_PROMPT: '0',
+          GCM_INTERACTIVE: 'Never',
+          GIT_SSH_COMMAND: 'ssh -oBatchMode=yes',
+        },
+      );
+      return (
+        await this.git(repoPath, [
+          'rev-parse',
+          '--verify',
+          `refs/remotes/origin/${branch}^{commit}`,
+        ])
+      ).trim();
+    });
+  }
   async push(path: string, branch: string): Promise<void> {
     ref(branch);
     await this.locked(path, async () => {

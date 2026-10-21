@@ -149,6 +149,7 @@ export class FakeGit implements GitService {
   markTurn = vi.fn<GitService['markTurn']>(() => Promise.resolve());
   commitAll = vi.fn<GitService['commitAll']>(() => Promise.resolve('commit-1'));
   push = vi.fn<GitService['push']>(() => Promise.resolve());
+  fetchBase = vi.fn<GitService['fetchBase']>(() => Promise.resolve('base-1'));
   create = vi.fn<GitService['create']>((projectId, sessionId, ...args) =>
     Promise.resolve({
       branch: `helix/${args[1]?.slug ?? sessionId}`,
