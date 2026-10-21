@@ -6,7 +6,19 @@ Only `@helix/contracts` is needed from another workspace package.
 
 - `create(projectId, sessionId, base?, options?: WorktreeCreateOptions): Promise<Worktree>`
   defaults an omitted/empty base to the project's default branch. Slugs are
-  normalized and collisions get an eight-character suffix. Git never fetches.
+  normalized and collisions get an eight-character suffix. Accepts a commit SHA
+  as well as a ref; creation itself does not fetch.
+- `fetchBase(repoPath, branch): Promise<string>` fetches the exact branch into
+  `refs/remotes/origin/<branch>` under the shared repository lock, with credential
+  prompts disabled. Returns that commit SHA without moving local branches,
+  changing the index, or touching working files. The explicit refspec works even
+  with a custom remote fetch mapping. Pass this SHA to `create` for fresh bases.
+  Without origin, resolves `refs/heads/<branch>` and reports a `LocalBaseFallback`
+  through the optional `onBaseFallback(result)` constructor callback, or
+  `console.info` by default. The result contains `source: 'local'`, `repoPath`,
+  `branch`, `sha`, and `reason: 'no-origin'`. Diagnostic callback failures are
+  isolated. Fetch/resolution failures include branch context and Git diagnostics
+  in a `HelixError`; a failed fetch never silently returns a stale tracking ref.
 - `diff(path, scope): Promise<DiffResponse>` uses the creation SHA for `workspace`,
   the current base's merge-base with HEAD for `pr`, and a saved snapshot for
   `last_turn`. Untracked files appear as added. Binary counts are zero and the

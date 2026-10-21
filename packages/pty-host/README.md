@@ -20,6 +20,44 @@ are optional test seams; default tests do not load native code.
 - `flush(): Promise<void>` drains log writes and reports disk failures.
 - `close(): Promise<void>` kills live terminals and flushes logs.
 
+Windows commands are resolved against cwd and PATH using PATHEXT (environment
+keys are case-insensitive). Native `.exe`, then `.com`, candidates are preferred
+across PATH over shims; remaining extensions follow PATHEXT order. Absolute
+paths pass through resolution. Non-Windows command/argument handling is unchanged.
+The package exports these helpers for other permitted consumers, including core:
+
+- `resolveExecutable(command: string, options?: ExecutableOptions): Promise<string>`
+- `resolveTerminalCommand(command: string, args: string[], options?: ExecutableOptions): Promise<TerminalCommand>`
+
+`ExecutableOptions` accepts `cwd`, `env`, and test seams `platform` and
+`isFile(path): Promise<boolean>`. `TerminalCommand` contains `command` and
+`args: string[] | string`. Native launches retain their argument array. Batch
+launches use `cmd.exe /d /s /v:off /c` and a **verbatim string** command line for
+node-pty. Do not convert that string back to an argv array: node-pty would apply
+native quoting a second time. `PtyFactory` now accepts either argument form.
+
+Batch escaping first quotes each native argv element, doubling backslashes before
+quotes and the closing quote. It then caret-escapes shell metacharacters twice:
+once for the outer `/c` parse and once for a CLI shim forwarding `%*` to its child.
+This preserves spaces, literal quotes, `& | < > ^ % !`, empty strings, and trailing
+backslashes. `/v:off` disables delayed expansion; `/d` disables AutoRun commands.
+The approach follows the two-pass model documented in
+[cross-spawn's launcher](https://github.com/moxystudio/node-cross-spawn/blob/master/lib/parse.js).
+The command path is escaped for the outer pass. The supported batch interface is
+a normal `%*` forwarding CLI shim; arbitrary scripts that re-expand arguments with
+`CALL` or enable delayed expansion can change them. Batch arguments containing
+NUL or CR/LF are rejected with `INVALID_REQUEST`, since these cannot be transported
+verbatim through this command-line interface.
+
+Startup is tracked before asynchronous log setup and command resolution. A stop
+before native creation cancels the launch. After native creation, stop waits for
+a positive PID or native exit before calling tree teardown; PID zero never reaches
+`killProcessTree`. Startup and exit waits each default to five seconds, configurable
+with `shutdownTimeoutMs`. A timeout is `INTERNAL_ERROR`, keeps an unconfirmed live
+terminal visible, and permits a kill retry; it never reports successful cleanup.
+`close()` cancels pending launches, waits for live teardown, and permanently rejects
+new spawns. Successful `kill()` waits for native exit and log completion.
+
 Output retains ANSI and CRLF unchanged. Scrollback is bounded in UTF-8 bytes and
 never begins inside a UTF-8 character. Logs append raw bytes to
 `<dataDir>/terminals/<sessionId>.log`; `.log.1` retains the previous rotation.
@@ -44,6 +82,7 @@ not rediscovered; logs remain on disk but are not replayed on startup. The host
 does not emit HelixEvents; the core owns session lifecycle event persistence.
 
 Set `HELIX_E2E=1` to enable the real Node/PTY suite, including stdin, resize,
-exit codes, raw log rotation, and child/grandchild termination. Unix termination
+exit codes, raw log rotation, hostile arguments through `.cmd` and `.bat` shims,
+immediate startup stops, and child/grandchild termination. Unix termination
 is not an OS containment boundary for processes that deliberately escape while
 being enumerated. CI must exercise both Windows and Linux native paths.

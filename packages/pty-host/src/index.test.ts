@@ -44,7 +44,7 @@ class FakePty implements PtyProcess {
   }
 }
 const id = sessionIdSchema.parse('test');
-const options = { command: 'node', args: ['-e', 'script'], cwd: process.cwd() };
+const options = { command: process.execPath, args: ['-e', 'script'], cwd: process.cwd() };
 let root: string;
 let host: NodePtyHost;
 let pty: FakePty;
@@ -64,7 +64,7 @@ test('resizes before output and writes input without stripping ANSI', async () =
   host = new NodePtyHost({ dataDir: root, spawnPty: spawn, killTree: () => Promise.resolve() });
   await host.spawn(id, { ...options, env: { HELIX_TEST: 'yes' }, cols: 90, rows: 30 });
   expect(spawn).toHaveBeenCalledWith(
-    'node',
+    process.execPath,
     ['-e', 'script'],
     expect.objectContaining({
       cols: 90,
@@ -186,6 +186,81 @@ test('rejects duplicate, invalid and unknown sessions using HelixError', async (
   const spawning = host.spawn(id, options);
   await expect(host.spawn(id, options)).rejects.toMatchObject({ code: 'CONFLICT' });
   await spawning;
+});
+test('kill waits for a delayed PID and removes the terminal from list', async () => {
+  pty.pid = 0;
+  const killTree = vi.fn(() => Promise.resolve());
+  host = new NodePtyHost({ dataDir: root, spawnPty: () => pty, killTree });
+  await host.spawn(id, options);
+  const killing = host.kill(id);
+  expect(killTree).not.toHaveBeenCalled();
+  setTimeout(() => {
+    pty.pid = 24680;
+  }, 30);
+  await killing;
+  expect(killTree).toHaveBeenCalledExactlyOnceWith(24680);
+  expect(pty.kill).toHaveBeenCalledOnce();
+  expect(host.list()).toEqual([]);
+});
+test('kill before native creation cancels the pending spawn', async () => {
+  const spawnPty = vi.fn(() => pty);
+  host = new NodePtyHost({ dataDir: root, spawnPty });
+  const spawning = host.spawn(id, options);
+  await host.kill(id);
+  await spawning;
+  expect(spawnPty).not.toHaveBeenCalled();
+  expect(host.list()).toEqual([]);
+});
+test('close cancels pending startup and rejects new spawns', async () => {
+  const spawnPty = vi.fn(() => pty);
+  host = new NodePtyHost({ dataDir: root, spawnPty });
+  const spawning = host.spawn(id, options);
+  await host.close();
+  await spawning;
+  expect(spawnPty).not.toHaveBeenCalled();
+  await expect(host.spawn(id, options)).rejects.toMatchObject({ code: 'CONFLICT' });
+});
+test('close waits for a native startup with PID zero', async () => {
+  pty.pid = 0;
+  const killTree = vi.fn(() => Promise.resolve());
+  host = new NodePtyHost({ dataDir: root, spawnPty: () => pty, killTree });
+  await host.spawn(id, options);
+  const closing = host.close();
+  setTimeout(() => {
+    pty.pid = 24680;
+  }, 30);
+  await closing;
+  expect(killTree).toHaveBeenCalledExactlyOnceWith(24680);
+  expect(host.list()).toEqual([]);
+});
+test('startup timeout is bounded and does not falsely report successful termination', async () => {
+  pty.pid = 0;
+  pty.kill = vi.fn();
+  const killTree = vi.fn(() => Promise.resolve());
+  host = new NodePtyHost({ dataDir: root, spawnPty: () => pty, killTree, shutdownTimeoutMs: 30 });
+  await host.spawn(id, options);
+  await expect(host.kill(id)).rejects.toMatchObject({
+    code: 'INTERNAL_ERROR',
+    message: expect.stringContaining('startup timed out') as unknown,
+  });
+  expect(killTree).not.toHaveBeenCalled();
+  expect(host.list()).toEqual([id]);
+  // A later native connection can still be stopped on retry.
+  pty.pid = 24680;
+  pty.kill = vi.fn(() => pty.exit(0));
+  await host.kill(id);
+  expect(host.list()).toEqual([]);
+});
+test('native startup failure exits without sending PID zero to tree teardown', async () => {
+  pty.pid = 0;
+  const killTree = vi.fn(() => Promise.resolve());
+  host = new NodePtyHost({ dataDir: root, spawnPty: () => pty, killTree });
+  await host.spawn(id, options);
+  const killing = host.kill(id);
+  pty.exit(1);
+  await killing;
+  expect(killTree).not.toHaveBeenCalled();
+  expect(host.list()).toEqual([]);
 });
 test('isolates throwing listeners and releases failed spawn reservation', async () => {
   const errors = vi.fn();

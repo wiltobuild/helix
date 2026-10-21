@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -36,6 +36,52 @@ describe.skipIf(process.env.HELIX_E2E !== '1')('real Node 24 PTY', () => {
     const target = resolve(root);
     if (!target.startsWith(resolve(tmpdir()) + sep)) throw new Error('Unsafe cleanup');
     await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }, 30_000);
+  test.skipIf(process.platform !== 'win32').each(['cmd', 'bat'])(
+    'resolves a PATH .%s shim and delivers hostile arguments verbatim',
+    async (extension) => {
+      const bin = join(root, 'bin & tools');
+      await mkdir(bin);
+      const shim = join(bin, `helix-cli.${extension}`);
+      const script = join(root, 'arguments.cjs');
+      const result = join(root, 'arguments.json');
+      await writeFile(
+        script,
+        "require('node:fs').writeFileSync(process.argv[2],JSON.stringify(process.argv.slice(3)));",
+      );
+      await writeFile(shim, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+      const args = [
+        'spaces and "quotes" & | < > ^ %PATH% !HELIX_TEST!',
+        '',
+        'trailing\\',
+        'slashes\\\\"quoted',
+        '& echo INJECTED > injected.txt &',
+        '100% ! ^ ( ) [ ] ; , * ?',
+      ];
+      let exited = false;
+      host.onExit(() => {
+        exited = true;
+      });
+      await host.spawn(id, {
+        command: 'helix-cli',
+        args: [result, ...args],
+        cwd: root,
+        env: { PATH: bin, PATHEXT: '.CMD;.EXE;.COM;.BAT', HELIX_TEST: 'must not expand' },
+      });
+      await until(() => exited);
+      expect(JSON.parse(await readFile(result, 'utf8'))).toEqual(args);
+      await expect(readFile(join(root, 'injected.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+    },
+    30_000,
+  );
+  test('immediate stop during native startup leaves no running terminal', async () => {
+    await host.spawn(id, {
+      command: process.execPath,
+      args: ['-e', 'setTimeout(()=>process.exit(0),10000);setInterval(()=>{},1000)'],
+      cwd: root,
+    });
+    await host.kill(id);
+    expect(host.list()).toEqual([]);
   }, 30_000);
   test('prints, replays, accepts stdin, resizes before output, and exits with code', async () => {
     const messages: TerminalOutput[] = [];

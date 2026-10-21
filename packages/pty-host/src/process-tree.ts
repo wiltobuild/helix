@@ -63,8 +63,12 @@ export async function killProcessTree(pid: number): Promise<void> {
         /* Preserve the kill failure. */
       }
     }
-    throw new HelixError('INTERNAL_ERROR', 'Unable to terminate terminal process tree.', {
-      reason: error instanceof Error ? error.message : String(error),
-    });
+    throw new HelixError(
+      'INTERNAL_ERROR',
+      `Unable to terminate terminal process tree (${pid}): ${error instanceof Error ? error.message : String(error)}`,
+      {
+        reason: error instanceof Error ? error.message : String(error),
+      },
+    );
   }
 }
