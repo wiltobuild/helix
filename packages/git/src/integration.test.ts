@@ -66,6 +66,62 @@ describe.skipIf(process.env.HELIX_E2E !== '1')('real Git', () => {
     if (!target.startsWith(resolve(tmpdir()) + sep)) throw new Error('Unsafe cleanup');
     await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
+  test('fetchBase observes remote advancement while preserving local main, index and files', async () => {
+    const origin = join(root, 'bare origin');
+    await git(root, 'clone', '--bare', repo, origin);
+    const clone = join(root, 'stale clone');
+    await git(root, 'clone', origin, clone);
+    await git(clone, 'config', 'core.autocrlf', 'false');
+    project.repoPath = clone;
+    const oldMain = await git(clone, 'rev-parse', 'refs/heads/main');
+    await writeFile(join(clone, 'tracked.txt'), 'local staged edit\n');
+    await git(clone, 'add', 'tracked.txt');
+    await writeFile(join(clone, 'untracked'), 'keep me\n');
+    const indexPath = await git(
+      clone,
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-path',
+      'index',
+    );
+    const index = await readFile(indexPath);
+    await writeFile(join(repo, 'dependency-api'), 'new API from merged dependency\n');
+    await git(repo, 'add', '.');
+    await git(repo, 'commit', '-m', 'dependency merged');
+    await git(repo, 'push', origin, 'main');
+    const newMain = await git(repo, 'rev-parse', 'HEAD');
+    expect(newMain).not.toBe(oldMain);
+    const base = await manager.fetchBase(clone, 'main');
+    expect(base).toBe(newMain);
+    expect(await git(clone, 'rev-parse', 'refs/remotes/origin/main')).toBe(newMain);
+    expect(await git(clone, 'rev-parse', 'refs/heads/main')).toBe(oldMain);
+    expect(await git(clone, 'symbolic-ref', 'HEAD')).toBe('refs/heads/main');
+    expect(await readFile(indexPath)).toEqual(index);
+    expect(await readFile(join(clone, 'tracked.txt'), 'utf8')).toBe('local staged edit\n');
+    expect(await readFile(join(clone, 'untracked'), 'utf8')).toBe('keep me\n');
+    const tree = await manager.create(projectId, session, base);
+    expect(tree.baseSha).toBe(newMain);
+    expect(await manager.headSha(tree.path)).toBe(newMain);
+    expect(await readFile(join(tree.path, 'dependency-api'), 'utf8')).toBe(
+      'new API from merged dependency\n',
+    );
+  }, 90_000);
+  test('fetchBase uses a reported local fallback when origin is absent', async () => {
+    const reports: unknown[] = [];
+    manager = new GitWorktreeManager({
+      dataDir: root,
+      projects: { getProject: () => Promise.resolve(project) },
+      onBaseFallback: (result) => reports.push(result),
+    });
+    const sha = await manager.fetchBase(repo, 'main');
+    expect(sha).toBe(await manager.headSha(repo));
+    expect(reports).toEqual([
+      { source: 'local', repoPath: repo, branch: 'main', sha, reason: 'no-origin' },
+    ]);
+    await expect(manager.fetchBase(repo, 'missing')).rejects.toMatchObject({
+      code: 'INTERNAL_ERROR',
+    });
+  }, 90_000);
   test('creates unique branches across manager instances and paths with spaces', async () => {
     const second = new GitWorktreeManager({
       dataDir: join(root, 'data dir'),

@@ -32,6 +32,15 @@ export interface GitWorktreeManagerOptions {
   projects: Pick<ProjectIndex, 'getProject'>;
   /** Test seam; production always uses execFile without a shell. */
   runGit?: GitRunner;
+  /** Reports a local-only base when no origin is configured. Defaults to console.info. */
+  onBaseFallback?: (result: LocalBaseFallback) => void;
+}
+export interface LocalBaseFallback {
+  source: 'local';
+  repoPath: string;
+  branch: string;
+  sha: string;
+  reason: 'no-origin';
 }
 type Metadata = { base: string; baseSha: string; sessionId: SessionId };
 
@@ -348,29 +357,55 @@ export class GitWorktreeManager implements GitService {
   /** Fetches origin/<branch> and returns its SHA; never touches the local branch or working tree. */
   async fetchBase(repoPath: string, branch: string): Promise<string> {
     ref(branch);
-    return this.locked(repoPath, async () => {
-      if (!(await this.remoteUrl(repoPath))) {
+    try {
+      return await this.locked(repoPath, async () => {
+        await this.git(repoPath, ['check-ref-format', `refs/heads/${branch}`]);
+        if ((await this.remoteUrl(repoPath)) === undefined) {
+          const sha = (
+            await this.git(repoPath, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+          ).trim();
+          const result: LocalBaseFallback = {
+            source: 'local',
+            repoPath,
+            branch,
+            sha,
+            reason: 'no-origin',
+          };
+          try {
+            if (this.options.onBaseFallback) this.options.onBaseFallback(result);
+            else console.info('Helix: no origin remote; using the local base branch.', result);
+          } catch {
+            // Diagnostic observers cannot turn a successful base resolution into a failure.
+          }
+          return sha;
+        }
+        await this.git(
+          repoPath,
+          ['fetch', '--no-tags', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
+          {
+            GIT_TERMINAL_PROMPT: '0',
+            GCM_INTERACTIVE: 'Never',
+            GIT_SSH_COMMAND: 'ssh -oBatchMode=yes',
+          },
+        );
         return (
-          await this.git(repoPath, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+          await this.git(repoPath, [
+            'rev-parse',
+            '--verify',
+            `refs/remotes/origin/${branch}^{commit}`,
+          ])
         ).trim();
-      }
-      await this.git(
-        repoPath,
-        ['fetch', '--no-tags', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
+      });
+    } catch (error) {
+      throw new HelixError(
+        'INTERNAL_ERROR',
+        `Unable to fetch base branch "${branch}" from origin (or resolve its local fallback).`,
         {
-          GIT_TERMINAL_PROMPT: '0',
-          GCM_INTERACTIVE: 'Never',
-          GIT_SSH_COMMAND: 'ssh -oBatchMode=yes',
+          reason: error instanceof Error ? error.message : String(error),
+          ...(isHelixError(error) ? { git: error.details } : {}),
         },
       );
-      return (
-        await this.git(repoPath, [
-          'rev-parse',
-          '--verify',
-          `refs/remotes/origin/${branch}^{commit}`,
-        ])
-      ).trim();
-    });
+    }
   }
   async push(path: string, branch: string): Promise<void> {
     ref(branch);
