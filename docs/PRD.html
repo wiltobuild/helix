@@ -93,6 +93,11 @@ h3{font-size:22px;letter-spacing:-.01em}
 .need:before{counter-increment:n;content:"N" counter(n);font:500 12px/1 var(--mono);color:var(--a);padding:5px 7px;border:1px solid var(--a);border-radius:5px}
 .need em{font-style:normal;color:var(--muted)}
 
+/* agents in this build */
+.agents{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:18px 20px;display:grid;gap:10px}
+.agents ul{margin:0;padding-left:18px;display:grid;gap:6px;font-size:15px}
+.agents b{font-weight:600}
+
 /* scrubber demo */
 .demo{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .demo-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line);align-items:center}
@@ -282,6 +287,16 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
       <div class="sec-head"><span class="num">02</span><h2>Proposed Solution</h2></div>
       <p class="big"><strong>Helix is a web app that runs on your computer</strong> and coordinates Claude Code and Codex agents working in parallel on your repository. You describe the outcome you want; an orchestrator agent breaks it into tasks, gives each task its own agent and git branch, and carries each one through pull request, CI and merge. Every step is recorded, so Helix can show the plan as a live graph, rewind the whole project to any moment, and explain why each change happened. You can delegate bigger work and merge it with confidence instead of babysitting terminals.</p>
 
+      <div class="agents">
+        <p class="eyebrow">Agents in this build</p>
+        <ul>
+          <li><b>Workers</b>: Claude Code and Codex sessions, one per task, each on its own branch. Built, and verified with a real Codex run.</li>
+          <li><b>Orchestrator</b>: one planner session per goal that submits the structured plan. Being built this week.</li>
+          <li><b>Reviewer</b>: not in this build. Until after the demo, CI results and human review on the pull request are the feedback Helix routes back to workers.</li>
+          <li><b>Helix itself</b> is not an agent. It is the coordinator that validates plans, routes feedback and commits each turn.</li>
+        </ul>
+      </div>
+
       <div class="demo" aria-label="Interactive example of the Helix timeline">
         <div class="demo-top">
           <span class="title">helix · add-password-reset</span>
@@ -350,6 +365,7 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
               <li><span><b>Desktop, mobile or cloud versions.</b> A local web app keeps setup and demos simple.</span></li>
               <li><span><b>Cost and token tracking.</b> Provider numbers are inconsistent, and Agent Orchestrator removed theirs for overstating spend.</span></li>
               <li><span><b>Scheduled automations and team accounts.</b> Single-user, on-demand work only for the MVP.</span></li>
+              <li><span><b>A reviewer agent.</b> CI feedback and human review cover the demo; the reviewer plugs into the same feedback path after the demo.</span></li>
               <li><span><b>Agent bake-off</b> (same task run by both agents and compared). Stretch goal after the demo.</span></li>
             </ul></div>
         </div>
@@ -555,7 +571,7 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
       ['Setting up a project',[[0,'User can add a local git repository as a project.'],[0,'User can see which agents (Claude Code, Codex) are installed and signed in.'],[0,'User can connect GitHub so Helix can open and track pull requests.'],[1,'User can set a default agent and model per project.'],[2,'User can save project rules the agents must follow, such as "ask before migrations".']]],
       ['Delegating work',[[0,'User can describe a task and start it with a chosen agent and model.'],[0,'User can ask the orchestrator to split a larger goal into tasks with dependencies.'],[0,'User can see each task get its own branch and isolated workspace.'],[1,'User can review and edit the proposed plan before agents start.'],[2,'User can start a task from a GitHub issue.']]],
       ['Supervising agents',[[0,'User can see every task on one board grouped by status: working, needs you, in review, ready to merge.'],[0,'User can see a list of everything waiting on them.'],[0,'User can open a task and follow the agent\'s conversation or terminal live.'],[0,'User can answer an agent\'s question or approve or reject an action.'],[1,'User can choose between queuing a follow-up and interrupting the agent.'],[1,'User can stop or archive a task without losing its branch.'],[2,'User can get a browser notification when an agent needs them.']]],
-      ['Shipping the work',[[0,'User can view the changed files for any task, from the workspace or the pull request.'],[0,'User can see pull request, CI and review status for each task.'],[0,'User can rely on Helix to send CI failures back to the agent that owns the branch.'],[0,'User can merge a ready pull request from Helix.'],[1,'User can run a reviewer agent on a pull request and send its findings to the worker.'],[2,'User can resolve review comments from Helix.']]]
+      ['Shipping the work',[[0,'User can view the changed files for any task, from the workspace or the pull request.'],[0,'User can see pull request, CI and review status for each task.'],[0,'User can rely on Helix to send CI failures back to the agent that owns the branch.'],[0,'User can merge a ready pull request from Helix.'],[2,'User can run a reviewer agent on a pull request and send its findings to the worker (after the demo).'],[2,'User can resolve review comments from Helix.']]]
     ]},
     {name:'Developer understanding why the agents did what they did',ctx:'This is what sets Helix apart. We optimize for answering "what happened and why" in seconds, without reading transcripts.',subs:[
       ['Following the plan',[[0,'User can see the orchestrator\'s plan as a graph of tasks and dependencies.'],[0,'User can see each task\'s live status and agent on the graph.'],[0,'User can open a task\'s session by selecting it on the graph.'],[1,'User can read the rationale for each task by hovering or selecting it.']]],
