@@ -1,8 +1,8 @@
 # @helix/core
 
-Domain orchestration implementing the frozen `HelixCore` interface. All workspace
-imports are from `@helix/contracts`; storage, harnesses, Git, SCM and terminal
-implementations are injected. There is no process spawning, network client or
+Domain orchestration implementing the frozen `HelixCore` interface. Domain interfaces come from `@helix/contracts`; storage, harnesses, Git, SCM and terminal
+implementations are injected. Default terminal commands use the public executable
+resolver from `@helix/harness`. There is no process spawning, network client or
 persisted display status in this package.
 
 ## Public API
@@ -23,17 +23,15 @@ for automatic PR shipping, observation, feedback and merge.
 
 Optional composition hooks:
 
-- `harnessStartsWithPrompt(agent: AgentKind): boolean` declares adapters that
-  automatically send a new session's prompt during start. The real daemon enables
-  this for Claude Code and Codex, so core records the initial receipt without a
-  second send. Resumed conversations still use explicit send when needed. Without
-  a resume token, an already-delivered task uses a transient empty start prompt
-  to suppress replay; the persisted Session retains the original prompt. Defaults
-  to false for explicit-send adapters. Contracts need an explicit initial-send seam.
+- `harnessStartsWithPrompt(agent: AgentKind): boolean` is deprecated and ignored
+  for compatibility with existing composition roots. All adapters establish a
+  session without starting a turn. Core sends the initial prompt once, caused by
+  `session.started`, and skips delivery when its persisted receipt exists.
 - `terminalOptions(session: Session): TerminalSpawnOptions` supplies resolved
-  executables, arguments and environment. Defaults are `claude` or `codex`, model
-  arguments when present, the prompt and worktree cwd. The terminal adapter owns
-  platform-specific executable resolution and process-tree termination.
+  executables, arguments and environment. The default resolves `claude` or
+  `codex` through the harness PATH/PATHEXT resolver and passes the absolute command,
+  model arguments, original prompt and worktree cwd to the terminal host. The
+  terminal host owns safe shim launching and process-tree termination.
 - `canReattach(agent: AgentKind): boolean` explicitly allows leaving a chat agent
   running on shutdown, provided a resume token has been captured. Defaults to
   false. A conversation resume token alone does not prove process reattachment.
@@ -43,7 +41,11 @@ The returned object's API is exactly `HelixCore`, including `events` and
 
 ## Behavior and lifecycle
 
-Commands and callbacks share one ordered queue. State is an in-memory projection
+Commands and callbacks share one ordered queue. Pending turns belong to core.
+An interrupt is placed ahead of queued messages and cancels the current turn
+without changing its cause. Core dispatches the next send only after the previous
+turn has completed markTurn, diff, push and PR handling; only dispatch activates
+the new cause. State is an in-memory projection
 of the append-only log, rebuilt with the contracts projector. Call `start()` once
 after construction to reconcile existing sessions and restore PR observation;
 repeated calls are harmless. New commands also initialize the event cache lazily.
@@ -68,7 +70,13 @@ Only worker sessions with GitHub configuration and commits ahead of base ship.
 Every completed repair turn pushes again so the open PR sees the fix. PR merges
 require derived `ready_to_merge` facts and pass the latest observed head SHA to
 SCM using squash merge. Plan node IDs must be unique across the project because
-v1 node events carry a node ID without a plan ID.
+v1 node events carry a node ID without a plan ID. Dependents require recorded
+`pr.merged` events for all prerequisites. Core fetches the remote default branch
+and creates their worktree from the returned SHA, explaining the base and merged
+prerequisites with the unblocking merge as cause. Fetch failure leaves the worker
+without a worktree in `waiting_input`; a later scheduling pass can retry it.
+Merged-state PR snapshots do not unblock workers: core accepts and deduplicates
+the subsequent `pr.merged` with its merge SHA, including after restart.
 
 Automatic feedback is deduped by project, PR, reason and head SHA. Counts rebuild
 from `feedback.routed` events and cap at three per PR/reason. An exhausted reason
@@ -102,7 +110,8 @@ pnpm --filter @helix/core test
 pnpm check
 ```
 
-Use `pnpm.cmd` in Windows PowerShell. Tests use local, contract-typed fakes only:
+Use `pnpm.cmd` in Windows PowerShell. Tests include real adapters over an in-memory
+byte transport, in-memory SQLite, real SCM over fake GitHub, and contract-typed fakes:
 the golden three-node plan, full event sequence, four board checkpoints, causal
 links, replay determinism, idempotency, feedback limits, approvals, safe archival,
 plan validation, recovery and shutdown. No real agents, Git, GitHub or network are

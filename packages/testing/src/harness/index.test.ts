@@ -19,16 +19,25 @@ const message = (text: string): HarnessEmission => ({
 });
 afterEach(() => vi.useRealTimers());
 
-it('plays delayed emissions, queues turns, supports unsubscribe, and stops once', async () => {
+it('starts without a turn, runs explicit sends, supports unsubscribe, and stops once', async () => {
   vi.useFakeTimers();
   const session = await createFakeHarness({
     turns: [[{ delayMs: 100, emission: message('first') }], [{ emission: message('second') }]],
   }).start(options);
   const events: HarnessEmission[] = [];
   const unsubscribe = session.onEvent((event) => events.push(event));
+  await vi.runAllTimersAsync();
+  expect(events).toEqual([
+    { type: 'activity.changed', payload: { activity: 'starting' } },
+    { type: 'activity.changed', payload: { activity: 'idle' } },
+  ]);
   await session.send('next', 'queue');
+  await expect(session.send('too soon', 'queue')).rejects.toMatchObject({ code: 'CONFLICT' });
   await vi.advanceTimersByTimeAsync(99);
   expect(events.filter((event) => event.type === 'chat.item')).toHaveLength(0);
+  await vi.runAllTimersAsync();
+  expect(events.filter((event) => event.type === 'chat.item')).toEqual([message('first')]);
+  await session.send('second', 'queue');
   await vi.runAllTimersAsync();
   expect(events.filter((event) => event.type === 'chat.item')).toEqual([
     message('first'),
@@ -54,6 +63,7 @@ it('interrupts the delayed turn and cancels timers on stop', async () => {
   }).start(options);
   const events: HarnessEmission[] = [];
   session.onEvent((event) => events.push(event));
+  await session.send('first', 'queue');
   await session.send('replace', 'interrupt');
   await vi.runAllTimersAsync();
   expect(events.filter((event) => event.type === 'chat.item')).toEqual([message('replacement')]);
@@ -70,6 +80,7 @@ it('reproduces every API-worker harness emission from the frozen fixture', async
     if (event.type === 'approval.requested')
       void session.decide(event.payload.approval.id, 'approved');
   });
+  await session.send(options.session.prompt, 'queue');
   await vi.runAllTimersAsync();
   for (const step of passwordResetApiScript) expect(events).toContainEqual(step.emission);
   for (const event of events)
@@ -90,6 +101,7 @@ it('pauses for approvals and uses the shared approval interface', async () => {
   ]).start(options);
   const events: HarnessEmission[] = [];
   session.onEvent((event) => events.push(event));
+  await session.send(options.session.prompt, 'queue');
   await vi.runAllTimersAsync();
   expect(events).not.toContainEqual(message('after approval'));
   await session.decide(requested.payload.approval.id, 'approved');

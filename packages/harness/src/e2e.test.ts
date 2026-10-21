@@ -29,6 +29,7 @@ for (const kind of ['claude-code', 'codex'] as const)
         });
         const events: HarnessEmission[] = [];
         session.onEvent((event) => events.push(event));
+        await session.send('Reply with the word ok. Do not use tools.', 'queue');
         await expect
           .poll(
             () =>

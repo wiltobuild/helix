@@ -11,7 +11,6 @@ import {
   deriveStatus,
   projectUpTo,
   type AgentHarness,
-  type HarnessSession,
   type HarnessEmission,
   type HelixEvent,
 } from '@helix/contracts';
@@ -45,14 +44,11 @@ function editingHarness(worktrees: GitWorktreeManager, repair: Promise<void>): A
   return {
     kind: fake.kind,
     detect: () => fake.detect(),
-    start: (options) => {
-      let handle: HarnessSession | undefined;
-      const listeners = new Set<(event: HarnessEmission) => void>();
-      let off: (() => void) | undefined;
+    start: async (options) => {
+      // Establish the session only; core delivers the first prompt with send().
+      const handle = await fake.start(options);
       let turn = 0;
-      return Promise.resolve({
-        // CONTRACT-REQUEST: shared fake starts on start(), whereas core owns the
-        // initial send. Lazily start it on that send to avoid an extra fake turn.
+      return {
         send: async (text, mode) => {
           if (turn > 0) await repair;
           await writeFile(
@@ -60,25 +56,12 @@ function editingHarness(worktrees: GitWorktreeManager, repair: Promise<void>): A
             turn++ === 0 ? 'first change\n' : 'fixed change\n',
           );
           await worktrees.commitAll(options.cwd, turn === 1 ? 'Implement task' : 'Fix CI');
-          if (!handle) {
-            handle = await fake.start(options);
-            off = handle.onEvent((event) => {
-              for (const cb of listeners) cb(event);
-            });
-          } else await handle.send(text, mode);
+          await handle.send(text, mode);
         },
-        onEvent: (cb) => {
-          listeners.add(cb);
-          return () => {
-            listeners.delete(cb);
-          };
-        },
-        interrupt: () => handle?.interrupt() ?? Promise.resolve(),
-        stop: async () => {
-          off?.();
-          await handle?.stop();
-        },
-      });
+        onEvent: (cb) => handle.onEvent(cb),
+        interrupt: () => handle.interrupt(),
+        stop: () => handle.stop(),
+      };
     },
   };
 }
@@ -123,6 +106,17 @@ async function scenario(real: boolean) {
     const harness = real
       ? createHarness('codex', { codexApprovalPolicy: 'never', codexSandbox: 'workspace-write' })
       : editingHarness(worktrees, release.promise);
+    const deliveries: string[] = [];
+    const start = harness.start.bind(harness);
+    vi.spyOn(harness, 'start').mockImplementation(async (options) => {
+      const handle = await start(options);
+      const send = handle.send.bind(handle);
+      vi.spyOn(handle, 'send').mockImplementation((text, mode) => {
+        deliveries.push(text);
+        return send(text, mode);
+      });
+      return handle;
+    });
     if (real) {
       const detected = await harness.detect();
       expect(detected.installed, 'Install Codex before running HELIX_E2E=1').toBe(true);
@@ -135,7 +129,6 @@ async function scenario(real: boolean) {
       worktrees,
       terminals: new NodePtyHost({ dataDir }),
       harnesses: { codex: harness },
-      harnessStartsWithPrompt: () => real,
       ...(!real ? { scm } : {}),
       buildFeedbackMessage,
       clock: () => new Date().toISOString(),
@@ -171,6 +164,7 @@ async function scenario(real: boolean) {
       return events.find(predicate)!;
     };
     await waitFor((e) => e.type === 'activity.changed' && e.payload.activity === 'idle');
+    expect(deliveries).toEqual([request.prompt]);
     expect(events.filter((e) => e.type === 'session.created')).toHaveLength(1);
     const created = events.find((e) => e.type === 'session.created')!;
     const worktree = events.find((e) => e.type === 'worktree.created')!;
@@ -210,6 +204,7 @@ async function scenario(real: boolean) {
       { id: 1, name: 'task test', status: 'completed', conclusion: 'failure' },
     ]);
     const routed = await waitFor((e) => e.type === 'feedback.routed');
+    if (routed.type !== 'feedback.routed') throw new Error('Expected routed repair');
     const failed = events.find((e) => e.type === 'ci.updated' && e.payload.checks.failed === 1)!;
     expect(routed.causedBy).toBe(failed.seq);
     expect(column()).toBe('in_review');
@@ -251,6 +246,7 @@ async function scenario(real: boolean) {
     ]);
     expect(snapshot().anomalies).toEqual([]);
     expect(events.filter((e) => e.type === 'feedback.routed')).toHaveLength(1);
+    expect(deliveries).toEqual([request.prompt, routed.payload.summary]);
     expect(github.requests.some((r) => r.method === 'PUT' && r.path.endsWith('/merge'))).toBe(true);
     expect(log.error).not.toHaveBeenCalled();
   } finally {

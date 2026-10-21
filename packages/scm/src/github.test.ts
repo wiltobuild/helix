@@ -148,7 +148,7 @@ describe('GitHub SCM', () => {
       expect(eventSchemas[event.type].shape.payload.safeParse(event.payload).success).toBe(true);
   });
 
-  test('head changes emit CI even when normalized check counts match', async () => {
+  test('head changes emit CI and reviews even when normalized summaries match', async () => {
     const fake = createFakeGitHub();
     fake.seedPr();
     fake.setChecks(1, [check('failure')]);
@@ -163,7 +163,7 @@ describe('GitHub SCM', () => {
     fake.setPr(1, { head: { sha: 'new', ref: 'feature' } });
     fake.setChecks(1, [check('failure')]);
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(events.map((e) => e.type)).toEqual(['pr.updated', 'ci.updated']);
+    expect(events.map((e) => e.type)).toEqual(['pr.updated', 'ci.updated', 'review.updated']);
   });
 
   test('poll interval returns to 15 seconds after pending checks finish', async () => {

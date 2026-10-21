@@ -56,6 +56,8 @@ async function start(
   sessions.push(session);
   const events: HarnessEmission[] = [];
   session.onEvent((event) => events.push(event));
+  expect(messages(events)).toEqual([]);
+  if (!resumeToken) await session.send(prompt, 'queue');
   return { session, events, cwd };
 }
 function messages(events: HarnessEmission[]): string[] {
@@ -107,13 +109,17 @@ describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) 
     expect(messages(events)).toContain('final without newline');
   }, 30_000);
 
-  it('buffers startup, queues messages in order, and emits exit only after stop', async () => {
+  it('buffers startup, runs one explicit send per turn, and emits exit only after stop', async () => {
     const { session, events } = await start(kind, 'first');
-    await Promise.all([session.send('second', 'queue'), session.send('third', 'queue')]);
+    await expect.poll(() => activities(events).at(-1)).toBe('idle');
+    await session.send('second', 'queue');
+    await expect.poll(() => messages(events)).toEqual(['first', 'second']);
+    await expect.poll(() => activities(events).at(-1)).toBe('idle');
+    await session.send('third', 'queue');
     await expect
       .poll(() => messages(events), { timeout: 5000 })
       .toEqual(['first', 'second', 'third']);
-    expect(activities(events).slice(0, 2)).toEqual(['starting', 'active']);
+    expect(activities(events).slice(0, 3)).toEqual(['starting', 'idle', 'active']);
     expect(activities(events)).not.toContain('exited');
     for (const event of events)
       expect(eventSchemas[event.type].shape.payload.safeParse(event.payload).success).toBe(true);
@@ -122,13 +128,13 @@ describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) 
     await expect(session.send('late', 'queue')).rejects.toMatchObject({ code: 'CONFLICT' });
   }, 20_000);
 
-  it('interrupts before sending replacement, preserving already queued turns', async () => {
+  it('rejects overlapping sends and interrupts before sending a replacement', async () => {
     const { session, events } = await start(kind, 'hold');
-    await session.send('queued', 'queue');
+    await expect(session.send('queued', 'queue')).rejects.toMatchObject({ code: 'CONFLICT' });
     await session.send('replacement', 'interrupt');
     await expect
       .poll(() => messages(events), { timeout: 5000 })
-      .toEqual(['interrupted', 'replacement', 'queued']);
+      .toEqual(['interrupted', 'replacement']);
     expect(activities(events)).not.toContain('exited');
   }, 20_000);
 

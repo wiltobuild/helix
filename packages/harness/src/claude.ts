@@ -58,6 +58,7 @@ export class ClaudeMessages {
 
 export class ClaudeSession extends ProcessSession {
   private messages = new ClaudeMessages();
+  /** Establish the session only. Core delivers the initial prompt with the first send(). */
   static async start(
     bin: string,
     options: HarnessOptions,
@@ -81,9 +82,7 @@ export class ClaudeSession extends ProcessSession {
     try {
       await session.connect(bin, args);
       await session.control({ subtype: 'initialize', hooks: null });
-      if (!start.resumeToken && start.session.prompt.trim())
-        await session.send(start.session.prompt, 'queue');
-      else session.activity('idle');
+      session.activity('idle');
       return session;
     } catch (error) {
       await session.stop();

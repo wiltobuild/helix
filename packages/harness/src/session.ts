@@ -38,14 +38,12 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
   private listeners = new Set<(event: HarnessEmission) => void>();
   private startup: HarnessEmission[] = [];
   private subscribed = false;
-  private queue: string[] = [];
   private launching: Promise<void> = Promise.resolve();
   private operation: Promise<void> = Promise.resolve();
   private requests = new Map<string | number, PendingRequest>();
   private stopPromise?: Promise<void>;
   private exitPromise!: Promise<void>;
   private turnWaiters = new Set<() => void>();
-  private firstOutput = true;
   private lastActivity?: AgentActivity;
 
   constructor(
@@ -69,10 +67,6 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
     const lines = new JsonLines(
       (value) => {
         if (this.stopped) return;
-        if (this.firstOutput) {
-          this.firstOutput = false;
-          this.activity('active');
-        }
         try {
           this.receive(value);
         } catch {
@@ -105,7 +99,6 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
         // CONTRACT-REQUEST: an optional lifecycle callback/emission carrying
         // code + signal is needed for core to append an accurate session.exited.
         this.stopped = true;
-        this.queue = [];
         this.approvals.clear();
         this.rejectRequests('Harness process exited');
         this.wakeTurnWaiters();
@@ -217,33 +210,21 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
       this.ensureOpen();
       if (!text.trim() || (mode !== 'queue' && mode !== 'interrupt'))
         throw new HelixError('INVALID_REQUEST', 'A nonempty message and valid mode are required');
-      if (mode === 'interrupt') {
-        // Hold the queue while waiting for the interrupted turn's terminal notification.
-        const queued = this.queue;
-        this.queue = [];
-        try {
-          await this.interruptCurrent();
-        } finally {
-          this.queue = queued;
-        }
-        this.queue.unshift(text);
-      } else this.queue.push(text);
-      await this.pump();
+      if (mode === 'interrupt') await this.interruptCurrent();
+      // Core owns pending turns and calls send only after previous-turn bookkeeping.
+      // Reject overlapping queue sends instead of silently starting them at an idle boundary.
+      if (this.busy)
+        throw new HelixError('CONFLICT', 'A turn is already running; queue messages in core');
+      this.busy = true;
+      this.activity('active');
+      this.launching = this.beginTurn(text).catch((error: unknown) => {
+        this.busy = false;
+        this.wakeTurnWaiters();
+        this.fail('Could not start harness turn');
+        throw error;
+      });
+      await this.launching;
     });
-  }
-  private pump(): Promise<void> {
-    if (this.busy || this.stopped) return Promise.resolve();
-    const text = this.queue.shift();
-    if (text === undefined) return Promise.resolve();
-    this.busy = true;
-    this.activity('active');
-    this.launching = this.beginTurn(text).catch((error: unknown) => {
-      this.busy = false;
-      this.wakeTurnWaiters();
-      this.fail('Could not start harness turn');
-      throw error;
-    });
-    return this.launching;
   }
   protected completeTurn(): void {
     this.busy = false;
@@ -251,10 +232,6 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
     this.wakeTurnWaiters();
     if (this.stopped) return;
     this.activity('idle');
-    // Let any in-flight turn/start response settle before starting the next turn.
-    void this.launching
-      .then(() => this.pump())
-      .catch(() => this.fail('Queued harness turn failed'));
   }
   private wakeTurnWaiters(): void {
     for (const wake of this.turnWaiters) wake();
@@ -339,7 +316,6 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     this.stopped = true;
-    this.queue = [];
     this.approvals.clear();
     this.rejectRequests('Harness session stopped');
     this.wakeTurnWaiters();

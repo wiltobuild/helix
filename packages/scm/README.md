@@ -14,7 +14,8 @@ and no new runtime dependencies.
 
 Watching starts immediately. Subscribers share one repository/PR poller; a late
 subscriber receives the current snapshot. Initial PR/CI/review facts are emitted,
-then changed facts only. Changed heads emit CI even when check counts match.
+then changed facts only. Changed heads emit CI and review state even when summaries match, so core can
+re-evaluate outstanding feedback with its per-head dedupe and attempt cap.
 Unsubscribing the last listener aborts HTTP and cancels polling. Subscriber
 exceptions and mutations are isolated.
 

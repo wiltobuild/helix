@@ -67,6 +67,7 @@ export function codexItem(value: unknown, completed: boolean): HarnessEmission[]
 export class CodexSession extends ProcessSession {
   private nextId = 1;
   private turnId?: string;
+  /** Establish the session only. Core delivers the initial prompt with the first send(). */
   static async start(
     bin: string,
     options: HarnessOptions,
@@ -92,9 +93,7 @@ export class CodexSession extends ProcessSession {
       const id = string(record(response.thread).id);
       if (!id) throw new HelixError('HARNESS_UNAVAILABLE', 'Codex did not return a thread ID');
       session.resumeToken = id;
-      if (!start.resumeToken && start.session.prompt.trim())
-        await session.send(start.session.prompt, 'queue');
-      else session.activity('idle');
+      session.activity('idle');
       return session;
     } catch (error) {
       await session.stop();

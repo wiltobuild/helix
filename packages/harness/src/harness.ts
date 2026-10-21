@@ -53,6 +53,9 @@ class CliHarness implements AgentHarness {
     }
     return info;
   }
+  /** Connect/initialize without starting a turn; the caller owns initial prompt delivery. */
+  // CONTRACT-REQUEST: document AgentHarness.start as initialization-only and
+  // HarnessSession.send as one explicit turn with caller-owned pending messages.
   async start(options: HarnessStartOptions): Promise<ApprovingHarnessSession> {
     if (options.session.interface !== 'chat')
       throw new HelixError('INVALID_REQUEST', 'Harness adapters support chat sessions only');

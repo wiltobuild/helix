@@ -354,7 +354,7 @@ export function createGitHubScm(options: GitHubScmOptions = {}): ScmObserver {
         payload: { prNumber: facts.number, checks: facts.checks },
       });
     if (!watcher.subscribers.has(subscriber)) return;
-    if (!equal(previous?.review, facts.review))
+    if (!equal(previous?.review, facts.review) || previous?.headSha !== facts.headSha)
       deliver(subscriber, {
         type: 'review.updated',
         payload: { prNumber: facts.number, review: facts.review },

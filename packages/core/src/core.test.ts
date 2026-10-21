@@ -15,7 +15,12 @@ import {
   type SessionId,
 } from '@helix/contracts';
 import { createHelixCore } from './index.js';
+import { resolveExecutable } from '@helix/harness';
 import { FakeHandle, FakeHarness, fixture, green, red, timestamp } from './test-support.js';
+
+vi.mock('@helix/harness', () => ({
+  resolveExecutable: vi.fn(() => Promise.resolve(process.execPath)),
+}));
 
 const request: CreateSessionRequest = {
   title: 'API worker',
@@ -24,19 +29,55 @@ const request: CreateSessionRequest = {
   interface: 'chat',
 };
 
-test('auto-start harnesses get one initial prompt and suppress it after a persisted receipt', async () => {
+test.each(['codex', 'claude-code'])(
+  'terminal %s passes a resolved shim and unchanged prompt arguments',
+  async (agent) => {
+    const f = fixture();
+    const p = await f.add();
+    const resolved = path.resolve('CLI directory', `${agent}.cmd`);
+    vi.mocked(resolveExecutable).mockResolvedValueOnce(resolved).mockResolvedValueOnce(resolved);
+    const prompt = 'Quotes " & | %PATH% !NAME! ^\nsecond line';
+    const s = await f.core.createSession(
+      p.id,
+      { ...request, agent, interface: 'terminal', prompt, model: 'model-1' },
+      'resolved',
+    );
+    expect(resolveExecutable).toHaveBeenLastCalledWith(agent === 'codex' ? 'codex' : 'claude');
+    expect(f.terminals.spawn).toHaveBeenCalledExactlyOnceWith(s.id, {
+      command: resolved,
+      args: ['--model', 'model-1', prompt],
+      cwd: s.worktreePath,
+    });
+  },
+);
+
+test('terminal missing executable fails before creating a worker', async () => {
+  const f = fixture();
+  const p = await f.add();
+  vi.mocked(resolveExecutable).mockResolvedValueOnce(undefined);
+  await expect(
+    f.core.createSession(p.id, { ...request, interface: 'terminal' }, 'missing'),
+  ).rejects.toMatchObject({ code: 'HARNESS_UNAVAILABLE' });
+  expect(f.git.create).not.toHaveBeenCalled();
+  expect(f.terminals.spawn).not.toHaveBeenCalled();
+});
+
+test('core owns initial prompt delivery even with the deprecated auto-start option', async () => {
   const f = fixture({ harnessStartsWithPrompt: () => true });
   const p = await f.add();
   const s = await f.core.createSession(p.id, request, 'auto-start');
   expect(f.harness.start.mock.calls[0]?.[0].session.prompt).toBe(request.prompt);
-  expect(f.harness.handles.get(s.id)!.send).not.toHaveBeenCalled();
+  expect(f.harness.handles.get(s.id)!.send).toHaveBeenCalledExactlyOnceWith(
+    request.prompt,
+    'queue',
+  );
   // A fresh daemon with no usable token must not repeat the already-delivered task.
   f.store.records.clear();
   const started = f.store.events.find((e) => e.type === 'session.started')!;
   await f.store.remember('helix:core:delivered:v1', String(started.seq), 'v1', true);
   const restarted = createHelixCore(f.deps);
   await restarted.start();
-  expect(f.harness.start.mock.calls.at(-1)?.[0].session.prompt).toBe('');
+  expect(f.harness.start.mock.calls.at(-1)?.[0].session.prompt).toBe(request.prompt);
   expect(f.harness.handles.get(s.id)!.send).not.toHaveBeenCalled();
   expect(f.state(p.id).sessions[s.id]!.session.prompt).toBe(request.prompt);
   await restarted.shutdown();
@@ -134,6 +175,29 @@ async function ready(f: Awaited<ReturnType<typeof openWorker>>) {
   });
   await f.drain();
 }
+
+test('a merged snapshot survives restart until the authoritative merge arrives, then dedupes it', async () => {
+  const f = await openWorker();
+  f.scm.emit(f.p.id, f.pr.number, {
+    type: 'pr.updated',
+    payload: { pr: { ...f.pr, state: 'merged' } },
+  });
+  await f.drain();
+  expect(f.store.events.filter((e) => e.type === 'pr.merged')).toHaveLength(0);
+  expect(f.scm.unsubscribe).not.toHaveBeenCalled();
+  const restarted = createHelixCore(f.deps);
+  await restarted.start();
+  expect(f.scm.watch).toHaveBeenCalledTimes(2);
+  for (let i = 0; i < 2; i++)
+    f.scm.emit(f.p.id, f.pr.number, {
+      type: 'pr.merged',
+      payload: { prNumber: f.pr.number, mergeSha: 'external-merge' },
+    });
+  await restarted.health();
+  expect(f.store.events.filter((e) => e.type === 'pr.merged')).toHaveLength(1);
+  expect(f.scm.unsubscribe).toHaveBeenCalledOnce();
+  await restarted.shutdown();
+});
 
 async function golden() {
   const f = fixture();
@@ -235,6 +299,7 @@ test('golden plan → PR → CI repair → approval → merge → dependent work
     'review.updated',
     'pr.merged',
     'session.created',
+    'explain.note',
     'worktree.created',
     'session.started',
     'plan.node_updated',
@@ -320,9 +385,11 @@ test('restart retains feedback and user message mode until approvals and blockin
   expect(handle.send).not.toHaveBeenCalled();
   handle.emit(activity('idle'));
   for (let i = 0; i < 3; i++) await restarted.health();
+  expect(handle.send).toHaveBeenCalledExactlyOnceWith('Prioritize validation', 'queue');
+  handle.emit(activity('idle'));
+  for (let i = 0; i < 3; i++) await restarted.health();
   expect(handle.send).toHaveBeenCalledTimes(2);
-  expect(handle.send.mock.calls[0]?.[1]).toBe('queue');
-  expect(handle.send.mock.calls[1]).toEqual(['Prioritize validation', 'interrupt']);
+  expect(handle.send.mock.calls[1]?.[0]).toContain('Repair ci_failed');
   expect(f.store.events.filter((e) => e.type === 'feedback.routed')).toHaveLength(1);
 });
 
@@ -344,6 +411,11 @@ test('feedback cannot overtake the cause of a user turn already queued at an idl
     payload: { text: 'Second user turn', source: 'agent' },
   });
   handle.emit(activity('idle'));
+  await f.drain(); // Core must dispatch the queued repair before its emissions can arrive.
+  expect(handle.send).toHaveBeenLastCalledWith(
+    expect.stringContaining('Repair ci_failed'),
+    'queue',
+  );
   handle.emit(activity('active'));
   handle.emit({ type: 'reasoning.summary', payload: { text: 'CI repair turn', source: 'agent' } });
   await f.drain();
@@ -452,8 +524,14 @@ describe('feedback delivery', () => {
     await fail(f, 'head-1');
     await fail(f, 'head-1');
     expect(f.store.events.filter((e) => e.type === 'feedback.routed')).toHaveLength(1);
+    f.harness.handles.get(f.s.id)!.emit(activity('idle'));
+    await f.drain();
     await fail(f, 'head-2');
+    f.harness.handles.get(f.s.id)!.emit(activity('idle'));
+    await f.drain();
     await fail(f, 'head-3');
+    f.harness.handles.get(f.s.id)!.emit(activity('idle'));
+    await f.drain();
     await fail(f, 'head-4');
     await fail(f, 'head-4');
     expect(f.store.events.filter((e) => e.type === 'feedback.routed')).toHaveLength(3);
@@ -518,9 +596,12 @@ describe('feedback delivery', () => {
     expect(h.send).toHaveBeenCalledTimes(1);
     h.emit(activity('idle'));
     await f.drain();
+    expect(h.send).toHaveBeenCalledTimes(2);
+    expect(h.send.mock.calls[1]).toEqual(['Also check the schema', 'queue']);
+    h.emit(activity('idle'));
+    await f.drain();
     expect(h.send).toHaveBeenCalledTimes(3);
-    expect(h.send.mock.calls[1]?.[1]).toBe('queue');
-    expect(h.send.mock.calls[2]).toEqual(['Also check the schema', 'interrupt']);
+    expect(h.send.mock.calls[2]?.[0]).toContain('Repair ci_failed');
   });
   test('restores dedupe and attempt counts on restart', async () => {
     const f = await openWorker();
@@ -584,12 +665,14 @@ describe('lifecycle, diffs and transport', () => {
     await f.drain();
     h.emit(activity('idle'));
     await f.drain();
+    await f.core.sendMessage(s.id, { text: 'Second turn', mode: 'queue' });
     h.emit(activity('active'));
     h.emit(activity('idle'));
     await f.drain();
     expect(f.git.markTurn).toHaveBeenCalledTimes(2);
     expect(f.store.events.filter((e) => e.type === 'worktree.diff_updated')).toHaveLength(1);
     f.git.diffResult.files[0]!.insertions = 10;
+    await f.core.sendMessage(s.id, { text: 'Third turn', mode: 'queue' });
     h.emit(activity('active'));
     h.emit(activity('idle'));
     await f.drain();
@@ -631,7 +714,7 @@ describe('lifecycle, diffs and transport', () => {
     const s = await f.core.createSession(p.id, { ...request, interface: 'terminal' }, 'terminal');
     expect(f.harness.start).not.toHaveBeenCalled();
     expect(f.terminals.spawn).toHaveBeenCalledWith(s.id, {
-      command: 'codex',
+      command: process.execPath,
       args: [request.prompt],
       cwd: s.worktreePath,
     });

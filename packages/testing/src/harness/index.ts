@@ -19,7 +19,7 @@ export interface FakeHarnessStep {
 }
 export interface FakeHarnessScript {
   kind?: AgentKind;
-  /** The first turn runs on start; each subsequent send consumes one turn. */
+  /** Each send consumes one turn. start only establishes the session, as in the real adapters. */
   turns: readonly (readonly FakeHarnessStep[])[];
 }
 export type FakeHarness = Omit<AgentHarness, 'start'> & {
@@ -35,7 +35,6 @@ class FakeSession implements ApprovingHarnessSession {
   private busy = false;
   private generation = 0;
   private nextTurn = 0;
-  private queued = 0;
   private pending = new Set<ApprovalId>();
   private cancelWait?: () => void;
   private continueApproval?: () => void;
@@ -46,7 +45,7 @@ class FakeSession implements ApprovingHarnessSession {
   ) {
     this.resumeToken = options.resumeToken ?? `fake:${options.session.id}`;
     this.emit({ type: 'activity.changed', payload: { activity: 'starting' } });
-    this.run();
+    this.emit({ type: 'activity.changed', payload: { activity: 'idle' } });
   }
   onEvent(cb: (event: HarnessEmission) => void): Unsubscribe {
     this.listeners.add(cb);
@@ -111,10 +110,6 @@ class FakeSession implements ApprovingHarnessSession {
       if (this.stopped || generation !== this.generation) return;
       this.busy = false;
       this.emit({ type: 'activity.changed', payload: { activity: 'idle' } });
-      if (this.queued > 0) {
-        this.queued--;
-        this.run();
-      }
     })();
   }
   send(text: string, mode: MessageMode): Promise<void> {
@@ -125,11 +120,15 @@ class FakeSession implements ApprovingHarnessSession {
         new HelixError('INVALID_REQUEST', 'A nonempty message and valid mode are required'),
       );
     if (mode === 'interrupt') this.cancel();
-    if (this.busy) this.queued++;
-    else this.run();
+    if (this.busy)
+      return Promise.reject(
+        new HelixError('CONFLICT', 'A turn is already running; queue messages in core'),
+      );
+    this.run();
     return Promise.resolve();
   }
   private cancel(): void {
+    if (!this.busy) return;
     this.generation++;
     this.cancelWait?.();
     this.continueApproval?.();
@@ -141,10 +140,6 @@ class FakeSession implements ApprovingHarnessSession {
     if (this.stopped)
       return Promise.reject(new HelixError('CONFLICT', 'Fake harness session is closed'));
     this.cancel();
-    if (this.queued > 0) {
-      this.queued--;
-      this.run();
-    }
     return Promise.resolve();
   }
   decide(id: ApprovalId, decision: ApprovalDecision): Promise<void> {
@@ -165,7 +160,6 @@ class FakeSession implements ApprovingHarnessSession {
       this.cancelWait?.();
       this.continueApproval?.();
       this.pending.clear();
-      this.queued = 0;
       this.emit({ type: 'activity.changed', payload: { activity: 'exited' } });
     }
     return Promise.resolve();
@@ -186,6 +180,7 @@ export function createFakeHarness(
         version: 'fake-1',
         signedIn: true,
       }),
+    /** Establish only; the caller sends the initial prompt explicitly. */
     start: (options) => Promise.resolve(new FakeSession(configuration, options)),
   };
 }

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { resolveExecutable } from '@helix/harness';
 import {
   HelixError,
   isHelixError,
@@ -60,7 +61,7 @@ export type CoreDeps = {
   clock: () => string;
   ids: (prefix: string) => string;
   log: CoreLog;
-  /** Local adapter capability until start/initial-send ownership is in contracts. */
+  /** @deprecated Ignored: start establishes a session; core always owns initial delivery. */
   harnessStartsWithPrompt?: (agent: AgentKind) => boolean;
   /** Explicit opt-in: token-based conversation resume alone does not imply process reattachment. */
   canReattach?: (agent: AgentKind) => boolean;
@@ -75,7 +76,6 @@ type Runtime = {
   attachment?: TerminalAttachment;
   cause: EventSeq;
   turnOpen: boolean;
-  nextTurns: EventSeq[];
   stopped: boolean;
 };
 type Context = {
@@ -277,7 +277,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   }
   function hold(id: SessionId, delivery: Delivery): void {
     const queue = held.get(id) ?? [];
-    if (!queue.some((d) => d.cause === delivery.cause)) queue.push(delivery);
+    if (!queue.some((d) => d.cause === delivery.cause)) {
+      if (delivery.mode === 'interrupt') queue.unshift(delivery);
+      else queue.push(delivery);
+    }
     held.set(id, queue);
   }
   function blocked(s: SessionState): boolean {
@@ -299,43 +302,44 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       hold(id, delivery);
       return;
     }
-    if (delivery.mode === 'interrupt' || (!runtime.turnOpen && runtime.nextTurns.length === 0)) {
-      runtime.cause = delivery.cause;
-      runtime.turnOpen = true;
-    } else runtime.nextTurns.push(delivery.cause);
+    if (runtime.turnOpen) {
+      hold(id, delivery);
+      // The old turn retains its cause through cancellation and end-of-turn shipping.
+      if (delivery.mode === 'interrupt') await runtime.handle.interrupt();
+      return;
+    }
+    runtime.cause = delivery.cause;
+    runtime.turnOpen = true;
     try {
-      await runtime.handle.send(delivery.text, delivery.mode);
+      await runtime.handle.send(delivery.text, 'queue');
       await deps.store.remember(DELIVERY_SCOPE, String(delivery.cause), META_HASH, true);
       await saveResume(id, delivery.cause);
     } catch (error) {
+      runtime.turnOpen = false;
       hold(id, delivery);
       throw error;
     }
   }
   async function flush(id: SessionId): Promise<void> {
-    if (blocked(session(id)) || !runtimes.get(id)?.handle) return;
+    if (blocked(session(id)) || !runtimes.get(id)?.handle || runtimes.get(id)?.turnOpen) return;
     const queue = held.get(id) ?? [];
-    held.delete(id);
-    for (let i = 0; i < queue.length; i++) {
-      try {
-        await deliver(id, queue[i]!);
-      } catch (error) {
-        for (const remaining of queue.slice(i + 1)) hold(id, remaining);
-        throw error;
-      }
-    }
+    while (queue.length && !runtimes.get(id)?.turnOpen) await deliver(id, queue.shift()!);
+    if (!queue.length) held.delete(id);
   }
   function harnessFor(agent: AgentKind): AgentHarness {
     const harness = Object.hasOwn(deps.harnesses, agent) ? deps.harnesses[agent] : undefined;
     if (!harness) throw new HelixError('HARNESS_UNAVAILABLE', `No harness configured for ${agent}`);
     return harness;
   }
-  function terminalOptions(s: Session): TerminalSpawnOptions {
+  async function terminalOptions(s: Session): Promise<TerminalSpawnOptions> {
     if (deps.terminalOptions) return deps.terminalOptions(s);
     if (s.agent !== 'claude-code' && s.agent !== 'codex')
       throw new HelixError('HARNESS_UNAVAILABLE', `No terminal command configured for ${s.agent}`);
+    const command = await resolveExecutable(s.agent === 'claude-code' ? 'claude' : 'codex');
+    if (!command)
+      throw new HelixError('HARNESS_UNAVAILABLE', `${s.agent} executable was not found`);
     return {
-      command: s.agent === 'claude-code' ? 'claude' : 'codex',
+      command,
       args: [...(s.model ? ['--model', s.model] : []), s.prompt],
       cwd: s.worktreePath!,
     };
@@ -367,7 +371,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     resume: boolean,
     sendInitial = !resume,
   ): Promise<void> {
-    const runtime: Runtime = { cause, turnOpen: sendInitial, nextTurns: [], stopped: false };
+    const runtime: Runtime = { cause, turnOpen: false, stopped: false };
     runtimes.set(s.id, runtime);
     try {
       if (s.interface === 'terminal') {
@@ -379,7 +383,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
               'Terminal process is not available for reattachment',
             );
         } else if (!deps.terminals.list().includes(s.id))
-          await deps.terminals.spawn(s.id, terminalOptions(s));
+          await deps.terminals.spawn(s.id, await terminalOptions(s));
         runtime.attachment = await deps.terminals.attach(s.id, () => {
           /* Terminal bytes are not domain activity. */
         });
@@ -387,26 +391,35 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         return;
       }
       const token = resumes.get(s.id);
-      const autoPrompt = deps.harnessStartsWithPrompt?.(s.agent) === true;
       runtime.handle = await harnessFor(s.agent).start({
-        // CONTRACT-REQUEST: HarnessStartOptions needs explicit initialPrompt
-        // ownership. Real v1 adapters auto-send a nonempty prompt on fresh start.
-        // Empty here suppresses re-delivery when a receipt already exists; the
-        // persisted session retains its original, validated prompt.
-        session: autoPrompt && !sendInitial ? { ...s, prompt: '' } : s,
+        session: s,
         cwd: s.worktreePath!,
         ...(token ? { resumeToken: token } : {}),
       });
+      let subscribing = true;
       runtime.off = runtime.handle.onEvent((event) => {
         const copy = structuredClone(event);
+        // A fresh task remains starting until its first send. Do not publish a
+        // buffered initialization idle as though that task had already finished.
+        if (
+          subscribing &&
+          sendInitial &&
+          copy.type === 'activity.changed' &&
+          copy.payload.activity === 'idle'
+        )
+          return;
+        // Startup emissions are buffered by adapters. Capture ownership before
+        // initial delivery so a startup idle cannot complete the first real turn.
+        const turnCause = runtime.cause;
+        const turnWasOpen = runtime.turnOpen;
         background(s.id, async () => {
-          if (!runtime.stopped) await onHarness(s.id, copy);
+          if (!runtime.stopped) await onHarness(s.id, copy, turnCause, turnWasOpen);
         });
       });
+      subscribing = false;
       await saveResume(s.id, cause);
       if (sendInitial) {
-        if (!autoPrompt || token) await runtime.handle.send(s.prompt, 'queue');
-        await deps.store.remember(DELIVERY_SCOPE, String(cause), META_HASH, true);
+        await deliver(s.id, { text: s.prompt, mode: 'queue', cause });
       }
       await flush(s.id);
     } catch (error) {
@@ -439,26 +452,28 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           );
     }
   }
-  async function onHarness(id: SessionId, emission: HarnessEmission): Promise<void> {
+  async function onHarness(
+    id: SessionId,
+    emission: HarnessEmission,
+    cause: EventSeq,
+    turnWasOpen: boolean,
+  ): Promise<void> {
     const before = session(id);
     const rt = runtimes.get(id)!;
     if (before.session.archivedAt) return;
     if (emission.type === 'approval.requested' && emission.payload.approval.sessionId !== id)
       throw new HelixError('INVALID_REQUEST', 'Harness approval has the wrong session');
-    if (
-      emission.type === 'activity.changed' &&
-      ['active', 'starting'].includes(emission.payload.activity) &&
-      !rt.turnOpen
-    ) {
-      rt.cause = rt.nextTurns.shift() ?? rt.cause;
-      rt.turnOpen = true;
-    }
-    const e = await emit(emission.type, emission.payload, context(before.session, rt.cause));
+    const e = await emit(emission.type, emission.payload, context(before.session, cause));
     await saveResume(id, e.seq);
     if (emission.type === 'activity.changed') {
-      if (emission.payload.activity === 'idle' && (before.activity !== 'idle' || rt.turnOpen)) {
-        rt.turnOpen = false;
+      if (
+        emission.payload.activity === 'idle' &&
+        turnWasOpen &&
+        rt.turnOpen &&
+        rt.cause === cause
+      ) {
         await endTurn(id, e.seq);
+        rt.turnOpen = false;
       }
       if (emission.payload.activity === 'exited') {
         rt.stopped = true;
@@ -512,7 +527,15 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   }
   function watch(id: SessionId, cause?: EventSeq): void {
     const s = session(id);
-    if (!deps.scm || !s.pr || s.pr.state !== 'open' || s.session.archivedAt || watchers.has(id))
+    const needsMerge =
+      s.pr?.state === 'merged' && !eventsFor(s.session).some((e) => e.type === 'pr.merged');
+    if (
+      !deps.scm ||
+      !s.pr ||
+      (s.pr.state !== 'open' && !needsMerge) ||
+      s.session.archivedAt ||
+      watchers.has(id)
+    )
       return;
     watchers.set(
       id,
@@ -526,16 +549,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   }
   async function onScm(id: SessionId, emission: ScmEmission, cause?: EventSeq): Promise<void> {
     const s = session(id);
-    if (s.session.archivedAt || s.pr?.state !== 'open') return;
+    if (s.session.archivedAt || !s.pr) return;
+    if (emission.type === 'pr.merged') {
+      if (
+        eventsFor(s.session).some(
+          (e) => e.type === 'pr.merged' && e.payload.prNumber === emission.payload.prNumber,
+        )
+      )
+        return;
+    } else if (s.pr.state !== 'open') return;
     const number =
       emission.type === 'pr.updated' ? emission.payload.pr.number : emission.payload.prNumber;
     if (number !== s.pr.number)
       throw new HelixError('INVALID_REQUEST', 'SCM update has the wrong PR');
     const e = await emit(emission.type, emission.payload, context(s.session, cause));
-    if (
-      emission.type === 'pr.merged' ||
-      (emission.type === 'pr.updated' && emission.payload.pr.state === 'merged')
-    ) {
+    if (emission.type === 'pr.merged') {
       watchers.get(id)?.();
       watchers.delete(id);
       await schedule(s.session.projectId, e.seq);
@@ -602,6 +630,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     node?: PlanNode,
     parent?: SessionId,
     cause?: EventSeq,
+    prerequisites: string[] = [],
   ): Promise<Session> {
     const scope = `helix:create-session:${p.id}`;
     const hash = fingerprint({
@@ -629,14 +658,37 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         ...(node ? { planNodeId: node.id } : {}),
         ...(parent ? { parentSessionId: parent } : {}),
       };
-      if (s.interface === 'terminal') terminalOptions({ ...s, worktreePath: p.repoPath });
+      if (s.interface === 'terminal') await terminalOptions({ ...s, worktreePath: p.repoPath });
       // Reserve identity before side effects so retries cannot create a second worker.
       await deps.store.remember(scope, key, hash, s);
     }
     let creation = eventsFor(s).find((e) => e.type === 'session.created');
     creation ??= await emit('session.created', { session: s }, context(s, cause));
     if (!session(s.id).worktree) {
-      const worktree = await deps.worktrees.create(p.id, s.id, p.defaultBranch, {
+      let base = p.defaultBranch;
+      if (prerequisites.length) {
+        try {
+          base = await deps.worktrees.fetchBase(p.repoPath, p.defaultBranch);
+        } catch (error) {
+          await emit(
+            'explain.note',
+            {
+              text: `Cannot start dependent worker: fetching origin/${p.defaultBranch} failed: ${error instanceof Error ? error.message : String(error)}`,
+            },
+            context(s, cause),
+          );
+          await emit('activity.changed', { activity: 'waiting_input' }, context(s, cause));
+          return s;
+        }
+        await emit(
+          'explain.note',
+          {
+            text: `Starting from fetched base ${base}; merged prerequisites: ${prerequisites.join(', ')}.`,
+          },
+          context(s, cause),
+        );
+      }
+      const worktree = await deps.worktrees.create(p.id, s.id, base, {
         slug: slug(s.title),
       });
       await emit('worktree.created', worktree, context(s, creation.seq));
@@ -644,7 +696,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     s = session(s.id).session;
     const worktreeEvent = eventsFor(s).find((e) => e.type === 'worktree.created')!;
     let start = eventsFor(s).find((e) => e.type === 'session.started');
-    start ??= await emit('session.started', {}, context(s, worktreeEvent.seq));
+    start ??= await emit(
+      'session.started',
+      {},
+      context(s, prerequisites.length ? cause : worktreeEvent.seq),
+    );
     if (
       !runtimes.has(s.id) ||
       runtimes.get(s.id)?.stopped ||
@@ -660,12 +716,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     const p = project(projectId);
     for (const plan of Object.values(p.plans))
       for (const node of plan.nodes) {
-        if (node.sessionId) continue;
-        const ready = node.dependsOn.every((id) => {
+        if (
+          node.sessionId &&
+          (session(node.sessionId).worktree || session(node.sessionId).session.archivedAt)
+        )
+          continue;
+        const merges = node.dependsOn.map((id) => {
           const dep = plan.nodes.find((n) => n.id === id);
-          return dep?.sessionId && session(dep.sessionId).pr?.state === 'merged';
+          return dep?.sessionId
+            ? eventsFor(session(dep.sessionId).session).find((e) => e.type === 'pr.merged')
+            : undefined;
         });
-        if (!ready) continue;
+        if (merges.some((e) => !e)) continue;
+        const unblockedBy =
+          merges.reduce((latest, e) => (e && e.seq > latest ? e.seq : latest), 0 as EventSeq) ||
+          cause;
         const s = await create(
           p.project,
           {
@@ -677,18 +742,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           `plan:${plan.id}:${node.id}`,
           node,
           plan.orchestratorSessionId,
-          cause,
+          unblockedBy,
+          merges.map((e, i) => `${node.dependsOn[i]} (PR #${e!.payload.prNumber})`),
         );
         await emit(
           'plan.node_updated',
           {
             nodeId: node.id,
             sessionId: s.id,
-            note: node.dependsOn.length
-              ? 'All dependencies merged; worker started.'
-              : 'No unmet dependencies; worker started.',
+            note: !session(s.id).worktree
+              ? 'Waiting for a successful base fetch.'
+              : node.dependsOn.length
+                ? 'All dependencies merged; worker started.'
+                : 'No unmet dependencies; worker started.',
           },
-          context(s, cause),
+          context(s, unblockedBy),
         );
       }
   }
