@@ -1,0 +1,32 @@
+.wrap {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-4);
+  min-height: 100%;
+  padding: var(--space-8) var(--space-4);
+}
+
+.wordmark {
+  font: 700 40px / 1 var(--font-display);
+  letter-spacing: -0.03em;
+  background: linear-gradient(100deg, var(--strand-claude) 15%, var(--strand-codex) 85%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-3);
+  width: min(440px, 100%);
+}
+
+.form button {
+  justify-self: end;
+}
+
+.demo {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
