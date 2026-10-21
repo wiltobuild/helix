@@ -12,6 +12,7 @@ import {
   string,
 } from './protocol.js';
 import { ProcessSession } from './session.js';
+import { HELIX_GIT_INSTRUCTIONS, isGitWriteCommand } from './git-policy.js';
 
 /** State is only protocol correlation, never a stored display status. */
 export class ClaudeMessages {
@@ -72,6 +73,8 @@ export class ClaudeSession extends ProcessSession {
       '--input-format',
       'stream-json',
       '--verbose',
+      '--append-system-prompt',
+      HELIX_GIT_INSTRUCTIONS,
       '--permission-prompt-tool',
       'stdio',
       '--permission-mode',
@@ -133,6 +136,18 @@ export class ClaudeSession extends ProcessSession {
       }
       const tool = string(request.tool_name);
       const input = record(request.input);
+      if (/bash|shell|command/i.test(tool) && isGitWriteCommand(input.command)) {
+        this.note(`Declined agent Git write: ${HELIX_GIT_INSTRUCTIONS}`);
+        void this.write({
+          type: 'control_response',
+          response: {
+            subtype: 'success',
+            request_id: id,
+            response: { behavior: 'deny', message: HELIX_GIT_INSTRUCTIONS },
+          },
+        }).catch(() => this.fail('Could not decline Claude Git command'));
+        return;
+      }
       this.askApproval(
         id,
         {

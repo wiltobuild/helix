@@ -26,6 +26,7 @@ import {
   type GitService,
   type HarnessEmission,
   type HarnessSession,
+  type HarnessInfo,
   type HelixCore,
   type HelixEvent,
   type HelixStore,
@@ -67,6 +68,10 @@ export type CoreDeps = {
   canReattach?: (agent: AgentKind) => boolean;
   /** Allows executable resolution/configuration at the composition root; no shell strings. */
   terminalOptions?: (session: Session) => TerminalSpawnOptions;
+  /** Silence timeout for active chat sessions; defaults to three minutes. */
+  stallTimeoutMs?: number;
+  /** Composition may supply cached detection shared with the HTTP endpoint. */
+  detectHarnesses?: () => Promise<HarnessInfo[]>;
 };
 
 type Delivery = { text: string; mode: MessageMode; cause: EventSeq; automatic?: true };
@@ -76,7 +81,13 @@ type Runtime = {
   attachment?: TerminalAttachment;
   cause: EventSeq;
   turnOpen: boolean;
+  turnNumber: number;
+  lastAssistantMessage?: string;
   stopped: boolean;
+  awaitingInput?: boolean;
+  stalled?: boolean;
+  lastEmissionAt?: number;
+  watchdog?: ReturnType<typeof setTimeout>;
 };
 type Context = {
   projectId: ProjectId;
@@ -106,6 +117,42 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   let started = false;
   let closing = false;
   let exitOff: Unsubscribe | undefined;
+  const stallTimeoutMs = deps.stallTimeoutMs ?? 180_000;
+  if (!Number.isFinite(stallTimeoutMs) || stallTimeoutMs <= 0)
+    throw new HelixError('INVALID_REQUEST', 'stallTimeoutMs must be positive');
+  const detectHarnesses =
+    deps.detectHarnesses ??
+    (() => Promise.all(Object.values(deps.harnesses).map((h) => h.detect())));
+
+  function armWatchdog(id: SessionId): void {
+    const rt = runtimes.get(id)!;
+    clearTimeout(rt.watchdog);
+    if (closing || rt.stopped || rt.stalled || session(id).activity !== 'active') return;
+    rt.watchdog = setTimeout(
+      () =>
+        background(id, async () => {
+          if (rt.stopped || rt.stalled || session(id).activity !== 'active') return;
+          if (Date.now() - (rt.lastEmissionAt ?? 0) < stallTimeoutMs) {
+            armWatchdog(id);
+            return;
+          }
+          rt.stalled = true;
+          const s = session(id).session;
+          const duration =
+            stallTimeoutMs === 180_000 ? '3 minutes' : `${stallTimeoutMs / 1000} seconds`;
+          await emit(
+            'explain.note',
+            {
+              text: `No activity from ${s.agent === 'codex' ? 'Codex' : s.agent} for ${duration} — it may be waiting on something Helix doesn't understand. Check the protocol log.`,
+            },
+            context(s, rt.cause),
+          );
+          await emit('activity.changed', { activity: 'unknown' }, context(s, rt.cause));
+        }),
+      Math.max(1, stallTimeoutMs - (Date.now() - (rt.lastEmissionAt ?? Date.now()))),
+    );
+    rt.watchdog.unref();
+  }
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
     const result = tail.then(work);
@@ -303,6 +350,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       return;
     }
     if (runtime.turnOpen) {
+      if (runtime.awaitingInput && !delivery.automatic) {
+        await runtime.handle.send(delivery.text, delivery.mode);
+        await deps.store.remember(DELIVERY_SCOPE, String(delivery.cause), META_HASH, true);
+        return;
+      }
       hold(id, delivery);
       // The old turn retains its cause through cancellation and end-of-turn shipping.
       if (delivery.mode === 'interrupt') await runtime.handle.interrupt();
@@ -310,12 +362,15 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     }
     runtime.cause = delivery.cause;
     runtime.turnOpen = true;
+    runtime.turnNumber++;
+    delete runtime.lastAssistantMessage;
     try {
       await runtime.handle.send(delivery.text, 'queue');
       await deps.store.remember(DELIVERY_SCOPE, String(delivery.cause), META_HASH, true);
       await saveResume(id, delivery.cause);
     } catch (error) {
       runtime.turnOpen = false;
+      runtime.turnNumber--;
       hold(id, delivery);
       throw error;
     }
@@ -340,7 +395,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       throw new HelixError('HARNESS_UNAVAILABLE', `${s.agent} executable was not found`);
     return {
       command,
-      args: [...(s.model ? ['--model', s.model] : []), s.prompt],
+      args: [...(s.model ? ['--model', s.model] : [])],
       cwd: s.worktreePath!,
     };
   }
@@ -371,7 +426,17 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     resume: boolean,
     sendInitial = !resume,
   ): Promise<void> {
-    const runtime: Runtime = { cause, turnOpen: false, stopped: false };
+    const turnNumber = new Set(
+      eventsFor(s)
+        .filter(
+          (e) =>
+            e.type === 'activity.changed' &&
+            e.payload.activity === 'active' &&
+            e.causedBy !== undefined,
+        )
+        .map((e) => e.causedBy),
+    ).size;
+    const runtime: Runtime = { cause, turnOpen: false, turnNumber, stopped: false };
     runtimes.set(s.id, runtime);
     try {
       if (s.interface === 'terminal') {
@@ -387,6 +452,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         runtime.attachment = await deps.terminals.attach(s.id, () => {
           /* Terminal bytes are not domain activity. */
         });
+        if (!resume && sendInitial) {
+          // Bracketed paste preserves multiline prompts in interactive CLIs and .cmd shims.
+          runtime.attachment.write(`\x1b[200~${s.prompt.replace(/\r\n/g, '\n')}\x1b[201~\r`);
+        }
         await emit('activity.changed', { activity: 'active' }, context(s, cause));
         return;
       }
@@ -398,6 +467,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       });
       let subscribing = true;
       runtime.off = runtime.handle.onEvent((event) => {
+        runtime.lastEmissionAt = Date.now();
         const copy = structuredClone(event);
         // A fresh task remains starting until its first send. Do not publish a
         // buffered initialization idle as though that task had already finished.
@@ -461,6 +531,24 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     const before = session(id);
     const rt = runtimes.get(id)!;
     if (before.session.archivedAt) return;
+    clearTimeout(rt.watchdog);
+    if (rt.stalled) {
+      rt.stalled = false;
+      if (emission.type !== 'activity.changed')
+        await emit('activity.changed', { activity: 'active' }, context(before.session, cause));
+    }
+    if (emission.type === 'chat.item' && emission.payload.item.kind === 'question')
+      rt.awaitingInput = true;
+    if (
+      rt.turnOpen &&
+      rt.cause === cause &&
+      emission.type === 'chat.item' &&
+      emission.payload.item.kind === 'message' &&
+      emission.payload.item.role === 'assistant'
+    )
+      rt.lastAssistantMessage = emission.payload.item.text;
+    if (emission.type === 'activity.changed' && emission.payload.activity !== 'waiting_input')
+      rt.awaitingInput = false;
     if (emission.type === 'approval.requested' && emission.payload.approval.sessionId !== id)
       throw new HelixError('INVALID_REQUEST', 'Harness approval has the wrong session');
     const e = await emit(emission.type, emission.payload, context(before.session, cause));
@@ -480,10 +568,39 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await emit('session.exited', { code: null }, context(before.session, e.seq));
       } else await flush(id);
     }
+    armWatchdog(id);
   }
   async function endTurn(id: SessionId, cause: EventSeq): Promise<void> {
     let s = session(id);
     if (!s.worktree) return;
+    if ((await deps.worktrees.status(s.worktree.path)).dirty) {
+      const rt = runtimes.get(id)!;
+      const title = [...s.session.title.replace(/\s+/g, ' ').trim()].slice(0, 72).join('');
+      const summary = [...(rt.lastAssistantMessage ?? '').replace(/\s+/g, ' ').trim()]
+        .slice(0, 500)
+        .join('');
+      const message = `${title}\n\nTurn ${rt.turnNumber} by ${s.session.agent} via Helix${summary ? `\n\n${summary}` : ''}`;
+      try {
+        const sha = await deps.worktrees.commitAll(s.worktree.path, message);
+        if (sha)
+          await emit(
+            'explain.note',
+            { text: `Committed ${sha.slice(0, 7)}: ${title}` },
+            context(s.session, cause),
+          );
+      } catch (error) {
+        deps.log.error(`Could not commit turn for ${id}`, error);
+        await emit(
+          'explain.note',
+          {
+            text: `Helix could not commit this turn: ${error instanceof Error ? error.message : String(error)}`,
+          },
+          context(s.session, cause),
+        );
+        await emit('activity.changed', { activity: 'blocked' }, context(s.session, cause));
+        return;
+      }
+    }
     await deps.worktrees.markTurn(s.worktree.path, id);
     const diff = await deps.worktrees.diff(s.worktree.path, 'pr');
     const stats = {
@@ -772,6 +889,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         'Cannot confirm termination without an attached harness',
       );
     if (rt) {
+      clearTimeout(rt.watchdog);
       rt.stopped = true;
       rt.off?.();
       rt.attachment?.detach();
@@ -826,6 +944,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         exitOff?.();
         const failures: unknown[] = [];
         for (const [id, rt] of runtimes) {
+          clearTimeout(rt.watchdog);
           rt.off?.();
           rt.attachment?.detach();
           if (rt.stopped) continue;
@@ -845,13 +964,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         // Store lifetime belongs to the composition root, which also serves SSE/recordings.
       }),
     health: () => command(() => Promise.resolve({ status: 'ok', version: '0.0.0' })),
-    harnesses: () =>
-      command(() => Promise.all(Object.values(deps.harnesses).map((h) => h.detect()))),
+    harnesses: () => detectHarnesses(),
     listProjects: () => command(() => deps.store.listProjects()),
     addProject: (request) =>
       command(async () => {
         const input = validate(createProjectRequestSchema, request);
         const normalized = repoPath(input.repoPath);
+        const originalPath = path.resolve(input.repoPath);
         const existing =
           (await deps.store.findProjectByRepoPath(normalized)) ??
           (await deps.store.listProjects()).find((p) => repoPath(p.repoPath) === normalized);
@@ -860,15 +979,27 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             await emit('project.added', { project: existing }, { projectId: existing.id });
           return existing;
         }
-        if (!(await deps.worktrees.isGitRepo(normalized)))
+        if (!(await deps.worktrees.isGitRepo(originalPath)))
           throw new HelixError('INVALID_REQUEST', 'Path is not a git repository');
-        const github = githubRemote(await deps.worktrees.remoteUrl(normalized, 'origin'));
+        const github = githubRemote(await deps.worktrees.remoteUrl(originalPath, 'origin'));
+        const available = (await detectHarnesses()).filter(
+          (h) => h.installed && h.signedIn === true,
+        );
+        const defaultAgent =
+          ['codex', 'claude-code']
+            .map((kind) => available.find((h) => h.agent === kind))
+            .find(Boolean)?.agent ?? available[0]?.agent;
+        if (!defaultAgent)
+          throw new HelixError(
+            'HARNESS_UNAVAILABLE',
+            'Install and sign in to Codex or Claude Code before adding a project',
+          );
         const p: Project = {
           id: validate(projectIdSchema, deps.ids('project')),
-          name: input.name ?? path.basename(normalized),
-          repoPath: normalized,
-          defaultBranch: await deps.worktrees.defaultBranch(normalized),
-          defaultAgent: Object.keys(deps.harnesses)[0] ?? 'claude-code',
+          name: input.name ?? path.basename(originalPath),
+          repoPath: originalPath,
+          defaultBranch: await deps.worktrees.defaultBranch(originalPath),
+          defaultAgent,
           createdAt: deps.clock(),
           ...(github ? { github } : {}),
         };

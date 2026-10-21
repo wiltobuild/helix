@@ -55,7 +55,6 @@ function editingHarness(worktrees: GitWorktreeManager, repair: Promise<void>): A
             join(options.cwd, 'task.txt'),
             turn++ === 0 ? 'first change\n' : 'fixed change\n',
           );
-          await worktrees.commitAll(options.cwd, turn === 1 ? 'Implement task' : 'Fix CI');
           await handle.send(text, mode);
         },
         onEvent: (cb) => handle.onEvent(cb),
@@ -150,7 +149,7 @@ async function scenario(real: boolean) {
       agent: 'codex',
       interface: 'chat' as const,
       prompt:
-        'Replace task.txt with exactly "first change" followed by a newline. Commit this change with git. Do not create any other files. Then report completion.',
+        'Replace task.txt with exactly "first change" followed by a newline. Do not create any other files. Then report completion.',
     };
     const session = await client.createSession(project.id, request, { idempotencyKey: 'one-task' });
     expect(await client.createSession(project.id, request, { idempotencyKey: 'one-task' })).toEqual(

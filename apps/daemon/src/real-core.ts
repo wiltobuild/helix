@@ -7,6 +7,7 @@ import { GitWorktreeManager } from '@helix/git';
 import { NodePtyHost } from '@helix/pty-host';
 import { createHarness } from '@helix/harness';
 import { createGitHubScm, buildFeedbackMessage } from '@helix/scm';
+import { cacheHarnessDetection } from './harness-cache.js';
 
 /** Only caller-authored messages and error codes reach logs, never adapter error bodies. */
 export const consoleLog: CoreLog = {
@@ -94,14 +95,32 @@ export async function createRealCore(options: {
     const harnessEnv = Object.fromEntries(
       Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
+    const harnessOptions = {
+      env: harnessEnv,
+      dataDir,
+      log: (message: string) =>
+        console.info(JSON.stringify({ ts: new Date().toISOString(), level: 'info', message })),
+      note: (sessionId: import('@helix/contracts').SessionId, text: string) => {
+        void core
+          .explain({ sessionId, text })
+          .catch((error: unknown) =>
+            consoleLog.error('Could not record harness explanation', error),
+          );
+      },
+    };
+    const harnesses = {
+      'claude-code': createHarness('claude-code', harnessOptions),
+      codex: createHarness('codex', harnessOptions),
+    };
     const core = createHelixCore({
       store,
       worktrees: new GitWorktreeManager({ dataDir, projects: store }),
       terminals,
-      harnesses: {
-        'claude-code': createHarness('claude-code', { env: harnessEnv }),
-        codex: createHarness('codex', { env: harnessEnv }),
-      },
+      harnesses,
+      detectHarnesses: cacheHarnessDetection(harnesses, (message, error) =>
+        consoleLog.error(message, error),
+      ),
+      ...(env.HELIX_STALL_TIMEOUT_MS ? { stallTimeoutMs: Number(env.HELIX_STALL_TIMEOUT_MS) } : {}),
       ...(token
         ? {
             scm: createGitHubScm({

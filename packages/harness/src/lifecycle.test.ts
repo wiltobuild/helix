@@ -17,6 +17,7 @@ import { createHarness, detectAll } from './index.js';
 import type { HarnessOptions } from './options.js';
 import { quoteCmdArgument, resolveExecutable, spawnExecutable } from './process.js';
 import { record } from './protocol.js';
+import { HELIX_GIT_INSTRUCTIONS } from './git-policy.js';
 
 const executable = fileURLToPath(new URL('./__fixtures__/fake-cli.cjs', import.meta.url));
 const api = fixtures.passwordResetRun.find(
@@ -84,6 +85,79 @@ afterEach(async () => {
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
 });
+
+it('debug mode captures both directions of a real JSONL transport with no unanswered requests', async () => {
+  const cwd = await directory();
+  const session = await createHarness('codex', {
+    ...opts('codex', { HELIX_DEBUG_PROTOCOL: '1' }),
+    dataDir: cwd,
+  }).start({ cwd, session: { ...template, agent: 'codex' } });
+  sessions.push(session);
+  const events: HarnessEmission[] = [];
+  session.onEvent((event) => events.push(event));
+  await session.send('approve', 'queue');
+  await expect.poll(() => events.some((e) => e.type === 'approval.requested')).toBe(true);
+  const approval = events.find((e) => e.type === 'approval.requested')!;
+  if (approval.type !== 'approval.requested') throw new Error('Missing approval');
+  await session.decide(approval.payload.approval.id, 'approved');
+  await expect.poll(() => activities(events).at(-1)).toBe('idle');
+  const rows = await transcript(join(cwd, 'logs', `${template.id}.protocol.jsonl`));
+  const pending = new Set<unknown>();
+  for (const row of rows) {
+    const frame = record(row.frame);
+    if (row.direction === 'in' && frame.id !== undefined && frame.method) pending.add(frame.id);
+    if (row.direction === 'out' && frame.id !== undefined && !frame.method)
+      pending.delete(frame.id);
+  }
+  expect(pending.size).toBe(0);
+  expect(
+    rows.some((row) => row.direction === 'out' && record(row.frame).method === 'thread/start'),
+  ).toBe(true);
+  expect(
+    rows.some(
+      (row) =>
+        row.direction === 'in' &&
+        record(row.frame).method === 'item/commandExecution/requestApproval',
+    ),
+  ).toBe(true);
+  expect(
+    rows.some((row) => row.direction === 'out' && record(row.frame).id === 'server-approval'),
+  ).toBe(true);
+}, 30_000);
+
+it.each([undefined, 'existing-thread'])(
+  'gives Codex Helix Git instructions without extra writable roots on start/resume (%s)',
+  async (resumeToken) => {
+    const cwd = await directory();
+    const transcriptPath = join(cwd, 'transcript.jsonl');
+    const options = opts('codex', { HELIX_FAKE_TRANSCRIPT: transcriptPath });
+    const session = await createHarness('codex', options).start({
+      cwd,
+      session: { ...template, agent: 'codex' },
+      ...(resumeToken ? { resumeToken } : {}),
+    });
+    sessions.push(session);
+    const method = resumeToken ? 'thread/resume' : 'thread/start';
+    const frame = (await transcript(transcriptPath)).find((row) => row.method === method)!;
+    expect(record(frame.params)).not.toHaveProperty('config');
+    expect(record(frame.params).developerInstructions).toBe(HELIX_GIT_INSTRUCTIONS);
+    expect(record(frame.params).sandbox).toBe('workspace-write');
+    expect(record(frame.params).approvalPolicy).toBe('on-request');
+  },
+  30_000,
+);
+
+it('appends the Git ownership instruction to the Claude system prompt', async () => {
+  const cwd = await directory();
+  const argsPath = join(cwd, 'args.json');
+  const session = await createHarness(
+    'claude-code',
+    opts('claude-code', { HELIX_FAKE_ARGS_FILE: argsPath }),
+  ).start({ cwd, session: { ...template, agent: 'claude-code' } });
+  sessions.push(session);
+  const args = JSON.parse(await readFile(argsPath, 'utf8')) as string[];
+  expect(args[args.indexOf('--append-system-prompt') + 1]).toBe(HELIX_GIT_INSTRUCTIONS);
+}, 30_000);
 
 describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) => {
   it('replays fixture approvals, errors and unknown messages through the live transport', async () => {

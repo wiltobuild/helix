@@ -30,7 +30,7 @@ const request: CreateSessionRequest = {
 };
 
 test.each(['codex', 'claude-code'])(
-  'terminal %s passes a resolved shim and unchanged prompt arguments',
+  'terminal %s delivers multiline prompt through PTY after spawning the resolved shim',
   async (agent) => {
     const f = fixture();
     const p = await f.add();
@@ -45,9 +45,10 @@ test.each(['codex', 'claude-code'])(
     expect(resolveExecutable).toHaveBeenLastCalledWith(agent === 'codex' ? 'codex' : 'claude');
     expect(f.terminals.spawn).toHaveBeenCalledExactlyOnceWith(s.id, {
       command: resolved,
-      args: ['--model', 'model-1', prompt],
+      args: ['--model', 'model-1'],
       cwd: s.worktreePath,
     });
+    expect(f.terminals.write).toHaveBeenCalledExactlyOnceWith(`\x1b[200~${prompt}\x1b[201~\r`);
   },
 );
 
@@ -715,7 +716,7 @@ describe('lifecycle, diffs and transport', () => {
     expect(f.harness.start).not.toHaveBeenCalled();
     expect(f.terminals.spawn).toHaveBeenCalledWith(s.id, {
       command: process.execPath,
-      args: [request.prompt],
+      args: [],
       cwd: s.worktreePath,
     });
     f.terminals.output.get(s.id)!({ t: 'out', data: 'idle\nApproval required\n' });
@@ -759,7 +760,7 @@ describe('lifecycle, diffs and transport', () => {
     expect(f.core.events).toBe(f.store);
     expect(f.core.terminals).toBe(f.terminals);
     expect(await f.core.health()).toEqual({ status: 'ok', version: '0.0.0' });
-    expect(await f.core.harnesses()).toEqual([{ agent: 'codex', installed: true }]);
+    expect(await f.core.harnesses()).toEqual([{ agent: 'codex', installed: true, signedIn: true }]);
     expect(await f.core.listProjects()).toEqual([p]);
     const note = await f.core.explain({
       sessionId: s.id,

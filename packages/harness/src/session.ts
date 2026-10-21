@@ -16,6 +16,7 @@ import {
 import type { HarnessOptions } from './options.js';
 import { hasExited, killTree, spawnExecutable } from './process.js';
 import { JsonLines, compact } from './protocol.js';
+import { protocolLogger } from './protocol-log.js';
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -45,12 +46,14 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
   private exitPromise!: Promise<void>;
   private turnWaiters = new Set<() => void>();
   private lastActivity?: AgentActivity;
+  private trace: ReturnType<typeof protocolLogger>;
 
   constructor(
     protected options: HarnessOptions,
     protected startOptions: HarnessStartOptions,
   ) {
     if (startOptions.resumeToken) this.resumeToken = startOptions.resumeToken;
+    this.trace = protocolLogger(options, startOptions.session.id, (message) => this.log(message));
   }
   protected abstract receive(value: unknown): void;
   protected abstract beginTurn(text: string): Promise<void>;
@@ -66,6 +69,7 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
     );
     const lines = new JsonLines(
       (value) => {
+        this.trace('in', value);
         if (this.stopped) return;
         try {
           this.receive(value);
@@ -143,6 +147,14 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
       /* Diagnostics are optional. */
     }
   }
+  protected note(message: string): void {
+    this.log(message);
+    try {
+      this.options.note?.(this.startOptions.session.id, message);
+    } catch {
+      /* Diagnostics must not prevent a protocol response. */
+    }
+  }
   protected activity(activity: AgentActivity): void {
     if (this.lastActivity === activity) return;
     this.lastActivity = activity;
@@ -167,6 +179,7 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
   }
   protected write(message: unknown): Promise<void> {
     this.ensureOpen();
+    this.trace('out', message);
     return new Promise((resolve, reject) => {
       this.child.stdin.write(`${JSON.stringify(message)}\n`, 'utf8', (error) =>
         error
@@ -210,6 +223,7 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
       this.ensureOpen();
       if (!text.trim() || (mode !== 'queue' && mode !== 'interrupt'))
         throw new HelixError('INVALID_REQUEST', 'A nonempty message and valid mode are required');
+      if (await this.answerInput(text)) return;
       if (mode === 'interrupt') await this.interruptCurrent();
       // Core owns pending turns and calls send only after previous-turn bookkeeping.
       // Reject overlapping queue sends instead of silently starting them at an idle boundary.
@@ -226,8 +240,16 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
       await this.launching;
     });
   }
+  protected answerInput(_text: string): Promise<boolean> {
+    void _text;
+    return Promise.resolve(false);
+  }
   protected completeTurn(): void {
     this.busy = false;
+    for (const pending of this.approvals.values())
+      void pending
+        .respond('changes_requested')
+        .catch(() => this.log('Could not close pending approval'));
     this.approvals.clear();
     this.wakeTurnWaiters();
     if (this.stopped) return;

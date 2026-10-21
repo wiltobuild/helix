@@ -124,7 +124,7 @@ export class FakeHarness implements AgentHarness {
   readonly kind = 'codex';
   handles = new Map<SessionId, FakeHandle>();
   failStart = false;
-  detect = vi.fn(() => Promise.resolve({ agent: this.kind, installed: true }));
+  detect = vi.fn(() => Promise.resolve({ agent: this.kind, installed: true, signedIn: true }));
   start = vi.fn((options: HarnessStartOptions) => {
     if (this.failStart) return Promise.reject(new Error('resume probe failed'));
     const handle = new FakeHandle();
@@ -147,7 +147,11 @@ export class FakeGit implements GitService {
   headSha = vi.fn<GitService['headSha']>(() => Promise.resolve('head-1'));
   commitsAhead = vi.fn<GitService['commitsAhead']>(() => Promise.resolve(this.ahead));
   markTurn = vi.fn<GitService['markTurn']>(() => Promise.resolve());
-  commitAll = vi.fn<GitService['commitAll']>(() => Promise.resolve('commit-1'));
+  commitAll = vi.fn<GitService['commitAll']>(() => {
+    this.dirty = false;
+    this.ahead++;
+    return Promise.resolve('abcdef1234567890');
+  });
   push = vi.fn<GitService['push']>(() => Promise.resolve());
   fetchBase = vi.fn<GitService['fetchBase']>(() => Promise.resolve('base-1'));
   create = vi.fn<GitService['create']>((projectId, sessionId, ...args) =>
@@ -197,6 +201,7 @@ export class FakeTerminals implements TerminalHost {
   running = new Set<SessionId>();
   callbacks = new Set<(id: SessionId, code: number | null) => void>();
   detach = vi.fn();
+  write = vi.fn<(data: string) => void>();
   output = new Map<SessionId, (m: TerminalOutput) => void>();
   spawn = vi.fn<TerminalHost['spawn']>((id) => {
     this.running.add(id);
@@ -204,7 +209,7 @@ export class FakeTerminals implements TerminalHost {
   });
   attach = vi.fn((id: SessionId, cb: (m: TerminalOutput) => void) => {
     this.output.set(id, cb);
-    return Promise.resolve({ write: vi.fn(), resize: vi.fn(), detach: this.detach });
+    return Promise.resolve({ write: this.write, resize: vi.fn(), detach: this.detach });
   });
   kill = vi.fn((id: SessionId) => {
     this.exit(id, 0);

@@ -109,6 +109,7 @@ function setup(kind: KnownAgentKind = 'codex', github = false) {
   const store = openStore({ memory: true });
   const remote = createFakeGitHub({ repo: 'helix' });
   const harness = createHarness(kind, { bin: process.execPath });
+  vi.spyOn(harness, 'detect').mockResolvedValue({ agent: kind, installed: true, signedIn: true });
   const f = fixture({
     store,
     harnesses: { [kind]: harness },
@@ -131,6 +132,43 @@ function setup(kind: KnownAgentKind = 'codex', github = false) {
 }
 
 const request = { title: 'Worker', prompt: 'A', agent: 'codex', interface: 'chat' } as const;
+
+test('real Codex adapter answers a question through core.sendMessage during an open turn', async () => {
+  const f = setup('codex');
+  const p = await f.add();
+  const s = await f.core.createSession(p.id, request, 'question');
+  await f.drain();
+  const cli = f.transports[0]!;
+  const received = vi.spyOn(cli, 'receive');
+  cli.output({
+    id: 'question',
+    method: 'item/tool/requestUserInput',
+    params: {
+      threadId: 'memory-thread',
+      turnId: 'turn-1',
+      itemId: 'question-item',
+      isBlocking: true,
+      questions: [
+        {
+          id: 'choice',
+          header: 'Choice',
+          question: 'Which option?',
+          options: [{ label: 'A', description: 'First option' }],
+        },
+      ],
+    },
+  });
+  await f.drain();
+  expect((await f.state(p.id)).sessions[s.id]!.activity).toBe('waiting_input');
+  await f.core.sendMessage(s.id, { text: 'A', mode: 'queue' });
+  await f.drain();
+  expect(received).toHaveBeenCalledWith({
+    id: 'question',
+    result: { answers: { choice: { answers: ['A'] } } },
+  });
+  expect(cli.turns).toEqual(['A']);
+  expect((await f.state(p.id)).sessions[s.id]!.activity).toBe('active');
+});
 
 describe.each(['claude-code', 'codex'] as const)('%s composed agent loop', (kind) => {
   test('core + real adapter + SQLite deliver the initial prompt exactly once', async () => {
@@ -213,13 +251,22 @@ describe.each(['claude-code', 'codex'] as const)('%s composed agent loop', (kind
     expect(f.transports[1]!.turns).toEqual([]);
     expect((await f.state(p.id)).sessions[s.id]!.activity).toBe('idle');
     expect(f.git.markTurn).toHaveBeenCalledOnce();
+    f.git.dirty = true;
+    await restarted.sendMessage(s.id, { text: 'Second turn', mode: 'queue' });
+    f.transports[1]!.finish('Resumed edit');
+    for (let i = 0; i < 3; i++) await restarted.health();
+    expect(f.git.commitAll).toHaveBeenLastCalledWith(
+      s.worktreePath,
+      `Worker\n\nTurn 2 by ${kind} via Helix\n\nResumed edit`,
+    );
   });
 
-  test('next turn waits for markTurn, diff, push and PR creation', async () => {
+  test('next turn waits for commit, markTurn, diff, push and PR creation', async () => {
     const f = setup(kind);
     const p = await f.add();
     const s = await f.core.createSession(p.id, { ...request, agent: kind }, 'boundary');
     const mark = Promise.withResolvers<void>();
+    const commit = Promise.withResolvers<string>();
     const diff = Promise.withResolvers<typeof f.git.diffResult>();
     const push = Promise.withResolvers<void>();
     const open = Promise.withResolvers<Awaited<ReturnType<typeof f.scm.openPr>>>();
@@ -233,13 +280,23 @@ describe.each(['claude-code', 'codex'] as const)('%s composed agent loop', (kind
       draft: false,
     });
     f.scm.openPr.mockClear();
-    f.git.ahead = 1;
+    f.git.dirty = true;
+    f.git.commitAll.mockImplementationOnce(async () => {
+      const sha = await commit.promise;
+      f.git.dirty = false;
+      f.git.ahead = 1;
+      return sha;
+    });
     f.git.markTurn.mockReturnValueOnce(mark.promise);
     f.git.diff.mockReturnValueOnce(diff.promise);
     f.git.push.mockReturnValueOnce(push.promise);
     f.scm.openPr.mockReturnValueOnce(open.promise);
     await f.core.sendMessage(s.id, { text: 'B', mode: 'queue' });
     f.transports[0]!.finish();
+    await vi.waitFor(() => expect(f.git.commitAll).toHaveBeenCalledOnce());
+    expect(f.git.markTurn).not.toHaveBeenCalled();
+    expect(f.transports[0]!.turns).toEqual(['A']);
+    commit.resolve('abcdef1234567890');
     await vi.waitFor(() => expect(f.git.markTurn).toHaveBeenCalledOnce());
     expect(f.transports[0]!.turns).toEqual(['A']);
     mark.resolve();
