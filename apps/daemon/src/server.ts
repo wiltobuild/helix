@@ -31,6 +31,7 @@ export function parsePort(value: string | number | undefined): number {
 }
 
 const errorStatus: Partial<Record<ErrorCode, number>> = {
+  FORBIDDEN: 403,
   INVALID_REQUEST: 400,
   NOT_FOUND: 404,
   CONFLICT: 409,
@@ -79,7 +80,7 @@ export async function createServer(options: ServerOptions) {
   });
   app.addHook('onRequest', async (request, reply) => {
     if (!loopbackHost(request.headers.host))
-      throw new HelixError('INVALID_REQUEST', 'Host must be loopback');
+      throw new HelixError('FORBIDDEN', 'Host must be loopback');
     const address = app.server.address();
     const actualPort = address && typeof address === 'object' ? address.port : port;
     const origin = request.headers.origin;
@@ -91,7 +92,7 @@ export async function createServer(options: ServerOptions) {
           'http://localhost:5317',
         ].includes(origin)
       )
-        throw new HelixError('INVALID_REQUEST', 'Origin is not allowed');
+        throw new HelixError('FORBIDDEN', 'Origin is not allowed');
       reply.header('Access-Control-Allow-Origin', origin).header('Vary', 'Origin');
       reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       reply.header('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key, Last-Event-ID');

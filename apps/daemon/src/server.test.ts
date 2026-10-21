@@ -166,13 +166,15 @@ it.each(errorCodeSchema.options)('maps %s without leaking stacks or details', as
   const expected =
     code === 'INVALID_REQUEST'
       ? 400
-      : code === 'NOT_FOUND'
-        ? 404
-        : ['CONFLICT', 'IDEMPOTENCY_CONFLICT', 'DIRTY_WORKTREE', 'MERGE_BLOCKED'].includes(code)
-          ? 409
-          : code === 'HARNESS_UNAVAILABLE'
-            ? 503
-            : 500;
+      : code === 'FORBIDDEN'
+        ? 403
+        : code === 'NOT_FOUND'
+          ? 404
+          : ['CONFLICT', 'IDEMPOTENCY_CONFLICT', 'DIRTY_WORKTREE', 'MERGE_BLOCKED'].includes(code)
+            ? 409
+            : code === 'HARNESS_UNAVAILABLE'
+              ? 503
+              : 500;
   expect(response.statusCode).toBe(expected);
   expect(apiErrorSchema.parse(response.json()).error.code).toBe(code);
   expect(response.body).not.toContain('SECRET_STACK');
@@ -198,7 +200,7 @@ it.each([
   '[::]',
 ])('rejects Host %s', async (host) => {
   const { app } = await setup();
-  expect((await app.inject({ url: '/api/health', headers: { host } })).statusCode).toBe(400);
+  expect((await app.inject({ url: '/api/health', headers: { host } })).statusCode).toBe(403);
 });
 it('enforces Origin and supports the Vite preflight', async () => {
   const { app } = await setup();
@@ -208,7 +210,7 @@ it('enforces Origin and supports the Vite preflight', async () => {
     'http://evil.test',
     'http://localhost:4318',
   ]) {
-    expect((await app.inject({ url: '/api/health', headers: { origin } })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/health', headers: { origin } })).statusCode).toBe(403);
   }
   for (const origin of [
     'http://localhost:4317',

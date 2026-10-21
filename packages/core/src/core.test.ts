@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
   HelixError,
   approvalIdSchema,
@@ -7,6 +7,7 @@ import {
   deriveStatus,
   planNodeIdSchema,
   projectIdSchema,
+  pullRequestNumberSchema,
   sessionIdSchema,
   type CreateSessionRequest,
   type HelixEvent,
@@ -22,6 +23,52 @@ const request: CreateSessionRequest = {
   agent: 'codex',
   interface: 'chat',
 };
+
+test('auto-start harnesses get one initial prompt and suppress it after a persisted receipt', async () => {
+  const f = fixture({ harnessStartsWithPrompt: () => true });
+  const p = await f.add();
+  const s = await f.core.createSession(p.id, request, 'auto-start');
+  expect(f.harness.start.mock.calls[0]?.[0].session.prompt).toBe(request.prompt);
+  expect(f.harness.handles.get(s.id)!.send).not.toHaveBeenCalled();
+  // A fresh daemon with no usable token must not repeat the already-delivered task.
+  f.store.records.clear();
+  const started = f.store.events.find((e) => e.type === 'session.started')!;
+  await f.store.remember('helix:core:delivered:v1', String(started.seq), 'v1', true);
+  const restarted = createHelixCore(f.deps);
+  await restarted.start();
+  expect(f.harness.start.mock.calls.at(-1)?.[0].session.prompt).toBe('');
+  expect(f.harness.handles.get(s.id)!.send).not.toHaveBeenCalled();
+  expect(f.state(p.id).sessions[s.id]!.session.prompt).toBe(request.prompt);
+  await restarted.shutdown();
+});
+
+test('startup logs malformed stored events and never redelivers rejected feedback', async () => {
+  const error = vi.fn();
+  const f = fixture({ log: { error } });
+  const p = await f.add();
+  await f.store.append([
+    {
+      v: 1,
+      ts: timestamp,
+      projectId: p.id,
+      type: 'feedback.routed',
+      payload: {
+        prNumber: pullRequestNumberSchema.parse(1),
+        reason: 'ci_failed',
+        summary: 'Do not deliver',
+        toSessionId: sessionIdSchema.parse('missing'),
+      },
+    },
+  ]);
+  const restarted = createHelixCore(f.deps);
+  await restarted.start();
+  expect(await restarted.health()).toEqual({ status: 'ok', version: '0.0.0' });
+  expect(error).toHaveBeenCalledWith(expect.stringContaining('1 anomalous events'));
+  expect(f.harness.start).not.toHaveBeenCalled();
+  await restarted.createSession(p.id, request, 'after-reload');
+  expect(f.harness.start).toHaveBeenCalledOnce();
+  await restarted.shutdown();
+});
 const nodes: PlanNode[] = [
   {
     id: planNodeIdSchema.parse('api'),

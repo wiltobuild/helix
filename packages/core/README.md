@@ -23,6 +23,13 @@ for automatic PR shipping, observation, feedback and merge.
 
 Optional composition hooks:
 
+- `harnessStartsWithPrompt(agent: AgentKind): boolean` declares adapters that
+  automatically send a new session's prompt during start. The real daemon enables
+  this for Claude Code and Codex, so core records the initial receipt without a
+  second send. Resumed conversations still use explicit send when needed. Without
+  a resume token, an already-delivered task uses a transient empty start prompt
+  to suppress replay; the persisted Session retains the original prompt. Defaults
+  to false for explicit-send adapters. Contracts need an explicit initial-send seam.
 - `terminalOptions(session: Session): TerminalSpawnOptions` supplies resolved
   executables, arguments and environment. Defaults are `claude` or `codex`, model
   arguments when present, the prompt and worktree cwd. The terminal adapter owns
@@ -41,6 +48,15 @@ of the append-only log, rebuilt with the contracts projector. Call `start()` onc
 after construction to reconcile existing sessions and restore PR observation;
 repeated calls are harmless. New commands also initialize the event cache lazily.
 The composition root owns `store.close()` after shutting down consumers.
+
+Startup replay is lenient. Normal histories use one efficient `projectUpTo` fold;
+damaged histories fall back to per-event validation to count all anomalies and
+isolate valid events before rebuilding delivery state. One log line per affected
+project reports the count and first five reasons. Invalid events remain in the
+append-only store but never become recovered deliveries. Missing/corrupt genesis
+leaves that project unavailable until repaired, without preventing other projects
+or health from loading. The frozen health schema permits only `{status, version}`;
+an optional anomalies count is a contract request.
 
 Session identities are reserved in the idempotency store before external effects.
 Completed responses are stored separately, so concurrent/retried identical

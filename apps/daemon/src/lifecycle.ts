@@ -6,7 +6,10 @@ export type DaemonOptions = ServerOptions & { dataDir: string; version: string }
 
 /** Owns core startup, the loopback listener, run file and signal handlers. */
 export async function startDaemon(options: DaemonOptions) {
-  const app = await createServer(options);
+  const app = await createServer(options).catch(async (error: unknown) => {
+    await options.core.shutdown();
+    throw error;
+  });
   const runPath = join(options.dataDir, 'run.json');
   const startedAt = new Date().toISOString();
   let runContents: string | undefined;

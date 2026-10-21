@@ -1,2 +1,4 @@
-#!/usr/bin/env node
-console.log('helix placeholder');
+#!/usr/bin/env tsx
+import { runCli } from './index.js';
+
+process.exitCode = await runCli(process.argv.slice(2));

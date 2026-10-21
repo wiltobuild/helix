@@ -28,10 +28,32 @@ clients disconnect above 1 MiB queued output and resume through the client.
 Terminal WS input is schema-validated, bounded while attachment is pending, and
 detached even when the browser disconnects before attachment resolves.
 
-Integration: `main.ts` follows this handoff's assumed async options factory.
-`core-integration.d.ts` temporarily declares that missing export. Remove this
-augmentation and compose the real core dependencies at merge: the core handoff
-currently describes a synchronous factory accepting injected `CoreDeps`.
+`createRealCore({ dataDir, env }): Promise<HelixCore>` composes SQLite, Git
+worktrees, node-pty, Claude Code and Codex harnesses, feedback formatting and
+optional GitHub SCM. Worktrees and terminal logs live under `dataDir/worktrees`
+and `dataDir/terminals`. Shutdown stops adapters and closes SQLite, including
+startup failures. Tokens resolve from GH_TOKEN, GITHUB_TOKEN, then `gh auth token`;
+without a token the daemon logs one line and runs without SCM. Structured logs
+omit raw errors, tokens and prompts. Rejected Host/Origin requests return 403
+FORBIDDEN. Health retains the frozen `{status, version}` schema.
 
-Tests use a local fake core and loopback sockets only. No agent binaries, GitHub
-or external services are needed.
+From any directory within this workspace:
+
+```sh
+pnpm --filter @helix/daemon start
+pnpm --filter @helix/daemon dev
+```
+
+On Windows PowerShell, use `pnpm.cmd` if script execution is disabled.
+
+Default tests include real SQLite, temporary Git repositories and worktrees,
+local bare pushes, HTTP/SSE, a scripted harness and fake GitHub: CI fails,
+feedback triggers a committed repair, CI passes and the PR merges. They require
+Git but no agent binaries, credentials or external services. The optional real
+Codex variant stops after a committed diff and uses no GitHub:
+
+```powershell
+$env:HELIX_E2E = '1'
+pnpm.cmd exec vitest run --project @helix/daemon apps/daemon/src/e2e.integration.test.ts
+Remove-Item Env:HELIX_E2E
+```

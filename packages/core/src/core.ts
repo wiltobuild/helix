@@ -3,7 +3,6 @@ import {
   HelixError,
   isHelixError,
   applyEvent,
-  projectUpTo,
   deriveStatus,
   approvalDecisionRequestSchema,
   createProjectRequestSchema,
@@ -48,6 +47,7 @@ import {
   type Unsubscribe,
 } from '@helix/contracts';
 import { fingerprint, githubRemote, repoPath, slug, validate } from './helpers.js';
+import { reload } from './reload.js';
 
 export type CoreLog = { error(message: string, error?: unknown): void };
 export type CoreDeps = {
@@ -60,6 +60,8 @@ export type CoreDeps = {
   clock: () => string;
   ids: (prefix: string) => string;
   log: CoreLog;
+  /** Local adapter capability until start/initial-send ownership is in contracts. */
+  harnessStartsWithPrompt?: (agent: AgentKind) => boolean;
   /** Explicit opt-in: token-based conversation resume alone does not imply process reattachment. */
   canReattach?: (agent: AgentKind) => boolean;
   /** Allows executable resolution/configuration at the composition root; no shell strings. */
@@ -219,9 +221,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await emit('project.added', { project: p }, { projectId: p.id });
         continue;
       }
-      states.set(p.id, projectUpTo(events, cursor, { strict: true }));
+      const recovered = reload(events, deps.log);
+      if (!recovered.state) continue;
+      states.set(p.id, recovered.state);
+      // Invalid events stay in storage but must never be replayed as deliveries.
+      history.set(p.id, recovered.events);
       const heads = new Map<SessionId, string>();
-      for (const e of events) {
+      for (const e of recovered.events) {
         if ((e.type === 'pr.opened' || e.type === 'pr.updated') && e.sessionId)
           heads.set(e.sessionId, e.payload.pr.headSha);
         if (e.type === 'feedback.routed') {
@@ -381,8 +387,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         return;
       }
       const token = resumes.get(s.id);
+      const autoPrompt = deps.harnessStartsWithPrompt?.(s.agent) === true;
       runtime.handle = await harnessFor(s.agent).start({
-        session: s,
+        // CONTRACT-REQUEST: HarnessStartOptions needs explicit initialPrompt
+        // ownership. Real v1 adapters auto-send a nonempty prompt on fresh start.
+        // Empty here suppresses re-delivery when a receipt already exists; the
+        // persisted session retains its original, validated prompt.
+        session: autoPrompt && !sendInitial ? { ...s, prompt: '' } : s,
         cwd: s.worktreePath!,
         ...(token ? { resumeToken: token } : {}),
       });
@@ -394,7 +405,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       });
       await saveResume(s.id, cause);
       if (sendInitial) {
-        await runtime.handle.send(s.prompt, 'queue');
+        if (!autoPrompt || token) await runtime.handle.send(s.prompt, 'queue');
         await deps.store.remember(DELIVERY_SCOPE, String(cause), META_HASH, true);
       }
       await flush(s.id);
