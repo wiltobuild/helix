@@ -47,8 +47,8 @@ test('workspace Vitest config overrides shared defaults without root edits', asy
     assert.equal(custom.config.testTimeout, 4321);
     assert.equal(custom.config.maxWorkers, 1);
     assert.equal(
-      custom.config.setupFiles[0].replaceAll('\\', '/'),
-      // Vitest reports the real long path; tmpdir() can be an 8.3 short name (RUNNER~1) on Windows.
+      // Windows runners mix 8.3 short (RUNNER~1) and long temp paths; compare real paths.
+      realpathSync.native(custom.config.setupFiles[0]).replaceAll('\\', '/'),
       realpathSync.native(resolve(root, 'packages/custom/src/setup.ts')).replaceAll('\\', '/'),
     );
   } finally {
