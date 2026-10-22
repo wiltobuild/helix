@@ -8,6 +8,29 @@
     "scripts/check-boundaries.mjs",
     "scripts/run-e2e.mjs"
   ],
+  "globalPassThroughEnv": [
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "ProgramData",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "CommonProgramFiles",
+    "PSModulePath",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+    "OS"
+  ],
   "tasks": {
     "typecheck": {
       "dependsOn": ["^typecheck"],

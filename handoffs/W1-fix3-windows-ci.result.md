@@ -62,3 +62,17 @@ Markers appear once per direction after successful forwarding and flushing. Thei
 - The stderr tail is attached to request timeouts. An immediate supervisor failure can instead reject with `Harness process exited`; its exception is written to raw supervisor stderr, so capture that stream directly if the exit happens before a timeout.
 - Assembly compilation remains per launch. It is not supported as the cause by the passing probes/timings; adding an assembly cache would introduce file permissions, locking and invalidation paths without evidence that they are needed.
 - A tail beginning midway through a UTF-8 character may contain a replacement character at its first byte boundary. The retained data itself is capped at 4096 bytes.
+
+## Root cause, confirmed by Claude on the runner (diagnostic workflow, run 39819270252)
+
+The real cause was not in the wrapper. On windows-latest, the same harness suite gave these results:
+
+| How it ran | Result |
+|---|---|
+| Vitest directly | 109 passed |
+| `turbo run test --env-mode=loose` | 109 passed |
+| `turbo run test` (strict env, as in `pnpm check`) | 36 failed, all request timeouts |
+
+Turbo's strict env mode stripped the Windows system variables that PowerShell, .NET and the agent processes need. A direct probe of the wrapper on the runner passed every stage in about 1.5 s. The runner was already inside a job object, and the nested job worked.
+
+Fix: `globalPassThroughEnv` in `turbo.json` now lists the standard Windows system variables. They are passed through without affecting cache hashes, and the list covers `dev` as well. The thread-per-direction wrapper and the stderr tail stay in, as better diagnostics; they were not the fix.
