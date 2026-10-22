@@ -136,7 +136,7 @@ it('round-trips a plan decision through the typed HTTP client and validates befo
     fetch: async (url, init) => {
       const reply = await app.inject({
         method: 'POST',
-        url: new URL(String(url)).pathname,
+        url: new URL(url instanceof Request ? url.url : url).pathname,
         payload: init?.body as string,
         headers: { 'content-type': 'application/json' },
       });
