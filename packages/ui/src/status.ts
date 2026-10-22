@@ -12,23 +12,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-// Mirrors DisplayStatus / BoardColumn in @helix/contracts (W0-contracts). Switch to `import type` once merged.
-export type DisplayStatus =
-  | 'pending'
-  | 'working'
-  | 'needs_you'
-  | 'ci_failed'
-  | 'changes_requested'
-  | 'in_review'
-  | 'ready_to_merge'
-  | 'merged'
-  | 'exited'
-  | 'archived';
+import type { AgentKind, BoardColumn, DisplayStatus } from '@helix/contracts';
 
-export type BoardColumn =
-  'pending' | 'working' | 'needs_you' | 'in_review' | 'ready_to_merge' | 'archive';
-
-export type AgentKind = 'claude-code' | 'codex';
+export type { AgentKind, BoardColumn, DisplayStatus };
 
 type Tone = 'pending' | 'working' | 'needs' | 'failed' | 'review' | 'ready' | 'merged';
 
@@ -65,7 +51,18 @@ export const columnMeta: Record<BoardColumn, { label: string; tone: Tone }> = {
 export const toneVar = (tone: Tone) => `var(--status-${tone})`;
 export const toneSoftVar = (tone: Tone) => `var(--status-${tone}-soft)`;
 
-export const agentMeta: Record<AgentKind, { label: string; short: string; colorVar: string }> = {
+export interface AgentMeta {
+  label: string;
+  short: string;
+  colorVar: string;
+}
+
+const knownAgents: Record<string, AgentMeta> = {
   'claude-code': { label: 'Claude Code', short: 'claude', colorVar: 'var(--strand-claude)' },
   codex: { label: 'Codex', short: 'codex', colorVar: 'var(--strand-codex)' },
 };
+
+/** Display info for an agent. Unknown agents (the contract allows any harness name) get a neutral look. */
+export function agentMeta(agent: AgentKind): AgentMeta {
+  return knownAgents[agent] ?? { label: agent, short: agent, colorVar: 'var(--text-3)' };
+}

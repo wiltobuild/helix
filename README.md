@@ -1,8 +1,8 @@
 # Helix
 
-**An explainable agent orchestrator.** Helix runs Claude Code and Codex in parallel, each in its own git worktree, and carries every task from prompt → pull request → CI → merge. Unlike other orchestrators, it shows its reasoning: a live plan graph, a timeline you can rewind, and a **Why** panel for every decision.
+**An explainable agent orchestrator.** Helix runs Claude Code and Codex in parallel, each on its own branch, and brings every task to a merge-ready pull request that you approve. Every step is recorded with its cause, so you can replay the project's history and see why each change happened.
 
-> Status: Wave 0 (foundation). No app code yet.
+> Status: Wave 1 complete. The daemon, Claude Code and Codex adapters, git worktrees, GitHub feedback loop and live UI are built; a real Codex task has run end to end from the UI. Next (Wave 2): the orchestrator agent with plan approval, recorded replay for demo mode, and hardening.
 
 ## Docs
 - [Product Requirements (PRD)](https://claude.ai/artifact/APjpMcKMGE8DTrRyeLus4M), also in [`docs/PRD.html`](docs/PRD.html)
@@ -26,5 +26,6 @@ pnpm check
 pnpm dev
 ```
 
-`pnpm dev` starts the CLI and daemon placeholder watchers. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for ownership and architecture rules.
+`pnpm dev` starts the daemon on `127.0.0.1:4317` and the web app on `http://localhost:5317`. Open the web app and add a local git repository to start a task, or open `http://localhost:5317/?demo` to watch a recorded run with nothing else set up. Workers need the Codex or Claude Code CLI installed and signed in.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for ownership and architecture rules.

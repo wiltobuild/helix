@@ -1,6 +1,27 @@
 # Contributing to Helix
 
-Use one branch per work package: `wave<N>/<agent>`. Run `pnpm check` before review;
+## Coordinating agents across the team
+
+Work is coordinated through GitHub issues labeled `agent-task`, so both teammates' agents can
+pick up work without dividing it by hand. Each issue lists the paths it **owns**, the issues it
+is **blocked by**, its acceptance criteria and how to verify it. No two open tasks own the same
+files; when work would overlap, one task is blocked by the other.
+
+```sh
+node scripts/agent-tasks.mjs list           # ready / claimed / blocked
+node scripts/agent-tasks.mjs next           # first ready task
+node scripts/agent-tasks.mjs claim <issue>  # assign yourself, label in-progress, create agent/<issue>-<slug>
+node scripts/agent-tasks.mjs release <issue>
+```
+
+Claiming re-reads the issue after assigning, so two agents claiming at once back off cleanly.
+Open the PR against the base branch named in the issue with `Closes #<issue>`; a human merges.
+Agents needing a contract or root-config change open a `contract-request` issue instead of
+editing single-owner files. `CLAUDE.md` gives Claude Code agents the same protocol.
+
+## Packages and branches
+
+Use one branch per work package. Run `pnpm check` before review;
 formatting, typechecking, lint, tests, and architecture boundaries must all pass.
 Claude reviews every work package before merge.
 
@@ -77,5 +98,5 @@ That example violates both dependency direction and the entry-point rule.
 
 Packages have no emitted build artifacts yet. `pnpm build` validates boundaries and
 types, then runs any package build tasks added by future owners. For development,
-`pnpm dev` starts the CLI and daemon placeholder watchers. On Windows PowerShell,
+`pnpm dev` starts the daemon (`127.0.0.1:4317`) and the web app (`localhost:5317`). On Windows PowerShell,
 use `pnpm.cmd` if local execution policy blocks the `pnpm.ps1` shim.

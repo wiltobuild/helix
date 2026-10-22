@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project @helix/git",
-    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/git"
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/git",
+    "format": "prettier --write \"src/**/*.ts\" README.md package.json"
   },
   "dependencies": {
     "@helix/contracts": "workspace:*"

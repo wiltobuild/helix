@@ -22,7 +22,7 @@ function StrandGlyph() {
 }
 
 export function AgentBadge({ agent, variant = 'short', model, className }: AgentBadgeProps) {
-  const meta = agentMeta[agent];
+  const meta = agentMeta(agent);
   const style = { '--agent': meta.colorVar } as CSSProperties;
   if (variant === 'glyph') {
     return (

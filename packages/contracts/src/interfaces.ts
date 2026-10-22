@@ -114,6 +114,9 @@ export interface GitHelpers {
   markTurn(path: string, sessionId: SessionId): Promise<void>;
   commitAll(path: string, message: string): Promise<string | undefined>;
   push(path: string, branch: string): Promise<void>;
+  /** Fetches origin/<branch> (no prompts) and returns its SHA without touching the user's local
+   * branch or working tree. Without an origin remote, returns the local branch SHA. */
+  fetchBase(repoPath: string, branch: string): Promise<string>;
 }
 export interface GitService extends WorktreeManager, GitHelpers {
   create(

@@ -7,12 +7,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "format": "prettier --write src README.md package.json tsconfig.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project @helix/api-client",
     "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/api-client"
   },
   "dependencies": {
+    "zod": "4.6.5",
     "@helix/contracts": "workspace:*"
   }
 }
