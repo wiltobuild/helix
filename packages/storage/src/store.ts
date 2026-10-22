@@ -30,6 +30,7 @@ import {
   StorageError,
 } from './errors.js';
 import { migrate } from './migrations.js';
+import { sanitizeForExport } from './redact.js';
 
 export interface OpenStoreOptions {
   dataDir?: string;
@@ -318,15 +319,16 @@ class SqliteStore implements StorageStore {
       if (first.type !== 'project.added')
         throw new RecordingValidationError('Project history must begin with project.added');
       try {
+        const sanitized = sanitizeForExport(first.payload.project, events);
         return serializeHelixlog({
           header: {
             format: 'helixlog',
             version: 1,
-            project: first.payload.project,
+            project: sanitized.project,
             recordedAt: events.at(-1)!.ts,
-            redactions: [],
+            redactions: sanitized.redactions,
           },
-          events,
+          events: sanitized.events as HelixEvent[],
         });
       } catch {
         throw new RecordingValidationError('Project history is not a valid recording');
