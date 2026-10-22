@@ -3,6 +3,7 @@ import type {
   Approval,
   ChatItem,
   Plan,
+  PlanStatus,
   Project,
   PullRequestFacts,
   Session,
@@ -22,10 +23,17 @@ export type SessionState = {
   lastEventSeq: number;
   pendingApprovalIds: ApprovalId[];
 };
+export type PlanState = Plan & {
+  status: PlanStatus;
+  nodeStatus: Record<PlanNodeId, DisplayStatus>;
+  decidedAt?: string;
+  approvedBy?: 'human';
+  rejectionReason?: string;
+};
 export type ProjectState = {
   project: Project;
   sessions: Record<SessionId, SessionState>;
-  plans: Record<PlanId, Plan & { nodeStatus: Record<PlanNodeId, DisplayStatus> }>;
+  plans: Record<PlanId, PlanState>;
   approvals: Record<ApprovalId, Approval>;
   lastSeq: number;
   anomalies: Anomaly[];
@@ -104,6 +112,17 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (Object.hasOwn(state.plans, e.payload.plan.id)) throw new Error('Plan already submitted');
       sessionFor(state, e.payload.plan.orchestratorSessionId);
       break;
+    case 'plan.approved':
+    case 'plan.rejected': {
+      const plan = Object.hasOwn(state.plans, e.payload.planId)
+        ? state.plans[e.payload.planId]
+        : undefined;
+      if (!plan) throw new Error('Unknown plan');
+      if (e.sessionId !== undefined && e.sessionId !== plan.orchestratorSessionId)
+        throw new Error('Plan decision session mismatch');
+      if (plan.status !== 'awaiting_approval') throw new Error('Plan already decided');
+      break;
+    }
     case 'plan.node_updated': {
       const plan = planForNode(state, e.payload.nodeId);
       if (e.payload.sessionId) sessionFor(state, e.payload.sessionId);
@@ -259,13 +278,36 @@ function reduceInto(
         if (!node.sessionId && s) node.sessionId = s.session.id;
       }
       Object.defineProperty(next.plans, plan.id, {
-        value: { ...plan, nodeStatus: {} },
+        value: { ...plan, status: 'awaiting_approval', nodeStatus: {} },
         enumerable: true,
         writable: true,
         configurable: true,
       });
       const s = sessionFor(next, plan.orchestratorSessionId);
       s.chat.push({ kind: 'plan_update', planId: plan.id, text: plan.goal });
+      s.lastEventSeq = e.seq;
+      break;
+    }
+    case 'plan.approved':
+    case 'plan.rejected': {
+      const plan = next.plans[e.payload.planId]!;
+      plan.decidedAt = e.ts;
+      if (e.type === 'plan.approved') {
+        plan.status = 'approved';
+        plan.approvedBy = e.payload.approvedBy;
+      } else {
+        plan.status = 'rejected';
+        plan.rejectionReason = e.payload.reason;
+      }
+      const s = sessionFor(next, plan.orchestratorSessionId);
+      s.chat.push({
+        kind: 'plan_update',
+        planId: plan.id,
+        text:
+          e.type === 'plan.approved'
+            ? 'Plan approved by human'
+            : `Plan rejected: ${e.payload.reason}`,
+      });
       s.lastEventSeq = e.seq;
       break;
     }

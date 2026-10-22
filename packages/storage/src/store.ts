@@ -8,6 +8,7 @@ import {
   backfill,
   HelixError,
   isHelixError,
+  metaValueSchema,
   parseEvent,
   parseHelixlog,
   projectSchema,
@@ -16,6 +17,7 @@ import {
   type Helixlog,
   type HelixlogHeader,
   type HelixStore,
+  type MetaValue,
   type Project,
   type ProjectId,
   type RecordingImportResponse,
@@ -258,6 +260,28 @@ class SqliteStore implements StorageStore {
     return this.run(() => {
       const row = this.db.prepare('SELECT json FROM projects WHERE repo_path = ?').get(repoPath);
       return row ? (JSON.parse(row.json as string) as Project) : undefined;
+    });
+  }
+
+  async getMeta(scope: string, key: string): Promise<MetaValue | undefined> {
+    return this.run(() => {
+      const row = this.db
+        .prepare('SELECT value_json FROM metadata WHERE scope = ? AND key = ?')
+        .get(scope, key);
+      return row ? metaValueSchema.parse(JSON.parse(row.value_json as string)) : undefined;
+    });
+  }
+
+  async setMeta(scope: string, key: string, value: MetaValue): Promise<void> {
+    this.run(() => {
+      const parsed = metaValueSchema.safeParse(value);
+      if (!parsed.success) throw new HelixError('INVALID_REQUEST', 'Metadata must be a JSON value');
+      this.db
+        .prepare(
+          `INSERT INTO metadata (scope, key, value_json) VALUES (?, ?, ?)
+        ON CONFLICT(scope, key) DO UPDATE SET value_json = excluded.value_json`,
+        )
+        .run(scope, key, JSON.stringify(parsed.data));
     });
   }
 

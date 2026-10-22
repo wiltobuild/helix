@@ -102,6 +102,9 @@ export function createFakeCore() {
     diff: vi.fn<HelixCore['diff']>().mockResolvedValue({ unifiedDiff: '', files: [] }),
     merge: vi.fn<HelixCore['merge']>().mockResolvedValue({ mergeSha: 'merged-sha' }),
     submitPlan: vi.fn<HelixCore['submitPlan']>().mockResolvedValue(plan),
+    decidePlan: vi
+      .fn<HelixCore['decidePlan']>()
+      .mockResolvedValue({ planId: plan.id, status: 'approved' }),
     explain: vi.fn<HelixCore['explain']>().mockResolvedValue(explanation),
     exportRecording: vi
       .fn<HelixCore['exportRecording']>()

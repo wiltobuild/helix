@@ -39,6 +39,13 @@ or looking up a path. Project listing is ordered by creation time, then ID.
 `IdempotencyConflictError` (`IDEMPOTENCY_CONFLICT`). Responses must be JSON
 serializable. There is no automatic expiration.
 
+`getMeta(scope, key)` / `setMeta(scope, key, value)` provide separate mutable JSON
+metadata for resume tokens and delivery receipts. Missing keys return `undefined`;
+`null` is an ordinary stored value. Writes atomically replace the scoped value,
+survive restart, and do not emit events or enter recordings. Reads and writes
+detach object values from their callers. Migration 2 adds the metadata table
+without changing existing event, project, idempotency or recording data.
+
 Exports include the complete project history, with the original genesis project
 as the header and the last event timestamp as `recordedAt`. No implicit redaction
 is performed. Imports are validated atomically and stored in separate replay

@@ -45,6 +45,7 @@ export function createDispatch(core: HelixCore) {
     sessionDiff: ({ params, query }) => core.diff(params.id, query.scope),
     mergeSession: ({ params }) => core.merge(params.id),
     submitPlan: ({ body }) => core.submitPlan(body),
+    decidePlan: ({ params, body }) => core.decidePlan(params.id, body),
     explain: ({ body }) => core.explain(body),
     exportRecording: ({ params }) => core.exportRecording(params.projectId),
     importRecording: ({ body }) => core.importRecording(body),

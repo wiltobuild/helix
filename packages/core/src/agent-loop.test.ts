@@ -331,6 +331,7 @@ test.each([false, true])(
       title: id,
       description: id,
       acceptance: ['Tests pass'],
+      files: [`src/${id}/**`],
       dependsOn: dependsOn.map((value) => planNodeIdSchema.parse(value)),
       agent: 'codex',
       rationale: id,

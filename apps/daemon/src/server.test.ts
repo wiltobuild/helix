@@ -52,6 +52,7 @@ const cases = [
   { name: 'sessionDiff', method: 'diff', query: '?scope=workspace' },
   { name: 'mergeSession', method: 'merge' },
   { name: 'submitPlan', method: 'submitPlan', payload: planBody },
+  { name: 'decidePlan', method: 'decidePlan', payload: { decision: 'approve' } },
   { name: 'explain', method: 'explain', payload: { sessionId: session.id, text: 'Because' } },
   { name: 'exportRecording', method: 'exportRecording' },
   {
@@ -84,9 +85,11 @@ describe('contract routes', () => {
           ':id',
           item.name === 'decideApproval'
             ? approval.id
-            : item.name === 'projectEvents' || item.name === 'createSession'
-              ? project.id
-              : session.id,
+            : item.name === 'decidePlan'
+              ? plan.id
+              : item.name === 'projectEvents' || item.name === 'createSession'
+                ? project.id
+                : session.id,
         ) + ('query' in item ? item.query : '');
     const request = {
       method: route.method,
@@ -124,6 +127,45 @@ describe('contract routes', () => {
         .sort(),
     );
   });
+});
+
+it('round-trips a plan decision through the typed HTTP client and validates before dispatch', async () => {
+  const { app, core } = await setup();
+  const client = createHelixClient({
+    baseUrl: 'http://localhost:4317',
+    fetch: async (url, init) => {
+      const reply = await app.inject({
+        method: 'POST',
+        url: new URL(String(url)).pathname,
+        payload: init?.body as string,
+        headers: { 'content-type': 'application/json' },
+      });
+      return new Response(reply.body, {
+        status: reply.statusCode,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+  await expect(client.decidePlan(plan.id, { decision: 'approve' })).resolves.toEqual({
+    planId: plan.id,
+    status: 'approved',
+  });
+  expect(core.decidePlan).toHaveBeenCalledExactlyOnceWith(plan.id, { decision: 'approve' });
+  core.decidePlan.mockResolvedValueOnce({ planId: plan.id, status: 'rejected' });
+  await expect(
+    client.decidePlan(plan.id, { decision: 'reject', reason: 'Split the change' }),
+  ).resolves.toEqual({ planId: plan.id, status: 'rejected' });
+  expect(core.decidePlan).toHaveBeenLastCalledWith(plan.id, {
+    decision: 'reject',
+    reason: 'Split the change',
+  });
+  const invalid = await app.inject({
+    method: 'POST',
+    url: `/api/plans/${plan.id}/decision`,
+    payload: { decision: 'approve', approvedBy: 'agent' },
+  });
+  expect(invalid.statusCode).toBe(400);
+  expect(core.decidePlan).toHaveBeenCalledTimes(2);
 });
 
 it('requires idempotency and forwards validated arguments and numeric defaults', async () => {

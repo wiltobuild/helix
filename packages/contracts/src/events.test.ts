@@ -31,6 +31,11 @@ samples['session.archived'] = eventSchemas['session.archived'].parse({
   type: 'session.archived',
   payload: {},
 });
+samples['plan.rejected'] = eventSchemas['plan.rejected'].parse({
+  ...base,
+  type: 'plan.rejected',
+  payload: { planId: fixtures.passwordResetPlan.id, reason: 'Split the task further' },
+});
 samples['terminal.output_marker'] = eventSchemas['terminal.output_marker'].parse({
   ...base,
   type: 'terminal.output_marker',
@@ -54,6 +59,8 @@ const invalid: Record<EventType, unknown> = {
     },
   },
   'plan.node_updated': { nodeId: '' },
+  'plan.approved': { planId: fixtures.passwordResetPlan.id, approvedBy: 'agent' },
+  'plan.rejected': { planId: fixtures.passwordResetPlan.id, reason: '  ' },
   'explain.note': { text: 3 },
   'worktree.created': { branch: 'b', path: '', baseSha: 'sha' },
   'worktree.diff_updated': { filesChanged: -1, insertions: 0, deletions: 0 },

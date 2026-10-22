@@ -115,6 +115,7 @@ const nodes: PlanNode[] = [
   {
     id: planNodeIdSchema.parse('api'),
     title: 'API',
+    files: ['src/api/**'],
     description: 'Implement API',
     acceptance: ['Tests pass', 'Errors are documented'],
     dependsOn: [],
@@ -124,6 +125,7 @@ const nodes: PlanNode[] = [
   {
     id: planNodeIdSchema.parse('ui'),
     title: 'UI',
+    files: ['src/ui/**'],
     description: 'Implement UI',
     acceptance: ['Accessible'],
     dependsOn: [],
@@ -133,6 +135,7 @@ const nodes: PlanNode[] = [
   {
     id: planNodeIdSchema.parse('integration'),
     title: 'Integrate',
+    files: ['src/integration/**'],
     description: 'Wire the API',
     acceptance: ['End to end works'],
     dependsOn: [planNodeIdSchema.parse('api')],
