@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -48,7 +48,8 @@ test('workspace Vitest config overrides shared defaults without root edits', asy
     assert.equal(custom.config.maxWorkers, 1);
     assert.equal(
       custom.config.setupFiles[0].replaceAll('\\', '/'),
-      resolve(root, 'packages/custom/src/setup.ts').replaceAll('\\', '/'),
+      // Vitest reports the real long path; tmpdir() can be an 8.3 short name (RUNNER~1) on Windows.
+      realpathSync.native(resolve(root, 'packages/custom/src/setup.ts')).replaceAll('\\', '/'),
     );
   } finally {
     await context?.close();
