@@ -1,0 +1,41 @@
+# TEMPORARY: diagnose the windows-latest harness hang. Remove before merging.
+name: Diagnose Windows harness
+
+on:
+  push:
+    branches: [wave1/fix-windows-ci]
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Runner facts
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $PSVersionTable | Format-Table -AutoSize | Out-String | Write-Host
+          Get-ExecutionPolicy -List | Out-String | Write-Host
+          "TEMP=$env:TEMP"; "LanguageMode=$($ExecutionContext.SessionState.LanguageMode)"
+          Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public static class J{[DllImport("kernel32.dll")]public static extern bool IsProcessInJob(IntPtr p,IntPtr j,out bool r);[DllImport("kernel32.dll")]public static extern IntPtr GetCurrentProcess();}'
+          $inJob = $false; [void][J]::IsProcessInJob([J]::GetCurrentProcess(), [IntPtr]::Zero, [ref]$inJob); "InJob=$inJob"
+          try { Get-MpComputerStatus | Select-Object AMServiceEnabled,RealTimeProtectionEnabled | Out-String | Write-Host } catch { "Defender status unavailable: $_" }
+      - name: Probe the job wrapper directly
+        continue-on-error: true
+        run: node scripts/diag-windows-job.cjs
+      - name: Harness lifecycle tests with stage markers
+        continue-on-error: true
+        shell: pwsh
+        env:
+          HELIX_DEBUG_PROCESS: '1'
+        run: pnpm exec vitest run --config vitest.config.ts --project @helix/harness --reporter verbose packages/harness/src/process.test.ts packages/harness/src/lifecycle.test.ts -t "detects both fake CLIs|pipe"
