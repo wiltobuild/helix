@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Project } from '@helix/contracts';
+import { projectSchema, type Project } from '@helix/contracts';
 import { redact, sanitizeForExport } from './redact.js';
 
 describe('redaction', () => {
-  const baseProject: Project = {
+  const baseProject: Project = projectSchema.parse({
     id: 'p_123',
     name: 'test-project',
     repoPath: '/Users/developer/repos/secret-project',
+    defaultBranch: 'main',
+    defaultAgent: 'codex',
     createdAt: '2026-10-01T00:00:00.000Z',
-  };
+  });
 
   it('redacts absolute repo paths and usernames in macOS, Linux and Windows paths', () => {
     const input = {

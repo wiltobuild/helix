@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   fixtures,
+  parseEvent,
   parseHelixlog,
+  projectSchema,
   projectUpTo,
   type HelixEvent,
-  type Project,
   type UnsequencedEvent,
 } from '@helix/contracts';
 import { openStore } from '@helix/storage';
@@ -16,6 +17,12 @@ function unsequence(events: readonly HelixEvent[]): UnsequencedEvent[] {
     void seq;
     return input;
   });
+}
+
+function toEvent(value: unknown): HelixEvent {
+  const result = parseEvent(value);
+  if (!result.success) throw new Error(result.error.message);
+  return result.data;
 }
 
 describe('daemon recordings round-trip and redaction', () => {
@@ -33,14 +40,14 @@ describe('daemon recordings round-trip and redaction', () => {
   it('redacts sensitive tokens, emails, usernames and paths in exported .helixlog', async () => {
     const store = openStore({ memory: true });
     try {
-      const realLocalProject: Project = {
+      const realLocalProject = projectSchema.parse({
         id: 'proj_real_codex',
         name: 'real-codex-run',
         repoPath: '/Users/developer/projects/real-codex',
         defaultBranch: 'main',
         defaultAgent: 'codex',
         createdAt: '2026-10-01T10:00:00.000Z',
-      };
+      });
 
       const realCodexEvents: HelixEvent[] = [
         {
@@ -54,36 +61,55 @@ describe('daemon recordings round-trip and redaction', () => {
         {
           seq: 2,
           projectId: realLocalProject.id,
-          sessionId: 'sess_codex_1' as any,
-          type: 'chat.item',
-          ts: '2026-10-01T10:01:00.000Z',
+          sessionId: 'sess_codex_1',
+          type: 'session.created',
+          ts: '2026-10-01T10:00:30.000Z',
           v: 1,
           payload: {
-            item: {
-              id: 'chat_1',
-              role: 'assistant',
-              text: 'Pushing with ghp_11223344556677889900aabbccddeeff0011 for user dev@corp.com',
+            session: {
+              id: 'sess_codex_1',
+              projectId: realLocalProject.id,
+              role: 'orchestrator',
+              agent: 'codex',
+              title: 'Real Codex run',
+              prompt: 'Push the fix',
+              interface: 'chat',
+              createdAt: '2026-10-01T10:00:30.000Z',
             },
           },
         },
         {
           seq: 3,
           projectId: realLocalProject.id,
-          sessionId: 'sess_codex_1' as any,
-          type: 'worktree.created',
-          ts: '2026-10-01T10:02:00.000Z',
+          sessionId: 'sess_codex_1',
+          type: 'chat.item',
+          ts: '2026-10-01T10:01:00.000Z',
           v: 1,
           payload: {
-            sessionId: 'sess_codex_1' as any,
-            branch: 'helix/sess_codex_1',
-            worktreePath: '/Users/developer/projects/real-codex/.helix/worktrees/sess_codex_1',
-            baseSha: '0123456789abcdef0123456789abcdef01234567',
+            item: {
+              kind: 'message',
+              role: 'assistant',
+              text: 'Pushing with ghp_11223344556677889900aabbccddeeff0011 for user dev@corp.com',
+            },
           },
         },
         {
           seq: 4,
           projectId: realLocalProject.id,
-          sessionId: 'sess_codex_1' as any,
+          sessionId: 'sess_codex_1',
+          type: 'worktree.created',
+          ts: '2026-10-01T10:02:00.000Z',
+          v: 1,
+          payload: {
+            branch: 'helix/sess_codex_1',
+            path: '/Users/developer/projects/real-codex/.helix/worktrees/sess_codex_1',
+            baseSha: '0123456789abcdef0123456789abcdef01234567',
+          },
+        },
+        {
+          seq: 5,
+          projectId: realLocalProject.id,
+          sessionId: 'sess_codex_1',
           type: 'explain.note',
           ts: '2026-10-01T10:03:00.000Z',
           v: 1,
@@ -91,7 +117,7 @@ describe('daemon recordings round-trip and redaction', () => {
             text: 'Committed in /Users/developer/projects/real-codex by dev@example.com',
           },
         },
-      ];
+      ].map(toEvent);
 
       await store.append(unsequence(realCodexEvents));
 
@@ -117,11 +143,11 @@ describe('daemon recordings round-trip and redaction', () => {
       expect(rawText).not.toContain('dev@example.com');
 
       const importResult = await store.importRecording(exportedText);
-      expect(importResult.eventCount).toBe(4);
+      expect(importResult.eventCount).toBe(5);
 
       const recordings = await store.listRecordings();
       expect(recordings).toHaveLength(1);
-      expect(recordings[0]?.eventCount).toBe(4);
+      expect(recordings[0]?.eventCount).toBe(5);
 
       const originalProj = projectUpTo(realCodexEvents, Number.MAX_SAFE_INTEGER, {
         strict: true,
