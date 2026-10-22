@@ -149,7 +149,7 @@ export function sanitizeForExport(
 ): { project: Project; events: unknown[]; redactions: string[] } {
   const isDemo = isPlaceholderPath(genesisProject.repoPath);
   const result = redact({ project: genesisProject, events }, { repoPath: genesisProject.repoPath });
-  const sanitized = result.value as { project: Project; events: unknown[] };
+  const sanitized = result.value;
 
   if (!isDemo) {
     sanitized.project.repoPath = '<repo>';
