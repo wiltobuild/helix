@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -7,7 +7,7 @@ import { createVitest } from 'vitest/node';
 import { discoverTestProjects, nodeTestDefaults } from '../vitest.shared.ts';
 
 test('workspace Vitest config overrides shared defaults without root edits', async () => {
-  const root = mkdtempSync(resolve(tmpdir(), 'helix-vitest-'));
+  const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'helix-vitest-')));
   let context;
   try {
     for (const name of ['fallback', 'custom']) {
@@ -52,7 +52,7 @@ test('workspace Vitest config overrides shared defaults without root edits', asy
     );
   } finally {
     await context?.close();
-    assert.equal(dirname(root), resolve(tmpdir()));
+    assert.equal(dirname(root), realpathSync(resolve(tmpdir())));
     assert.ok(basename(root).startsWith('helix-vitest-'));
     rmSync(root, { recursive: true, force: true });
   }
