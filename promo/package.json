@@ -1,0 +1,12 @@
+{
+  "name": "helix-promo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "score": "python3 score.py score.wav && ffmpeg -y -loglevel error -i score.wav -b:a 192k score.mp3 && rm score.wav",
+    "render": "node render.mjs helix-promo.mp4"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

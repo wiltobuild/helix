@@ -8,6 +8,7 @@
 - [Product Requirements (PRD)](https://claude.ai/artifact/APjpMcKMGE8DTrRyeLus4M), also in [`docs/PRD.html`](docs/PRD.html)
 - [Implementation plan](docs/PLAN.md)
 - [Research](docs/research/): product teardown, architecture patterns, stack, UI/UX
+- [Promo film](promo/helix-promo.mp4) (64 s), with its source in [`promo/`](promo/)
 
 ## Team
 - Wil Sheppard ([@wiltobuild](https://github.com/wiltobuild))
