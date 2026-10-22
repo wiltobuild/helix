@@ -38,4 +38,13 @@ jobs:
         shell: pwsh
         env:
           HELIX_DEBUG_PROCESS: '1'
-        run: pnpm exec vitest run --config vitest.config.ts --project @helix/harness --reporter verbose packages/harness/src/process.test.ts packages/harness/src/lifecycle.test.ts -t "detects both fake CLIs|pipe"
+        run: pnpm exec vitest run --config vitest.config.ts --project @helix/harness --reporter verbose packages/harness/src/process.test.ts packages/harness/src/lifecycle.test.ts -t "pipe|flushes the final unterminated"
+      - name: A. Full harness suite, Vitest directly
+        continue-on-error: true
+        run: pnpm exec vitest run --config vitest.config.ts --project @helix/harness
+      - name: B. Harness suite through Turbo (strict env)
+        continue-on-error: true
+        run: pnpm turbo run test --filter=@helix/harness --force
+      - name: C. Harness suite through Turbo (loose env)
+        continue-on-error: true
+        run: pnpm turbo run test --filter=@helix/harness --force --env-mode=loose
