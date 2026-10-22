@@ -3,13 +3,20 @@ import {
   fixtures,
   parseHelixlog,
   projectUpTo,
-  serializeHelixlog,
   type HelixEvent,
-  type Helixlog,
   type Project,
+  type UnsequencedEvent,
 } from '@helix/contracts';
 import { openStore } from '@helix/storage';
 import { verifyRecordingRoundTrip } from './recordings.js';
+
+function unsequence(events: readonly HelixEvent[]): UnsequencedEvent[] {
+  return events.map((event) => {
+    const { seq, ...input } = event;
+    void seq;
+    return input;
+  });
+}
 
 describe('daemon recordings round-trip and redaction', () => {
   it('round-trips full run through export and import with identical projection', async () => {
@@ -55,9 +62,7 @@ describe('daemon recordings round-trip and redaction', () => {
             item: {
               id: 'chat_1',
               role: 'assistant',
-              text:
-                'Pushing with ghp_11223344556677889900aabbccddeeff0011 ' +
-                'to git remote for user developer@corp.com',
+              text: 'Pushing with ghp_11223344556677889900aabbccddeeff0011 for user dev@corp.com',
             },
           },
         },
@@ -88,10 +93,7 @@ describe('daemon recordings round-trip and redaction', () => {
         },
       ];
 
-      await store.append(realCodexEvents.map((e) => {
-        const { seq, ...rest } = e;
-        return rest;
-      }));
+      await store.append(unsequence(realCodexEvents));
 
       const exportedText = await store.exportProject(realLocalProject.id);
       const parsed = parseHelixlog(exportedText);
@@ -101,7 +103,6 @@ describe('daemon recordings round-trip and redaction', () => {
 
       const log = parsed.data;
 
-      // Header checks
       expect(log.header.format).toBe('helixlog');
       expect(log.header.version).toBe(1);
       expect(log.header.project.repoPath).toBe('<repo>');
@@ -109,14 +110,12 @@ describe('daemon recordings round-trip and redaction', () => {
         expect.arrayContaining(['email', 'path:repo', 'token']),
       );
 
-      // Event content checks: no raw paths or tokens or emails leaked
       const rawText = JSON.stringify(log.events);
       expect(rawText).not.toContain('/Users/developer');
       expect(rawText).not.toContain('ghp_11223344556677889900aabbccddeeff0011');
-      expect(rawText).not.toContain('developer@corp.com');
+      expect(rawText).not.toContain('dev@corp.com');
       expect(rawText).not.toContain('dev@example.com');
 
-      // Import checks: stores as replay-only
       const importResult = await store.importRecording(exportedText);
       expect(importResult.eventCount).toBe(4);
 
@@ -124,7 +123,6 @@ describe('daemon recordings round-trip and redaction', () => {
       expect(recordings).toHaveLength(1);
       expect(recordings[0]?.eventCount).toBe(4);
 
-      // Verify projection of imported recording matches projection of sanitized original
       const originalProj = projectUpTo(realCodexEvents, Number.MAX_SAFE_INTEGER, {
         strict: true,
       });
@@ -135,7 +133,6 @@ describe('daemon recordings round-trip and redaction', () => {
         strict: true,
       });
 
-      // Session states, activities, and counts match
       expect(replayedProj.lastSeq).toBe(originalProj.lastSeq);
       expect(Object.keys(replayedProj.sessions)).toEqual(Object.keys(originalProj.sessions));
     } finally {
