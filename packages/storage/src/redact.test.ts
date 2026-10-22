@@ -31,7 +31,9 @@ describe('redaction', () => {
   it('redacts tokens from hostile URLs, headers and error messages', () => {
     const hostile = {
       remoteUrl: 'https://ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/org/repo.git',
-      authHeader: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.doNotLeakThisSignature',
+      authHeader:
+        'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
+        'eyJzdWIiOiIxMjM0NTY3ODkwIn0.doNotLeakThisSignature',
       fineGrained: 'Using github_pat_11AABCDEF0123456789abcdef0123456789abcdef0123456789 for push',
       openai: 'OpenAI returned 401 with sk-proj-123456789012345678901234567890',
       anthropic: 'Anthropic client initialized with sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345',

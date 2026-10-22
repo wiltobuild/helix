@@ -55,7 +55,9 @@ describe('daemon recordings round-trip and redaction', () => {
             item: {
               id: 'chat_1',
               role: 'assistant',
-              text: 'Pushing with ghp_11223344556677889900aabbccddeeff0011 to git remote for user developer@corp.com',
+              text:
+                'Pushing with ghp_11223344556677889900aabbccddeeff0011 ' +
+                'to git remote for user developer@corp.com',
             },
           },
         },

@@ -7,7 +7,13 @@ import {
   type ProjectId,
   type ProjectState,
 } from '@helix/contracts';
-import { openStore, sanitizeForExport, type OpenStoreOptions, type RecordingInfo, type StorageStore } from '@helix/storage';
+import {
+  openStore,
+  sanitizeForExport,
+  type OpenStoreOptions,
+  type RecordingInfo,
+  type StorageStore,
+} from '@helix/storage';
 
 export interface RecordingExportOptions {
   repoPath?: string;
@@ -27,10 +33,7 @@ export async function exportRecordingFromStore(
 /**
  * Imports a .helixlog string into the storage store as a replay-only recording.
  */
-export async function importRecordingIntoStore(
-  store: StorageStore,
-  text: string,
-) {
+export async function importRecordingIntoStore(store: StorageStore, text: string) {
   return store.importRecording(text);
 }
 
