@@ -11,7 +11,6 @@ import {
   openStore,
   sanitizeForExport,
   type OpenStoreOptions,
-  type RecordingInfo,
   type StorageStore,
 } from '@helix/storage';
 
