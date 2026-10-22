@@ -26,7 +26,12 @@ export function insideWorktree(cwd: string, paths: string[]): boolean {
     return paths.every((entry) => {
       if (!entry || entry.includes('\0')) return false;
       // Win32 alternate streams/device paths and foreign-platform paths fail closed.
-      if (process.platform !== 'win32' && (path.win32.isAbsolute(entry) || entry.includes('\\')))
+      if (
+        process.platform !== 'win32' &&
+        ((path.win32.isAbsolute(entry) && !path.posix.isAbsolute(entry)) ||
+          entry.includes('\\') ||
+          entry.includes(':'))
+      )
         return false;
       if (
         process.platform === 'win32' &&
