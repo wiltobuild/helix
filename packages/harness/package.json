@@ -1,0 +1,21 @@
+{
+  "name": "@helix/harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/harness",
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/harness"
+  },
+  "dependencies": {
+    "@helix/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@helix/testing": "workspace:*"
+  }
+}

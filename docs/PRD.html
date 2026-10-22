@@ -7,7 +7,7 @@
 /* Layout: sticky section rail on the left, one reading column; two-strand helix motif = two agents (Claude Code, Codex) */
 :root{
   --bg:#F3F6F5; --surface:#FFFFFF; --sunk:#E9EFED; --ink:#13201E; --muted:#56655F; --line:#D7E0DD;
-  --a:#0E7672; --b:#C9502F; --a-soft:#0E767214; --b-soft:#C9502F14;
+  --a:#0E7672; --b:#C96442; --a-soft:#0E767214; --b-soft:#C964421A;
   --s-work:#2C66D0; --s-need:#A86A10; --s-fail:#BE3B27; --s-rev:#7148C7; --s-done:#26804F; --s-idle:#7D8A86;
   --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -16,12 +16,12 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0B1211; --surface:#121B1A; --sunk:#0F1716; --ink:#E3ECE9; --muted:#93A6A0; --line:#22302E;
-  --a:#43C2BB; --b:#F0805F; --a-soft:#43C2BB1F; --b-soft:#F0805F1F;
+  --a:#43C2BB; --b:#D97757; --a-soft:#43C2BB1F; --b-soft:#D977571F;
   --s-work:#6E9CF2; --s-need:#E3A53F; --s-fail:#F06B55; --s-rev:#AE8CF5; --s-done:#55C487; --s-idle:#8A9894;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0B1211; --surface:#121B1A; --sunk:#0F1716; --ink:#E3ECE9; --muted:#93A6A0; --line:#22302E;
-  --a:#43C2BB; --b:#F0805F; --a-soft:#43C2BB1F; --b-soft:#F0805F1F;
+  --a:#43C2BB; --b:#D97757; --a-soft:#43C2BB1F; --b-soft:#D977571F;
   --s-work:#6E9CF2; --s-need:#E3A53F; --s-fail:#F06B55; --s-rev:#AE8CF5; --s-done:#55C487; --s-idle:#8A9894;
   color-scheme:dark}
 
@@ -213,7 +213,7 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
     <p class="eyebrow">Product Requirements Document · Net New Build</p>
     <h1><span>Helix</span></h1>
     <p class="lede">Run Claude Code and Codex in parallel, then see the plan, rewind any moment, and ask why.</p>
-    <div class="strands"><span><i style="background:var(--a)"></i>Strand A · Claude Code</span><span><i style="background:var(--b)"></i>Strand B · Codex</span></div>
+    <div class="strands"><span><i style="background:var(--b)"></i>Claude Code</span><span><i style="background:var(--a)"></i>Codex</span></div>
     <div class="meta">
       <div><span class="eyebrow">Build name</span><b>Helix</b></div>
       <div><span class="eyebrow">Owner</span><b>Wil Sheppard &amp; Abheeshu Dhungana</b></div>
@@ -322,9 +322,9 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
             <path class="edge" d="M150 115 C210 115 210 170 270 170"/>
             <path class="edge" d="M450 60 C500 60 500 115 540 115"/>
             <path class="edge" d="M450 170 C500 170 500 115 540 115"/>
-            <path class="flow" style="stroke:var(--b)" d="M150 115 C210 115 210 60 270 60"/>
-            <path class="flow" style="stroke:var(--a)" d="M150 115 C210 115 210 170 270 170"/>
-            <path class="flow" style="stroke:var(--b)" d="M450 60 C500 60 500 115 540 115"/>
+            <path class="flow" style="stroke:var(--a)" d="M150 115 C210 115 210 60 270 60"/>
+            <path class="flow" style="stroke:var(--b)" d="M150 115 C210 115 210 170 270 170"/>
+            <path class="flow" style="stroke:var(--a)" d="M450 60 C500 60 500 115 540 115"/>
             <g class="node"><rect x="10" y="85" width="140" height="60" rx="9"/><circle cx="30" cy="104" r="5" style="fill:var(--s-done)"/><text x="42" y="108">Plan</text><text class="small" x="22" y="131">orchestrator</text></g>
             <g class="node"><rect x="270" y="30" width="180" height="60" rx="9"/><circle class="pulse" cx="290" cy="49" r="5" style="fill:var(--s-work)"/><text x="302" y="53">Reset-token API</text><text class="small" x="282" y="76">codex · CI fixing</text></g>
             <g class="node"><rect x="270" y="140" width="180" height="60" rx="9"/><circle cx="290" cy="159" r="5" style="fill:var(--s-need)"/><text x="302" y="163">Reset form UI</text><text class="small" x="282" y="186">claude · needs you</text></g>
@@ -501,7 +501,7 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
   addEventListener('scroll',onScroll,{passive:true});onScroll();
 
   /* ---------- timeline demo ---------- */
-  var tasks={api:{t:'Reset-token API',a:'codex',c:'b'},ui:{t:'Reset form UI',a:'claude',c:'a'},e2e:{t:'E2E tests',a:'claude',c:'a'}};
+  var tasks={api:{t:'Reset-token API',a:'codex',c:'a'},ui:{t:'Reset form UI',a:'claude',c:'b'},e2e:{t:'E2E tests',a:'claude',c:'b'}};
   var cols=[{k:'work',n:'Working',v:'--s-work'},{k:'need',n:'Needs you',v:'--s-need'},{k:'rev',n:'In review',v:'--s-rev'},{k:'done',n:'Merged',v:'--s-done'}];
   var E=[
     {ts:'00:00',why:'Orchestrator split "Add password reset" into 3 tasks: API, form UI, E2E tests.',cause:'plan.submitted · rationale: API and UI are independent; tests depend on both',set:{}},

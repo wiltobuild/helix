@@ -1,0 +1,624 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`snapshots projection at seq 22 1`] = `
+{
+  "approvals": {
+    "approval_reset_email_copy": {
+      "detail": "Apply 20261001_reset_email_templates.sql to the local development database. Adds two template rows; no destructive changes.",
+      "id": "approval_reset_email_copy",
+      "kind": "migration",
+      "requestedAt": "2026-10-01T09:10:00.000Z",
+      "scope": "once",
+      "sessionId": "sess_reset_ui",
+      "summary": "Add password-reset email templates to the localized content table",
+    },
+  },
+  "lastSeq": 22,
+  "plans": {
+    "plan_password_reset": {
+      "goal": "Add password reset",
+      "nodeStatus": {
+        "node_reset_api": "ci_failed",
+        "node_reset_e2e": "pending",
+        "node_reset_ui": "needs_you",
+      },
+    },
+  },
+  "sessions": {
+    "sess_reset_api": {
+      "activity": "idle",
+      "branch": "helix/reset-api",
+      "chat": [
+        {
+          "kind": "message",
+          "role": "assistant",
+          "text": "The reset endpoint hashes tokens at rest and returns the same response for unknown email addresses.",
+        },
+      ],
+      "column": "in_review",
+      "lastEventSeq": 22,
+      "pendingApprovalIds": [],
+      "pr": {
+        "checks": {
+          "failed": 1,
+          "failingNames": [
+            "unit / token.test.ts",
+          ],
+          "passed": 2,
+          "pending": 0,
+          "total": 3,
+        },
+        "draft": false,
+        "headSha": "17b8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "mergeable": "mergeable",
+        "number": 142,
+        "review": {
+          "decision": "review_required",
+          "unresolvedThreads": 0,
+        },
+        "state": "open",
+        "updatedAt": "2026-10-01T09:16:00.000Z",
+        "url": "https://github.com/acme-demo/portal/pull/142",
+      },
+      "status": "ci_failed",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-api",
+        "diff": {
+          "deletions": 12,
+          "filesChanged": 6,
+          "insertions": 248,
+        },
+        "path": "/demo/worktrees/reset-api",
+      },
+    },
+    "sess_reset_e2e": {
+      "activity": "unknown",
+      "branch": undefined,
+      "chat": [],
+      "column": "pending",
+      "lastEventSeq": 9,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "pending",
+      "worktree": undefined,
+    },
+    "sess_reset_orchestrator": {
+      "activity": "active",
+      "branch": undefined,
+      "chat": [
+        {
+          "kind": "reasoning_summary",
+          "text": "Separate token security from form work; run browser tests once both changes land.",
+        },
+        {
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
+        },
+      ],
+      "column": "working",
+      "lastEventSeq": 6,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "working",
+      "worktree": undefined,
+    },
+    "sess_reset_ui": {
+      "activity": "waiting_input",
+      "branch": "helix/reset-ui",
+      "chat": [
+        {
+          "approvalId": "approval_reset_email_copy",
+          "kind": "approval",
+        },
+      ],
+      "column": "needs_you",
+      "lastEventSeq": 18,
+      "pendingApprovalIds": [
+        "approval_reset_email_copy",
+      ],
+      "pr": undefined,
+      "status": "needs_you",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-ui",
+        "path": "/demo/worktrees/reset-ui",
+      },
+    },
+  },
+}
+`;
+
+exports[`snapshots projection at seq 26 1`] = `
+{
+  "approvals": {
+    "approval_reset_email_copy": {
+      "decidedAt": "2026-10-01T09:20:00.000Z",
+      "decision": "approved",
+      "detail": "Apply 20261001_reset_email_templates.sql to the local development database. Adds two template rows; no destructive changes.",
+      "id": "approval_reset_email_copy",
+      "kind": "migration",
+      "requestedAt": "2026-10-01T09:10:00.000Z",
+      "scope": "once",
+      "sessionId": "sess_reset_ui",
+      "summary": "Add password-reset email templates to the localized content table",
+    },
+  },
+  "lastSeq": 26,
+  "plans": {
+    "plan_password_reset": {
+      "goal": "Add password reset",
+      "nodeStatus": {
+        "node_reset_api": "working",
+        "node_reset_e2e": "pending",
+        "node_reset_ui": "needs_you",
+      },
+    },
+  },
+  "sessions": {
+    "sess_reset_api": {
+      "activity": "active",
+      "branch": "helix/reset-api",
+      "chat": [
+        {
+          "kind": "message",
+          "role": "assistant",
+          "text": "The reset endpoint hashes tokens at rest and returns the same response for unknown email addresses.",
+        },
+        {
+          "kind": "message",
+          "role": "system",
+          "text": "unit / token.test.ts failed: an expired token was accepted at the exact 30-minute boundary. Compare expiry with <= and add the boundary regression.",
+        },
+        {
+          "inputSummary": "pnpm vitest run token.test.ts",
+          "kind": "tool_call",
+          "outputSummary": "12 tests passed, including expiry boundary and token reuse.",
+          "status": "succeeded",
+          "tool": "shell",
+        },
+      ],
+      "column": "working",
+      "lastEventSeq": 25,
+      "pendingApprovalIds": [],
+      "pr": {
+        "checks": {
+          "failed": 1,
+          "failingNames": [
+            "unit / token.test.ts",
+          ],
+          "passed": 2,
+          "pending": 0,
+          "total": 3,
+        },
+        "draft": false,
+        "headSha": "17b8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "mergeable": "mergeable",
+        "number": 142,
+        "review": {
+          "decision": "review_required",
+          "unresolvedThreads": 0,
+        },
+        "state": "open",
+        "updatedAt": "2026-10-01T09:16:00.000Z",
+        "url": "https://github.com/acme-demo/portal/pull/142",
+      },
+      "status": "working",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-api",
+        "diff": {
+          "deletions": 12,
+          "filesChanged": 6,
+          "insertions": 248,
+        },
+        "path": "/demo/worktrees/reset-api",
+      },
+    },
+    "sess_reset_e2e": {
+      "activity": "unknown",
+      "branch": undefined,
+      "chat": [],
+      "column": "pending",
+      "lastEventSeq": 9,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "pending",
+      "worktree": undefined,
+    },
+    "sess_reset_orchestrator": {
+      "activity": "active",
+      "branch": undefined,
+      "chat": [
+        {
+          "kind": "reasoning_summary",
+          "text": "Separate token security from form work; run browser tests once both changes land.",
+        },
+        {
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
+        },
+      ],
+      "column": "working",
+      "lastEventSeq": 6,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "working",
+      "worktree": undefined,
+    },
+    "sess_reset_ui": {
+      "activity": "waiting_input",
+      "branch": "helix/reset-ui",
+      "chat": [
+        {
+          "approvalId": "approval_reset_email_copy",
+          "kind": "approval",
+        },
+      ],
+      "column": "needs_you",
+      "lastEventSeq": 26,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "needs_you",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-ui",
+        "path": "/demo/worktrees/reset-ui",
+      },
+    },
+  },
+}
+`;
+
+exports[`snapshots projection at seq 37 1`] = `
+{
+  "approvals": {
+    "approval_reset_email_copy": {
+      "decidedAt": "2026-10-01T09:20:00.000Z",
+      "decision": "approved",
+      "detail": "Apply 20261001_reset_email_templates.sql to the local development database. Adds two template rows; no destructive changes.",
+      "id": "approval_reset_email_copy",
+      "kind": "migration",
+      "requestedAt": "2026-10-01T09:10:00.000Z",
+      "scope": "once",
+      "sessionId": "sess_reset_ui",
+      "summary": "Add password-reset email templates to the localized content table",
+    },
+  },
+  "lastSeq": 37,
+  "plans": {
+    "plan_password_reset": {
+      "goal": "Add password reset",
+      "nodeStatus": {
+        "node_reset_api": "ready_to_merge",
+        "node_reset_e2e": "pending",
+        "node_reset_ui": "ready_to_merge",
+      },
+    },
+  },
+  "sessions": {
+    "sess_reset_api": {
+      "activity": "idle",
+      "branch": "helix/reset-api",
+      "chat": [
+        {
+          "kind": "message",
+          "role": "assistant",
+          "text": "The reset endpoint hashes tokens at rest and returns the same response for unknown email addresses.",
+        },
+        {
+          "kind": "message",
+          "role": "system",
+          "text": "unit / token.test.ts failed: an expired token was accepted at the exact 30-minute boundary. Compare expiry with <= and add the boundary regression.",
+        },
+        {
+          "inputSummary": "pnpm vitest run token.test.ts",
+          "kind": "tool_call",
+          "outputSummary": "12 tests passed, including expiry boundary and token reuse.",
+          "status": "succeeded",
+          "tool": "shell",
+        },
+      ],
+      "column": "ready_to_merge",
+      "lastEventSeq": 32,
+      "pendingApprovalIds": [],
+      "pr": {
+        "checks": {
+          "failed": 0,
+          "failingNames": [],
+          "passed": 3,
+          "pending": 0,
+          "total": 3,
+        },
+        "draft": false,
+        "headSha": "3cb8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "mergeable": "mergeable",
+        "number": 142,
+        "review": {
+          "decision": "approved",
+          "unresolvedThreads": 0,
+        },
+        "state": "open",
+        "updatedAt": "2026-10-01T09:26:00.000Z",
+        "url": "https://github.com/acme-demo/portal/pull/142",
+      },
+      "status": "ready_to_merge",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-api",
+        "diff": {
+          "deletions": 12,
+          "filesChanged": 6,
+          "insertions": 248,
+        },
+        "path": "/demo/worktrees/reset-api",
+      },
+    },
+    "sess_reset_e2e": {
+      "activity": "unknown",
+      "branch": undefined,
+      "chat": [],
+      "column": "pending",
+      "lastEventSeq": 9,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "pending",
+      "worktree": undefined,
+    },
+    "sess_reset_orchestrator": {
+      "activity": "active",
+      "branch": undefined,
+      "chat": [
+        {
+          "kind": "reasoning_summary",
+          "text": "Separate token security from form work; run browser tests once both changes land.",
+        },
+        {
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
+        },
+      ],
+      "column": "working",
+      "lastEventSeq": 6,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "working",
+      "worktree": undefined,
+    },
+    "sess_reset_ui": {
+      "activity": "idle",
+      "branch": "helix/reset-ui",
+      "chat": [
+        {
+          "approvalId": "approval_reset_email_copy",
+          "kind": "approval",
+        },
+        {
+          "kind": "reasoning_summary",
+          "text": "The approved migration seeds email copy. Both forms now announce validation errors and use neutral confirmation text.",
+        },
+      ],
+      "column": "ready_to_merge",
+      "lastEventSeq": 37,
+      "pendingApprovalIds": [],
+      "pr": {
+        "checks": {
+          "failed": 0,
+          "failingNames": [],
+          "passed": 3,
+          "pending": 0,
+          "total": 3,
+        },
+        "draft": false,
+        "headSha": "2bb8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "mergeable": "mergeable",
+        "number": 143,
+        "review": {
+          "decision": "approved",
+          "unresolvedThreads": 0,
+        },
+        "state": "open",
+        "updatedAt": "2026-10-01T09:31:00.000Z",
+        "url": "https://github.com/acme-demo/portal/pull/143",
+      },
+      "status": "ready_to_merge",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-ui",
+        "diff": {
+          "deletions": 21,
+          "filesChanged": 8,
+          "insertions": 316,
+        },
+        "path": "/demo/worktrees/reset-ui",
+      },
+    },
+  },
+}
+`;
+
+exports[`snapshots projection at seq 44 1`] = `
+{
+  "approvals": {
+    "approval_reset_email_copy": {
+      "decidedAt": "2026-10-01T09:20:00.000Z",
+      "decision": "approved",
+      "detail": "Apply 20261001_reset_email_templates.sql to the local development database. Adds two template rows; no destructive changes.",
+      "id": "approval_reset_email_copy",
+      "kind": "migration",
+      "requestedAt": "2026-10-01T09:10:00.000Z",
+      "scope": "once",
+      "sessionId": "sess_reset_ui",
+      "summary": "Add password-reset email templates to the localized content table",
+    },
+  },
+  "lastSeq": 44,
+  "plans": {
+    "plan_password_reset": {
+      "goal": "Add password reset",
+      "nodeStatus": {
+        "node_reset_api": "merged",
+        "node_reset_e2e": "working",
+        "node_reset_ui": "merged",
+      },
+    },
+  },
+  "sessions": {
+    "sess_reset_api": {
+      "activity": "idle",
+      "branch": "helix/reset-api",
+      "chat": [
+        {
+          "kind": "message",
+          "role": "assistant",
+          "text": "The reset endpoint hashes tokens at rest and returns the same response for unknown email addresses.",
+        },
+        {
+          "kind": "message",
+          "role": "system",
+          "text": "unit / token.test.ts failed: an expired token was accepted at the exact 30-minute boundary. Compare expiry with <= and add the boundary regression.",
+        },
+        {
+          "inputSummary": "pnpm vitest run token.test.ts",
+          "kind": "tool_call",
+          "outputSummary": "12 tests passed, including expiry boundary and token reuse.",
+          "status": "succeeded",
+          "tool": "shell",
+        },
+      ],
+      "column": "archive",
+      "lastEventSeq": 38,
+      "pendingApprovalIds": [],
+      "pr": {
+        "checks": {
+          "failed": 0,
+          "failingNames": [],
+          "passed": 3,
+          "pending": 0,
+          "total": 3,
+        },
+        "draft": false,
+        "headSha": "3cb8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "mergeable": "mergeable",
+        "number": 142,
+        "review": {
+          "decision": "approved",
+          "unresolvedThreads": 0,
+        },
+        "state": "merged",
+        "updatedAt": "2026-10-01T09:33:00.000Z",
+        "url": "https://github.com/acme-demo/portal/pull/142",
+      },
+      "status": "merged",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-api",
+        "diff": {
+          "deletions": 12,
+          "filesChanged": 6,
+          "insertions": 248,
+        },
+        "path": "/demo/worktrees/reset-api",
+      },
+    },
+    "sess_reset_e2e": {
+      "activity": "active",
+      "branch": "helix/reset-e2e",
+      "chat": [],
+      "column": "working",
+      "lastEventSeq": 43,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "working",
+      "worktree": {
+        "baseSha": "5eb8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "branch": "helix/reset-e2e",
+        "path": "/demo/worktrees/reset-e2e",
+      },
+    },
+    "sess_reset_orchestrator": {
+      "activity": "active",
+      "branch": undefined,
+      "chat": [
+        {
+          "kind": "reasoning_summary",
+          "text": "Separate token security from form work; run browser tests once both changes land.",
+        },
+        {
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
+        },
+        {
+          "kind": "plan_update",
+          "nodeId": "node_reset_e2e",
+          "planId": "plan_password_reset",
+          "text": "API #142 and UI #143 have merged; start browser coverage from the updated main branch.",
+        },
+        {
+          "kind": "message",
+          "role": "system",
+          "text": "Both prerequisite PRs are merged. The E2E worker can now verify a real reset email, an expired link, and single-use tokens against the integrated application.",
+        },
+      ],
+      "column": "working",
+      "lastEventSeq": 44,
+      "pendingApprovalIds": [],
+      "pr": undefined,
+      "status": "working",
+      "worktree": undefined,
+    },
+    "sess_reset_ui": {
+      "activity": "idle",
+      "branch": "helix/reset-ui",
+      "chat": [
+        {
+          "approvalId": "approval_reset_email_copy",
+          "kind": "approval",
+        },
+        {
+          "kind": "reasoning_summary",
+          "text": "The approved migration seeds email copy. Both forms now announce validation errors and use neutral confirmation text.",
+        },
+      ],
+      "column": "archive",
+      "lastEventSeq": 39,
+      "pendingApprovalIds": [],
+      "pr": {
+        "checks": {
+          "failed": 0,
+          "failingNames": [],
+          "passed": 3,
+          "pending": 0,
+          "total": 3,
+        },
+        "draft": false,
+        "headSha": "2bb8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
+        "mergeable": "mergeable",
+        "number": 143,
+        "review": {
+          "decision": "approved",
+          "unresolvedThreads": 0,
+        },
+        "state": "merged",
+        "updatedAt": "2026-10-01T09:35:00.000Z",
+        "url": "https://github.com/acme-demo/portal/pull/143",
+      },
+      "status": "merged",
+      "worktree": {
+        "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
+        "branch": "helix/reset-ui",
+        "diff": {
+          "deletions": 21,
+          "filesChanged": 8,
+          "insertions": 316,
+        },
+        "path": "/demo/worktrees/reset-ui",
+      },
+    },
+  },
+}
+`;

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": [
+    "tsconfig*.json",
+    "eslint.config.mjs",
+    "vitest*.ts",
+    ".dependency-cruiser.mjs",
+    "scripts/check-boundaries.mjs",
+    "scripts/run-e2e.mjs"
+  ],
+  "tasks": {
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "lint": {
+      "outputs": [],
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "dependsOn": ["^typecheck"],
+      "outputs": [],
+      "env": ["HELIX_E2E"]
+    },
+    "build": {
+      "dependsOn": ["^build", "typecheck"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:e2e": {
+      "dependsOn": ["^typecheck"],
+      "env": ["HELIX_E2E"],
+      "cache": false,
+      "outputs": []
+    }
+  },
+  "agentGuidance": false
+}

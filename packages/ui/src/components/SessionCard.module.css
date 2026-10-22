@@ -1,0 +1,164 @@
+.card {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+  animation: land var(--dur-3) var(--ease-out);
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.card:has(.hit:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Needs-you cards get a quiet amber edge so they stand out on the board. */
+.card[data-status='needs_you'] {
+  border-color: color-mix(in srgb, var(--status-needs) 45%, var(--border));
+}
+
+.hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hit:focus-visible {
+  outline: none;
+}
+
+.head,
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  pointer-events: none;
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  color: var(--text);
+  pointer-events: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.time {
+  color: var(--text-3);
+  font: var(--text-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.branchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  pointer-events: none;
+}
+
+.branch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-3);
+  font: var(--text-2xs) / 1.2 var(--font-mono);
+}
+
+.branch svg {
+  flex: none;
+}
+
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr {
+  flex: none;
+}
+
+.pr {
+  color: var(--text-2);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  color: var(--text-3);
+  font: var(--text-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.checks,
+.comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bar {
+  position: relative;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--status-ready);
+  border-radius: inherit;
+  transition: width var(--dur-3) var(--ease-out);
+}
+
+.card[data-status='ci_failed'] .bar span {
+  background: var(--status-failed);
+}
+
+.action {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  padding-top: var(--space-1);
+}
+
+@keyframes land {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

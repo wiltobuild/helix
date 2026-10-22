@@ -1,0 +1,23 @@
+{
+  "name": "@helix/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/cli",
+    "dev": "tsx watch src/main.ts",
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/cli"
+  },
+  "bin": {
+    "helix": "./src/main.ts"
+  },
+  "dependencies": {
+    "@helix/contracts": "workspace:*",
+    "@helix/api-client": "workspace:*"
+  }
+}

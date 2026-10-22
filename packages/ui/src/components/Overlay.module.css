@@ -1,0 +1,162 @@
+/* Shared styling for floating layers: tooltip, menu, dialog. */
+
+.tooltip {
+  z-index: var(--z-popover);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 280px;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-ui);
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  animation: pop var(--dur-1) var(--ease-out);
+}
+
+.menu {
+  z-index: var(--z-popover);
+  min-width: 200px;
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation: pop var(--dur-1) var(--ease-out);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
+  outline: none;
+  cursor: default;
+  user-select: none;
+}
+
+.menuItem svg {
+  color: var(--text-3);
+}
+
+.menuItem[data-highlighted] {
+  background: var(--surface-3);
+}
+
+.menuItem[data-disabled] {
+  opacity: 0.45;
+}
+
+.menuItem[data-danger] {
+  color: var(--status-failed);
+}
+
+.menuItem[data-danger] svg {
+  color: currentColor;
+}
+
+.menuShortcut {
+  margin-left: auto;
+  color: var(--text-3);
+  font: var(--text-2xs) var(--font-mono);
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: var(--space-1) calc(var(--space-1) * -1);
+  background: var(--border);
+}
+
+.menuLabel {
+  padding: 6px var(--space-2) var(--space-1);
+  color: var(--text-3);
+  font: 500 var(--text-2xs) / 1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.dialogOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  background: var(--overlay);
+  backdrop-filter: blur(2px);
+  animation: fade var(--dur-2) var(--ease-out);
+}
+
+.dialog {
+  position: fixed;
+  top: 14vh;
+  left: 50%;
+  z-index: var(--z-dialog);
+  display: grid;
+  gap: var(--space-4);
+  width: min(560px, calc(100vw - 32px));
+  max-height: 76vh;
+  overflow: auto;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  transform: translateX(-50%);
+  animation: rise var(--dur-2) var(--ease-out);
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialogHeader {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.dialogTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.dialogDescription {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+.dialogClose {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.985);
+  }
+}

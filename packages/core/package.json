@@ -1,0 +1,25 @@
+{
+  "name": "@helix/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/core",
+    "test:e2e": "vitest run --config ../../vitest.config.ts --project @helix/core"
+  },
+  "dependencies": {
+    "@helix/contracts": "workspace:*",
+    "@helix/storage": "workspace:*",
+    "@helix/harness": "workspace:*",
+    "@helix/git": "workspace:*",
+    "@helix/scm": "workspace:*"
+  },
+  "devDependencies": {
+    "@helix/testing": "workspace:*"
+  }
+}
