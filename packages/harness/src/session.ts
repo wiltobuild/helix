@@ -46,6 +46,7 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
   private exitPromise!: Promise<void>;
   private turnWaiters = new Set<() => void>();
   private lastActivity?: AgentActivity;
+  private stderrTail: Buffer = Buffer.alloc(0);
   private trace: ReturnType<typeof protocolLogger>;
 
   constructor(
@@ -81,7 +82,12 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
     );
     this.child.stdout.on('data', (chunk: Buffer) => lines.push(chunk));
     this.child.stdout.on('end', () => lines.end());
-    this.child.stderr.on('data', () => this.log('Harness wrote diagnostic output to stderr'));
+    this.child.stderr.on('data', (chunk: Buffer) => {
+      // Keep bytes rather than independently decoding chunks: UTF-8 characters
+      // may span data events. Copy the tail so a large chunk is not retained.
+      this.stderrTail = Buffer.from(Buffer.concat([this.stderrTail, chunk]).subarray(-4096));
+      this.log('Harness wrote diagnostic output to stderr');
+    });
     this.child.stdin.on('error', () => {
       if (!this.stopped) this.fail('Harness input stream failed');
     });
@@ -193,8 +199,12 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.requests.delete(id);
-        this.invalid('Harness request timed out');
-        reject(new HelixError('HARNESS_UNAVAILABLE', 'Harness request timed out'));
+        const diagnostic = this.stderrTail.toString('utf8').trim();
+        const message = diagnostic
+          ? `Harness request timed out\nChild stderr (last 4096 bytes):\n${diagnostic}`
+          : 'Harness request timed out';
+        this.invalid(message);
+        reject(new HelixError('HARNESS_UNAVAILABLE', message));
       }, this.options.requestTimeoutMs ?? 30_000);
       this.requests.set(id, { resolve, reject, timer });
       void this.write(message).catch(() =>

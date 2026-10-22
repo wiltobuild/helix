@@ -8,7 +8,7 @@ export interface HarnessOptions {
   /** Default for detection; HarnessStartOptions.cwd takes precedence for sessions. */
   cwd?: string;
   requestTimeoutMs?: number;
-  /** Receives diagnostics, never raw stdout/stderr or tool contents. */
+  /** Receives diagnostics; request timeouts include up to 4096 bytes of child stderr. */
   log?: (message: string) => void;
   /** CONTRACT-REQUEST: HarnessEmission should support explain.note directly. */
   note?: (sessionId: SessionId, message: string) => void;

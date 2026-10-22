@@ -117,6 +117,10 @@ function start(text) {
 }
 createInterface({ input: process.stdin }).on('line', (line) => {
   const message = JSON.parse(line);
+  if (process.env.HELIX_FAKE_STDERR) {
+    process.stderr.write('discarded diagnostic prefix\n' + 'x'.repeat(8192));
+    process.stderr.write('\nfixture handshake diagnostic: UTF-8 hé🙂\n');
+  }
   if (process.env.HELIX_FAKE_TRANSCRIPT)
     appendFileSync(process.env.HELIX_FAKE_TRANSCRIPT, line + '\n');
   if (claude) {
