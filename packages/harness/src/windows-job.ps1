@@ -9,7 +9,8 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
 public static class HelixProcessJob {
   [StructLayout(LayoutKind.Sequential)]
   struct BasicLimits {
@@ -39,6 +40,20 @@ public static class HelixProcessJob {
   static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
   [DllImport("kernel32.dll")]
   static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll", SetLastError=true)]
+  static extern IntPtr GetStdHandle(int kind);
+  static readonly bool debug = Environment.GetEnvironmentVariable("HELIX_DEBUG_PROCESS") == "1";
+  public static void Stage(string stage) {
+    if (debug) Console.Error.WriteLine("[Helix process {0:O}] {1}", DateTime.UtcNow, stage);
+  }
+  public static Stream StandardStream(int kind, bool input) {
+    // Node gives us redirected pipe handles. Avoid __ConsoleStream's console
+    // input wait and encoding-dependent path in console-less service sessions.
+    // These handles belong to the process; FileStream must not own/close them.
+    var handle = new SafeFileHandle(GetStdHandle(kind), false);
+    if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+    return new FileStream(handle, input ? FileAccess.Read : FileAccess.Write, 1, false);
+  }
   // Keep the only job handle alive until process teardown. Do not close it while
   // this process is running: it belongs to the job, too.
   static IntPtr job;
@@ -52,21 +67,41 @@ public static class HelixProcessJob {
     if (!AssignProcessToJobObject(job, GetCurrentProcess()))
       throw new Win32Exception(Marshal.GetLastWin32Error());
   }
-  public static async Task Pump(Stream source, Stream target, bool closeTarget) {
-    try {
-      byte[] bytes = new byte[8192];
-      int count;
-      while ((count = await source.ReadAsync(bytes, 0, bytes.Length).ConfigureAwait(false)) > 0) {
-        await target.WriteAsync(bytes, 0, count).ConfigureAwait(false);
-        // Process.StandardInput.BaseStream is buffered even without a StreamWriter.
-        // Every protocol frame must be visible before the next read blocks.
-        await target.FlushAsync().ConfigureAwait(false);
+  public static Thread Pump(Stream source, Stream target, bool closeTarget, string direction) {
+    // Framework pipe async operations can use blocking worker-pool work. Give
+    // each direction its own thread: no runspace, synchronization context, or
+    // thread-pool availability is required to move the next protocol frame.
+    var thread = new Thread(delegate() {
+      try {
+        byte[] bytes = new byte[8192];
+        int count;
+        bool first = true;
+        while ((count = source.Read(bytes, 0, bytes.Length)) > 0) {
+          target.Write(bytes, 0, count);
+          // StandardInput.BaseStream is buffered even without a StreamWriter.
+          target.Flush();
+          if (first) { first = false; Stage("first " + direction + " byte"); }
+        }
+      } catch (Exception error) {
+        // Unlike the old unobserved stdin Task, surface every pump failure.
+        Console.Error.WriteLine("Helix Windows process supervisor {0} pump failed: {1}", direction, error);
+      } finally {
+        if (closeTarget) {
+          try { target.Close(); }
+          catch (Exception error) { Console.Error.WriteLine("Helix Windows process supervisor close failed: " + error); }
+        }
       }
-    } finally { if (closeTarget) target.Close(); }
+    });
+    thread.IsBackground = true;
+    thread.Name = "Helix " + direction;
+    thread.Start();
+    return thread;
   }
 }
 '@
+  [HelixProcessJob]::Stage('compiled')
   [HelixProcessJob]::Enter()
+  [HelixProcessJob]::Stage('job entered')
   $configuration = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Launch)) | ConvertFrom-Json
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $configuration.bin
@@ -80,16 +115,17 @@ public static class HelixProcessJob {
   # Copy raw byte streams, without PowerShell's text pipeline or StreamWriter's
   # buffering/encoding conversion. All three directions progress independently.
   $agentProcess = [System.Diagnostics.Process]::Start($startInfo)
-  $inputCopy = [HelixProcessJob]::Pump([Console]::OpenStandardInput(), $agentProcess.StandardInput.BaseStream, $true)
-  $outputCopy = [HelixProcessJob]::Pump($agentProcess.StandardOutput.BaseStream, [Console]::OpenStandardOutput(), $false)
-  $errorCopy = [HelixProcessJob]::Pump($agentProcess.StandardError.BaseStream, [Console]::OpenStandardError(), $false)
+  [HelixProcessJob]::Stage('child started pid=' + $agentProcess.Id)
+  $inputCopy = [HelixProcessJob]::Pump([HelixProcessJob]::StandardStream(-10, $true), $agentProcess.StandardInput.BaseStream, $true, 'stdin')
+  $outputCopy = [HelixProcessJob]::Pump($agentProcess.StandardOutput.BaseStream, [HelixProcessJob]::StandardStream(-11, $false), $false, 'stdout')
+  $errorCopy = [HelixProcessJob]::Pump($agentProcess.StandardError.BaseStream, [HelixProcessJob]::StandardStream(-12, $false), $false, 'stderr')
   $agentProcess.WaitForExit()
   # A detached descendant may hold a pipe open. Bound draining before exit closes
   # the job handle and terminates that descendant as well.
-  [void]$outputCopy.Wait(1000)
-  [void]$errorCopy.Wait(1000)
+  [void]$outputCopy.Join(1000)
+  [void]$errorCopy.Join(1000)
   [Environment]::Exit($agentProcess.ExitCode)
 } catch {
-  [Console]::Error.WriteLine('Helix Windows process supervisor failed: ' + $_.Exception.Message)
+  [Console]::Error.WriteLine('Helix Windows process supervisor failed: ' + $_.Exception.ToString())
   [Environment]::Exit(1)
 }

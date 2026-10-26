@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -46,8 +46,10 @@ test('workspace Vitest config overrides shared defaults without root edits', asy
     assert.equal(custom.config.environment, 'jsdom');
     assert.equal(custom.config.testTimeout, 4321);
     assert.equal(custom.config.maxWorkers, 1);
-    assert.ok(
-      custom.config.setupFiles[0].replaceAll('\\', '/').endsWith('/packages/custom/src/setup.ts'),
+    assert.equal(
+      // Windows runners mix 8.3 short (RUNNER~1) and long temp paths; compare real paths.
+      realpathSync.native(custom.config.setupFiles[0]).replaceAll('\\', '/'),
+      realpathSync.native(resolve(root, 'packages/custom/src/setup.ts')).replaceAll('\\', '/'),
     );
   } finally {
     await context?.close();

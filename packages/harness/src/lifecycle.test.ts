@@ -285,11 +285,31 @@ describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) 
             ? 'Fixture initialization rejected'
             : scenario === 'exit'
               ? 'Harness process exited'
-              : 'Harness request timed out',
+              : (expect.stringContaining('Harness request timed out') as unknown),
       });
     },
     20_000,
   );
+
+  it('includes the bounded child stderr tail in a request timeout and session log', async () => {
+    const cwd = await directory();
+    const logs: string[] = [];
+    const error: unknown = await createHarness(kind, {
+      ...opts(kind, { HELIX_FAKE_SCENARIO: 'timeout', HELIX_FAKE_STDERR: '1' }),
+      requestTimeoutMs: 5000,
+      log: (message) => logs.push(message),
+    })
+      .start({ cwd, session: template })
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(HelixError);
+    if (!(error instanceof HelixError)) throw new Error('Expected a handshake timeout');
+    expect(error.code).toBe('HARNESS_UNAVAILABLE');
+    expect(error.message).toContain('Harness request timed out\nChild stderr (last 4096 bytes):');
+    expect(error.message).toContain('fixture handshake diagnostic: UTF-8 hé🙂');
+    expect(error.message).not.toContain('discarded diagnostic prefix');
+    expect(Buffer.byteLength(error.message)).toBeLessThan(4300);
+    expect(logs).toContain(error.message);
+  }, 20_000);
 
   it('kills a descendant process, not only the immediate process', async () => {
     const childPath = join(await directory(), 'child.pid');
