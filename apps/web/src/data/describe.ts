@@ -49,6 +49,46 @@ export function eventTone(e: HelixEvent): EventTone {
   }
 }
 
+/**
+ * Where a Why entry comes from. Never present an agent's claim as something Helix observed:
+ * - plan:   the orchestrator's stated rationale (the plan and its notes)
+ * - helix:  facts Helix recorded when it acted (CI, routing, PRs, commits, decisions)
+ * - agent:  the agent's own description of what it did or thought (unverified)
+ */
+export type Provenance = 'plan' | 'helix' | 'agent';
+
+export const provenanceLabel: Record<Provenance, string> = {
+  plan: 'Stated in the plan',
+  helix: 'Recorded by Helix',
+  agent: "Agent's own summary",
+};
+
+export function provenance(e: HelixEvent, state: ProjectState): Provenance {
+  switch (e.type) {
+    case 'plan.submitted':
+    case 'plan.node_updated':
+      return 'plan';
+    case 'reasoning.summary':
+      return 'agent';
+    case 'chat.item': {
+      const item = e.payload.item;
+      return item.kind === 'reasoning_summary' ||
+        item.kind === 'question' ||
+        (item.kind === 'message' && item.role === 'assistant')
+        ? 'agent'
+        : 'helix';
+    }
+    case 'explain.note':
+      // CONTRACT-REQUEST: explain.note needs a source. Until then, notes on the orchestrator's
+      // session are its stated rationale; Helix's own notes (commits, harness) are on workers.
+      return e.sessionId && state.sessions[e.sessionId]?.session.role === 'orchestrator'
+        ? 'plan'
+        : 'helix';
+    default:
+      return 'helix';
+  }
+}
+
 const sessionTitle = (state: ProjectState, id: string | undefined) =>
   (id && state.sessions[id as keyof typeof state.sessions]?.session.title) ?? 'a session';
 
