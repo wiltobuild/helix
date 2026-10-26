@@ -68,6 +68,12 @@
   overflow: auto;
 }
 
+/* Radix keeps inactive panels mounted with [hidden]; a caller's `display: grid` would otherwise
+   win and stack every inactive panel above the active one. */
+.panel[hidden] {
+  display: none;
+}
+
 .panel:focus-visible {
   outline-offset: -2px;
 }

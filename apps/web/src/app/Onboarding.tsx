@@ -49,6 +49,12 @@ export function Onboarding({
           Add repository
         </Button>
       </form>
+      {busy && (
+        <p className={s.progress} role="status">
+          Checking the repository and which agents are installed and signed in. This can take about
+          ten seconds the first time.
+        </p>
+      )}
       <a className={s.demo} href="?demo">
         Or explore a recorded demo run
       </a>
