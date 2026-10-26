@@ -1,6 +1,9 @@
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
-import { killTree, spawnExecutable } from './process.js';
+import { killLiveProcesses, killTree, spawnExecutable } from './process.js';
 
 const executable = fileURLToPath(new URL('./__fixtures__/pipe-cli.cjs', import.meta.url));
 
@@ -57,3 +60,38 @@ it.skipIf(process.platform !== 'win32').each(['0', '1'])(
   },
   30_000,
 );
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const spawnOrphaningParent = async () => {
+  const pidFile = join(await mkdtemp(join(tmpdir(), 'helix-process-')), 'grandchild.pid');
+  // The parent starts a long-lived grandchild, records its PID, then exits on its own.
+  const script = `const{spawn}=require('node:child_process');const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setTimeout(()=>process.exit(0),200)`;
+  const child = spawnExecutable(process.execPath, ['-e', script], {});
+  child.stdin.on('error', () => undefined);
+  await expect
+    .poll(() => readFile(pidFile, 'utf8').catch(() => ''), { timeout: 10_000 })
+    .not.toBe('');
+  return { child, grandchild: Number(await readFile(pidFile, 'utf8')) };
+};
+
+it('kills a descendant that outlives its already-exited parent', async () => {
+  const { child, grandchild } = await spawnOrphaningParent();
+  expect(alive(grandchild)).toBe(true);
+  await expect.poll(() => child.exitCode !== null || child.signalCode !== null).toBe(true);
+  await killTree(child);
+  await expect.poll(() => alive(grandchild), { timeout: 5000 }).toBe(false);
+}, 30_000);
+
+it('kills every live agent tree when the host process exits abruptly', async () => {
+  const { grandchild } = await spawnOrphaningParent();
+  expect(alive(grandchild)).toBe(true);
+  killLiveProcesses();
+  await expect.poll(() => alive(grandchild), { timeout: 5000 }).toBe(false);
+}, 30_000);
