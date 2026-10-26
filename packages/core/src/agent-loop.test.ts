@@ -336,12 +336,14 @@ test.each([false, true])(
       agent: 'codex',
       rationale: id,
     });
-    const plan = await f.core.submitPlan({
+    const submitted = await f.core.submitPlan({
       projectId: p.id,
       orchestratorSessionId: planner.id,
       goal: 'Ship',
       nodes: [node('api', []), node('client', ['api'])],
     });
+    await f.core.decidePlan(submitted.id, { decision: 'approve' });
+    const plan = (await f.state(p.id)).plans[submitted.id]!;
     const worker = plan.nodes[0]!.sessionId!;
     f.git.ahead = 1;
     f.transports[1]!.finish();
