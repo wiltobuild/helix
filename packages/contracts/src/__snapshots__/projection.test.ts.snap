@@ -22,6 +22,7 @@ exports[`snapshots projection at seq 22 1`] = `
         "node_reset_e2e": "pending",
         "node_reset_ui": "needs_you",
       },
+      "status": "approved",
     },
   },
   "sessions": {
@@ -88,13 +89,14 @@ exports[`snapshots projection at seq 22 1`] = `
       "branch": undefined,
       "chat": [
         {
-          "kind": "reasoning_summary",
-          "text": "Separate token security from form work; run browser tests once both changes land.",
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
         },
         {
           "kind": "plan_update",
           "planId": "plan_password_reset",
-          "text": "Add password reset",
+          "text": "Plan approved by human",
         },
       ],
       "column": "working",
@@ -154,6 +156,7 @@ exports[`snapshots projection at seq 26 1`] = `
         "node_reset_e2e": "pending",
         "node_reset_ui": "needs_you",
       },
+      "status": "approved",
     },
   },
   "sessions": {
@@ -232,13 +235,14 @@ exports[`snapshots projection at seq 26 1`] = `
       "branch": undefined,
       "chat": [
         {
-          "kind": "reasoning_summary",
-          "text": "Separate token security from form work; run browser tests once both changes land.",
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
         },
         {
           "kind": "plan_update",
           "planId": "plan_password_reset",
-          "text": "Add password reset",
+          "text": "Plan approved by human",
         },
       ],
       "column": "working",
@@ -296,6 +300,7 @@ exports[`snapshots projection at seq 37 1`] = `
         "node_reset_e2e": "pending",
         "node_reset_ui": "ready_to_merge",
       },
+      "status": "approved",
     },
   },
   "sessions": {
@@ -372,13 +377,14 @@ exports[`snapshots projection at seq 37 1`] = `
       "branch": undefined,
       "chat": [
         {
-          "kind": "reasoning_summary",
-          "text": "Separate token security from form work; run browser tests once both changes land.",
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
         },
         {
           "kind": "plan_update",
           "planId": "plan_password_reset",
-          "text": "Add password reset",
+          "text": "Plan approved by human",
         },
       ],
       "column": "working",
@@ -464,6 +470,7 @@ exports[`snapshots projection at seq 44 1`] = `
         "node_reset_e2e": "working",
         "node_reset_ui": "merged",
       },
+      "status": "approved",
     },
   },
   "sessions": {
@@ -544,13 +551,14 @@ exports[`snapshots projection at seq 44 1`] = `
       "branch": undefined,
       "chat": [
         {
-          "kind": "reasoning_summary",
-          "text": "Separate token security from form work; run browser tests once both changes land.",
+          "kind": "plan_update",
+          "planId": "plan_password_reset",
+          "text": "Add password reset",
         },
         {
           "kind": "plan_update",
           "planId": "plan_password_reset",
-          "text": "Add password reset",
+          "text": "Plan approved by human",
         },
         {
           "kind": "plan_update",

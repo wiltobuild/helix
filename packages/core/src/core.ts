@@ -11,6 +11,7 @@ import {
   diffScopeSchema,
   explainRequestSchema,
   planIdSchema,
+  planDecisionRequestSchema,
   projectIdSchema,
   sendMessageRequestSchema,
   sessionIdSchema,
@@ -33,6 +34,7 @@ import {
   type MessageMode,
   type PayloadFor,
   type Plan,
+  type PlanDecisionResponse,
   type PlanNode,
   type Project,
   type ProjectId,
@@ -1162,6 +1164,31 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await schedule(input.projectId, e.seq);
         const projected = project(input.projectId).plans[plan.id]!;
         return { ...plan, nodes: structuredClone(projected.nodes) };
+      }),
+    decidePlan: (id, request) =>
+      command<PlanDecisionResponse>(async () => {
+        const planId = validate(planIdSchema, id);
+        const input = validate(planDecisionRequestSchema, request);
+        const plan = [...states.values()]
+          .flatMap((p) => Object.values(p.plans))
+          .find((p) => p.id === planId);
+        if (!plan) throw new HelixError('NOT_FOUND', 'Unknown plan');
+        const status = input.decision === 'approve' ? 'approved' : 'rejected';
+        const reason = input.reason ?? 'Rejected by human';
+        if (plan.status !== 'awaiting_approval') {
+          if (plan.status !== status || (status === 'rejected' && plan.rejectionReason !== reason))
+            throw new HelixError('CONFLICT', 'Plan already decided');
+          return { planId, status };
+        }
+        const submitted = (history.get(plan.projectId) ?? []).find(
+          (e) => e.type === 'plan.submitted' && e.payload.plan.id === planId,
+        );
+        const ctx = context(session(plan.orchestratorSessionId).session, submitted?.seq);
+        if (status === 'approved')
+          await emit('plan.approved', { planId, approvedBy: 'human' }, ctx);
+        else await emit('plan.rejected', { planId, reason }, ctx);
+        // #4 owns scheduling enforcement and resuming workers after approval.
+        return { planId, status };
       }),
     explain: (request) =>
       command(async () => {

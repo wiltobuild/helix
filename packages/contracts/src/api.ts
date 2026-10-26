@@ -13,6 +13,7 @@ import {
 import {
   approvalIdSchema,
   eventSeqSchema,
+  planIdSchema,
   planNodeIdSchema,
   projectIdSchema,
   sessionIdSchema,
@@ -65,6 +66,16 @@ export const submitPlanRequestSchema = z.strictObject({
   nodes: planNodesSchema,
 });
 export type SubmitPlanRequest = z.infer<typeof submitPlanRequestSchema>;
+export const planDecisionRequestSchema = z.strictObject({
+  decision: z.enum(['approve', 'reject']),
+  reason: z.string().trim().min(1).optional(),
+});
+export type PlanDecisionRequest = z.infer<typeof planDecisionRequestSchema>;
+export const planDecisionResponseSchema = z.strictObject({
+  planId: planIdSchema,
+  status: z.enum(['approved', 'rejected']),
+});
+export type PlanDecisionResponse = z.infer<typeof planDecisionResponseSchema>;
 export const explainRequestSchema = z.strictObject({
   sessionId: sessionIdSchema,
   planNodeId: planNodeIdSchema.optional(),
@@ -312,6 +323,14 @@ export const routes = {
     request: submitPlanRequestSchema,
     response: planSchema,
     status: 201,
+  },
+  decidePlan: {
+    method: 'POST',
+    path: '/api/plans/:id/decision',
+    params: z.strictObject({ id: planIdSchema }),
+    request: planDecisionRequestSchema,
+    response: planDecisionResponseSchema,
+    status: 200,
   },
   explain: {
     method: 'POST',

@@ -16,6 +16,8 @@ export type EventTone =
 export function eventTone(e: HelixEvent): EventTone {
   switch (e.type) {
     case 'plan.submitted':
+    case 'plan.approved':
+    case 'plan.rejected':
     case 'plan.node_updated':
     case 'explain.note':
       return 'plan';
@@ -101,6 +103,10 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
       return `You ${e.payload.decision === 'approved' ? 'approved' : e.payload.decision === 'rejected' ? 'rejected' : 'requested changes to'} the request.`;
     case 'plan.submitted':
       return `Orchestrator split “${e.payload.plan.goal}” into ${e.payload.plan.nodes.length} tasks.`;
+    case 'plan.approved':
+      return 'You approved the plan.';
+    case 'plan.rejected':
+      return `You rejected the plan: ${e.payload.reason}`;
     case 'plan.node_updated':
       return e.payload.note ?? 'Orchestrator updated the plan.';
     case 'explain.note':

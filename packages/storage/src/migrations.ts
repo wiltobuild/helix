@@ -49,6 +49,18 @@ const migrations = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'mutable_metadata',
+    sql: `
+      CREATE TABLE metadata (
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value_json TEXT NOT NULL,
+        PRIMARY KEY (scope, key)
+      );
+    `,
+  },
 ] as const;
 
 export function migrate(db: DatabaseSync): void {

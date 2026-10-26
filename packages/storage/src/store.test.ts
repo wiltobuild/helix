@@ -299,6 +299,7 @@ describe('durable auxiliary state', () => {
     await store.append(unsequence(fixtures.passwordResetRun));
     await store.saveProject(project);
     await store.remember('scope', 'key', 'hash', { accepted: true });
+    await store.setMeta('session', 'resume', { token: 'private-resume-token' });
     await store.importRecording(fixtureRecording());
     const recording = (await store.listRecordings())[0]!;
     await store.close();
@@ -308,6 +309,7 @@ describe('durable auxiliary state', () => {
       expect(await store.read(project.id, 0, 1000)).toEqual(fixtures.passwordResetRun);
       expect(await store.getProject(project.id)).toEqual(project);
       expect(await store.recall('scope', 'key', 'hash')).toEqual({ accepted: true });
+      expect(await store.getMeta('session', 'resume')).toEqual({ token: 'private-resume-token' });
       expect((await store.readRecording(recording.id))?.events).toEqual(fixtures.passwordResetRun);
       expect(await store.listRecordings()).toEqual([recording]);
       await store.close();
@@ -317,7 +319,10 @@ describe('durable auxiliary state', () => {
     expect((await store.append([note()]))[0]?.seq).toBe(fixtures.passwordResetRun.length + 1);
     const db = new DatabaseSync(join(dataDir, 'helix.db'));
     try {
-      expect(db.prepare('SELECT version FROM schema_migrations').all()).toEqual([{ version: 1 }]);
+      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual([
+        { version: 1 },
+        { version: 2 },
+      ]);
       expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
       const indexes = db
         .prepare('PRAGMA index_list(events)')
@@ -358,6 +363,89 @@ describe('durable auxiliary state', () => {
     await expect(store.append([])).rejects.toBeInstanceOf(StorageError);
     await expect(store.read(project.id, 0, 10)).rejects.toMatchObject({ code: 'INTERNAL_ERROR' });
     expect(() => store.subscribe(0, callback)).toThrow(StorageError);
+  });
+});
+
+describe('mutable metadata', () => {
+  test('isolates keys and scopes, replaces values and does not alias caller objects', async () => {
+    const store = memory();
+    expect(await store.getMeta('session-a', 'resume')).toBeUndefined();
+    const value = { token: 'original', receipts: ['first'] };
+    await store.setMeta('session-a', 'resume', value);
+    value.receipts.push('mutation');
+    expect(await store.getMeta('session-a', 'resume')).toEqual({
+      token: 'original',
+      receipts: ['first'],
+    });
+    const read = (await store.getMeta('session-a', 'resume')) as typeof value;
+    read.receipts.push('read-mutation');
+    expect(await store.getMeta('session-a', 'resume')).toEqual({
+      token: 'original',
+      receipts: ['first'],
+    });
+    await store.setMeta('session-b', 'resume', false);
+    await store.setMeta('session-a', 'receipt', 0);
+    await store.setMeta('session-a', 'resume', null);
+    expect(await store.getMeta('session-a', 'resume')).toBeNull();
+    expect(await store.getMeta('session-b', 'resume')).toBe(false);
+    expect(await store.getMeta('session-a', 'receipt')).toBe(0);
+    await store.remember('session-a', 'resume', 'hash', 'immutable-result');
+    await store.setMeta('session-a', 'resume', 'new-token');
+    expect(await store.recall('session-a', 'resume', 'hash')).toBe('immutable-result');
+  });
+
+  test('rejects non-JSON values without overwriting durable metadata', async () => {
+    const store = memory();
+    await store.setMeta('s', 'k', 'saved');
+    for (const value of [undefined, NaN, Infinity, () => 1, { value: undefined }]) {
+      // Exercise the runtime boundary used by JavaScript callers.
+      // @ts-expect-error non-JSON input must be rejected
+      await expect(store.setMeta('s', 'k', value)).rejects.toMatchObject({
+        code: 'INVALID_REQUEST',
+      });
+    }
+    expect(await store.getMeta('s', 'k')).toBe('saved');
+    await store.close();
+    await expect(store.getMeta('s', 'k')).rejects.toBeInstanceOf(StorageError);
+    await expect(store.setMeta('s', 'k', null)).rejects.toBeInstanceOf(StorageError);
+  });
+
+  test('metadata never enters live events or exported/imported recordings', async () => {
+    const store = memory();
+    await store.append(unsequence(fixtures.passwordResetRun));
+    const before = await store.exportProject(project.id);
+    const callback = vi.fn();
+    const unsubscribe = store.subscribe(fixtures.passwordResetRun.at(-1)!.seq, callback);
+    await store.setMeta('session', 'resume', 'private-resume-token');
+    await setImmediate();
+    expect(callback).not.toHaveBeenCalled();
+    unsubscribe();
+    expect(await store.exportProject(project.id)).toBe(before);
+    const replay = memory();
+    await replay.importRecording(before);
+    expect(await replay.getMeta('session', 'resume')).toBeUndefined();
+  });
+
+  test('upgrades a v1 database without altering existing events or command results', async () => {
+    const dataDir = await directory();
+    const original = openStore({ dataDir });
+    stores.push(original);
+    await original.append(unsequence(fixtures.passwordResetRun));
+    await original.remember('scope', 'key', 'hash', 'preserved');
+    await original.close();
+    const db = new DatabaseSync(join(dataDir, 'helix.db'));
+    try {
+      // Reconstruct the shipped v1 schema; migration 1 is unchanged.
+      db.exec('DROP TABLE metadata; DELETE FROM schema_migrations WHERE version = 2');
+    } finally {
+      db.close();
+    }
+    const upgraded = openStore({ dataDir });
+    stores.push(upgraded);
+    expect(await upgraded.read(project.id, 0, 1000)).toEqual(fixtures.passwordResetRun);
+    expect(await upgraded.recall('scope', 'key', 'hash')).toBe('preserved');
+    await upgraded.setMeta('scope', 'key', 'new');
+    expect(await upgraded.getMeta('scope', 'key')).toBe('new');
   });
 });
 

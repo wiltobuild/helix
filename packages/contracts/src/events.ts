@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   approvalIdSchema,
   eventSeqSchema,
+  planIdSchema,
   planNodeIdSchema,
   projectIdSchema,
   pullRequestNumberSchema,
@@ -57,6 +58,14 @@ export const eventSchemas = {
     z.strictObject({ text: z.string(), source: z.enum(['agent', 'orchestrator']) }),
   ),
   'plan.submitted': event('plan.submitted', z.strictObject({ plan: planSchema })),
+  'plan.approved': event(
+    'plan.approved',
+    z.strictObject({ planId: planIdSchema, approvedBy: z.literal('human') }),
+  ),
+  'plan.rejected': event(
+    'plan.rejected',
+    z.strictObject({ planId: planIdSchema, reason: z.string().trim().min(1) }),
+  ),
   'plan.node_updated': event(
     'plan.node_updated',
     z.strictObject({

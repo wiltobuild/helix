@@ -1,4 +1,4 @@
-# @helix/contracts — draft v1
+# @helix/contracts — v1 with Wave 2 plan contracts
 
 Browser-safe shared contracts for the Helix daemon, CLI, adapters, UI and offline
 replay. Import only `@helix/contracts`; fixtures are the `fixtures` namespace on
@@ -21,7 +21,7 @@ if (api) console.log(deriveStatus(api)); // merged
   `PullRequestNumber`, and corresponding lower-camel `*Schema` validators.
 - Entities and schemas: `Project`, `KnownAgentKind`, `AgentKind`, `SessionRole`,
   `SessionInterface`, `Session`, `AgentActivity`, `PullRequestFacts`, `CheckSummary`,
-  `ReviewSummary`, `Plan`, `PlanNode`, `Approval`, `ApprovalDecision`, `ChatItem`.
+  `ReviewSummary`, `Plan`, `PlanNode`, `PlanStatus`, `Approval`, `ApprovalDecision`, `ChatItem`.
   Shared validators: `timestampSchema`, `countSchema`, `planNodesSchema`.
 - Events: `EventType`, `HelixEvent<T = EventType>`, `PayloadFor<T>`,
   `UnsequencedEvent`, `ParseEventResult`, `eventTypeSchema`, `eventSchemas`,
@@ -34,7 +34,7 @@ if (api) console.log(deriveStatus(api)); // merged
   `sse`, `backfill`, `HarnessInfo`, `HealthResponse`, `HarnessesResponse`,
   `ProjectsResponse`, `CreateProjectRequest`, `CreateSessionRequest`,
   `MessageMode`, `SendMessageRequest`, `ApprovalDecisionRequest`,
-  `SubmitPlanRequest`, `ExplainRequest`, `AcceptedResponse`, `MergeResponse`,
+  `SubmitPlanRequest`, `PlanDecisionRequest`, `PlanDecisionResponse`, `ExplainRequest`, `AcceptedResponse`, `MergeResponse`,
   `DiffScope`, `DiffFile`, `DiffResponse`, `EventsResponse`, `EventsQuery`,
   `SseQuery`, `SseMessage`, `TerminalInput`, `TerminalOutput`, `TerminalMessage`,
   `ErrorCode`, `ApiError`, `RecordingImportRequest`, `RecordingImportResponse`,
@@ -72,6 +72,47 @@ source of truth. Draft PRs and unresolved review threads block readiness, so an
 otherwise ready PR remains `in_review` until both gates clear.
 
 ## Event and replay decisions
+
+### Wave 2 plans and metadata
+
+- New submissions require `files: string[]` on every node. Entries are positive,
+  slash-separated repository-relative globs, such as `src/api/**`. Absolute paths,
+  backslashes, empty path segments, `.`/`..` segments, control characters and
+  leading negation are rejected. An empty array declares no file ownership; it
+  must never be interpreted as unrestricted access. Overlap analysis and worker
+  enforcement belong to core (#4), not this schema.
+- Stored v1 plans without `files` still parse, normalizing missing declarations to
+  `[]`. This is replay compatibility, not evidence of permission to edit files.
+  Existing plan IDs, event sequences and causal links remain intact.
+- `PlanState.status` starts at `awaiting_approval`. A `plan.approved` event carries
+  `{ planId, approvedBy: 'human' }`; `plan.rejected` carries `{ planId, reason }`.
+  The projector records `decidedAt` plus `approvedBy` or `rejectionReason`, and
+  adds a plan-update entry to the orchestrator's chat. It does not start workers
+  or infer approval from worker activity. Legacy plans without decision events
+  remain awaiting approval, even when their historical workers are present.
+- Decision events require an existing plan in the same project. If an envelope
+  session is supplied, it must be the plan's orchestrator. Duplicate or conflicting
+  decision events are anomalies (or errors in strict mode), never state reversals.
+  Command handlers must make identical retries idempotent without appending twice.
+- `routes.decidePlan` defines `POST /api/plans/:id/decision`, with request
+  `{ decision: 'approve' | 'reject', reason?: string }` and response
+  `{ planId, status: 'approved' | 'rejected' }`. A supplied reason must be nonblank;
+  rejection without one records `Rejected by human`. `HelixCore.decidePlan` is
+  the corresponding domain seam. The server must establish human authorization;
+  the literal in the event is a provenance assertion, not authentication.
+- `HelixStore` now includes `MetaStore`: `getMeta(scope, key)` returns a JSON
+  `MetaValue` or `undefined` for a missing key; `setMeta(scope, key, value)`
+  atomically replaces a value. `null` is a stored value, not deletion. Values
+  must survive restart, remain isolated by scope/key, and not alias caller objects.
+  Metadata emits no events and is excluded from recordings. This is distinct from
+  immutable `remember`/`recall` command responses. Core's migration of resume
+  tokens and delivery receipts to this seam is #4 work.
+
+The golden fixture submits its plan at sequence 5 and records human approval at
+sequence 6, before worker creation. Later sequence numbers and causal links are
+unchanged; the fixture's file declarations are disjoint for concurrent workers.
+
+### Common event rules
 
 - IDs are branded at parsing boundaries. String IDs accept 1–64 characters;
   numeric IDs are positive safe integers. Sequence cursors may be zero. SHA fields
