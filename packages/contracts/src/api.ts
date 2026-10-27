@@ -13,6 +13,7 @@ import {
 import {
   approvalIdSchema,
   eventSeqSchema,
+  planIdSchema,
   planNodeIdSchema,
   projectIdSchema,
   sessionIdSchema,
@@ -65,6 +66,16 @@ export const submitPlanRequestSchema = z.strictObject({
   nodes: planNodesSchema,
 });
 export type SubmitPlanRequest = z.infer<typeof submitPlanRequestSchema>;
+export const planDecisionRequestSchema = z.strictObject({
+  decision: z.enum(['approve', 'reject']),
+  reason: z.string().trim().min(1).optional(),
+});
+export type PlanDecisionRequest = z.infer<typeof planDecisionRequestSchema>;
+export const planDecisionResponseSchema = z.strictObject({
+  planId: planIdSchema,
+  status: z.enum(['approved', 'rejected']),
+});
+export type PlanDecisionResponse = z.infer<typeof planDecisionResponseSchema>;
 export const explainRequestSchema = z.strictObject({
   sessionId: sessionIdSchema,
   planNodeId: planNodeIdSchema.optional(),
@@ -74,6 +85,9 @@ export const explainRequestSchema = z.strictObject({
 export type ExplainRequest = z.infer<typeof explainRequestSchema>;
 export const acceptedResponseSchema = z.strictObject({ accepted: z.literal(true) });
 export type AcceptedResponse = z.infer<typeof acceptedResponseSchema>;
+export const stopProjectAgentsResponseSchema = z.strictObject({
+  stopped: z.array(sessionIdSchema),
+});
 export const mergeResponseSchema = z.strictObject({ mergeSha: z.string().min(1) });
 export type MergeResponse = z.infer<typeof mergeResponseSchema>;
 export const diffScopeSchema = z.enum(['workspace', 'pr', 'last_turn']);
@@ -273,6 +287,14 @@ export const routes = {
     response: acceptedResponseSchema,
     status: 202,
   },
+  stopProjectAgents: {
+    method: 'POST',
+    path: '/api/projects/:id/stop-all',
+    params: projectParams,
+    request: empty,
+    response: stopProjectAgentsResponseSchema,
+    status: 200,
+  },
   archiveSession: {
     method: 'POST',
     path: '/api/sessions/:id/archive',
@@ -312,6 +334,14 @@ export const routes = {
     request: submitPlanRequestSchema,
     response: planSchema,
     status: 201,
+  },
+  decidePlan: {
+    method: 'POST',
+    path: '/api/plans/:id/decision',
+    params: z.strictObject({ id: planIdSchema }),
+    request: planDecisionRequestSchema,
+    response: planDecisionResponseSchema,
+    status: 200,
   },
   explain: {
     method: 'POST',

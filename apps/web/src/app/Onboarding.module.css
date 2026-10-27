@@ -30,3 +30,10 @@
   color: var(--text-3);
   font-size: var(--text-sm);
 }
+
+.progress {
+  width: min(440px, 100%);
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}

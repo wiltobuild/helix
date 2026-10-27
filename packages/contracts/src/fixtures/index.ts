@@ -48,11 +48,12 @@ export const passwordResetPlan = planSchema.parse({
   projectId: passwordResetProject.id,
   orchestratorSessionId: ids.orchestrator,
   goal: 'Add password reset',
-  createdAt: time(3),
+  createdAt: time(2),
   nodes: [
     {
       id: ids.apiNode,
       title: 'Password reset API',
+      files: ['src/api/password-reset/**'],
       description: 'Issue single-use, expiring tokens and accept a new password.',
       acceptance: [
         'Never reveal whether an email exists',
@@ -67,6 +68,7 @@ export const passwordResetPlan = planSchema.parse({
     {
       id: ids.uiNode,
       title: 'Password reset form',
+      files: ['src/ui/password-reset/**', 'src/emails/password-reset/**'],
       description: 'Add accessible request and reset forms plus localized email copy.',
       acceptance: [
         'Keyboard-accessible forms',
@@ -81,6 +83,7 @@ export const passwordResetPlan = planSchema.parse({
     {
       id: ids.e2eNode,
       title: 'Password reset E2E tests',
+      files: ['tests/password-reset.spec.ts'],
       description: 'Exercise email delivery, token consumption and expired links in Playwright.',
       acceptance: ['Complete a reset through the test mailbox', 'Reject reused and expired tokens'],
       dependsOn: [ids.apiNode, ids.uiNode],
@@ -161,17 +164,8 @@ add(
 );
 add('session.started', {}, 1, 2, ids.orchestrator);
 add('activity.changed', { activity: 'active' }, 1, 3, ids.orchestrator);
-add(
-  'reasoning.summary',
-  {
-    text: 'Separate token security from form work; run browser tests once both changes land.',
-    source: 'orchestrator',
-  },
-  2,
-  4,
-  ids.orchestrator,
-);
-add('plan.submitted', { plan: passwordResetPlan }, 3, 5, ids.orchestrator); // 6
+add('plan.submitted', { plan: passwordResetPlan }, 2, 4, ids.orchestrator); // 5
+add('plan.approved', { planId: passwordResetPlan.id, approvedBy: 'human' }, 3, 5, ids.orchestrator); // 6
 add(
   'session.created',
   { session: worker(ids.api, 'Implement secure password reset endpoints', 'codex', ids.apiNode) },
@@ -402,6 +396,8 @@ add(
 /** 44 events over 40 minutes; every event after genesis links to a prior cause. */
 export const passwordResetRun: readonly HelixEvent[] = run;
 export const passwordResetMilestones = {
+  awaitingApproval: 5,
+  planApproved: 6,
   plan: 9,
   ciFailure: 22,
   fix: 24,

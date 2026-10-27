@@ -1,3 +1,66 @@
+.view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 100%;
+}
+
+.decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+.decision[data-state='pending'] {
+  border-color: var(--status-needs);
+  background: var(--status-needs-soft);
+}
+.decision[data-state='approved'],
+.decision[data-state='rejected'] {
+  justify-content: flex-start;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+.decision[data-state='approved'] svg {
+  color: var(--status-ready);
+}
+.decision[data-state='rejected'] svg {
+  color: var(--status-failed);
+}
+
+.decisionText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.decisionText span {
+  color: var(--text-2);
+}
+
+.decisionError {
+  color: var(--status-failed) !important;
+}
+
+.decisionActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.rejectForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
 .scroller {
   display: grid;
   place-items: center;

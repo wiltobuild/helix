@@ -40,6 +40,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     ? state.sessions[selected as keyof typeof state.sessions]
     : undefined;
   const live = source.mode === 'live';
+  const pendingPlan = Object.values(state.plans).find((p) => p.status === 'awaiting_approval');
 
   // Keyboard: [ ] step the timeline, L back to live, ⌘/Ctrl+N new task, Esc closes the inspector.
   useEffect(() => {
@@ -107,10 +108,26 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         </header>
 
         <div className={s.content}>
+          {view === 'board' && pendingPlan && (
+            <div className={s.planBanner} role="status">
+              <span>
+                <strong>A plan is waiting for your approval.</strong> “{pendingPlan.goal}” ·{' '}
+                {pendingPlan.nodes.length} {pendingPlan.nodes.length === 1 ? 'task' : 'tasks'}
+              </span>
+              <Button size="sm" variant="primary" onClick={() => setView('plan')}>
+                Review plan
+              </Button>
+            </div>
+          )}
           {view === 'board' ? (
             <Board cards={cards} selected={selected} onSelect={setSelected} columns={COLUMNS} />
           ) : (
-            <PlanView state={state} selected={selected} onSelect={setSelected} />
+            <PlanView
+              state={state}
+              selected={selected}
+              onSelect={setSelected}
+              {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}
+            />
           )}
         </div>
 
