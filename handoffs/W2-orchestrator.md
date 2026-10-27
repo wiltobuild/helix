@@ -1,97 +1,75 @@
-# W2-E — Orchestrator agent: `helix` CLI + plan approval gate
+# W2 orchestrator: planner prompt and `helix` CLI plan flow (issue #5)
 
-**Wave 2, Agent E.** Owner: Codex (`gpt-6.1-sol`, effort high).  
-Do not touch: `packages/contracts/` (frozen after Claude lands W2 contract changes), `apps/web/`, `apps/daemon/src/server.ts`, any file outside the owned paths below.
+Branch `agent/5-planner-prompt-and-helix-cli-plan-flow`, based on `main` at `b437a54`. That includes:
+- #3: `PlanNode.files` (required, non-empty for new plans), `plan.approved` / `plan.rejected`, `POST /api/plans/:id/decision`
+- #4: the core approval gate, file-overlap rejection, the shared-interface warning, `CoreDeps.orchestratorPrompt`
+- #9: limits and stop-all
 
----
+Read `CLAUDE.md`, `CONTRIBUTING.md`, `apps/cli/README.md`, `apps/cli/src/cli.ts`, `packages/core/README.md` and `packages/contracts/src/entities.ts` (plan schema) first.
 
-## Goal
+**Owned paths:**
+- `packages/harness/src/orchestrator/**` (new)
+- `packages/harness/src/index.ts`: export only
+- `packages/harness/package.json`: only if needed to ship the `.md` file
+- `apps/cli/**`
+- `handoffs/W2-orchestrator.result.md`
 
-Implement the `helix` CLI that the orchestrator agent uses, and add the **plan approval gate** to core: _nothing spawns until `plan.approved` is emitted_.
+Don't edit contracts, core, the daemon or root config. You cannot commit or push.
 
----
+## Required
 
-## Owned paths
+### 1. Orchestrator prompt: `packages/harness/src/orchestrator/prompt.md`
+A clear, concise system prompt for the orchestrator agent. It must tell the agent to:
+- **Inspect the repository read-only**, never editing, creating or deleting files, and never running git write commands. The orchestrator plans; workers build.
+- **Split the user's goal into tasks that can run independently** where possible, with `dependsOn` for real ordering.
+- **Give every task:**
+  - `id` (short kebab-case)
+  - `title`
+  - `description` (the full instruction a worker will receive)
+  - `acceptance` (checkable criteria)
+  - `files` (repo-relative globs it expects to touch, never empty)
+  - `dependsOn`
+  - `agent` (`codex` unless told otherwise)
+  - a one-line `rationale`
+- **Never let two parallel tasks claim overlapping files.** If they would, either order them with `dependsOn` or give the file to one task.
+- **When parallel tasks share a new interface,** add a contract task that defines it and that both depend on.
+- **Write `plan.json`** in the documented `SubmitPlanRequest` shape (`projectId`, `orchestratorSessionId`, `goal`, `nodes`), using `HELIX_PROJECT_ID` and `HELIX_SESSION_ID` from the environment, then run `helix plan submit plan.json`.
+- **If submit prints validation errors,** fix the plan and resubmit.
+- **After a successful submit,** tell the user the plan is waiting for their approval in Helix, then stop. Never try to approve it.
+- **Use `helix explain "<why>" --node <id>`** to record reasoning worth keeping.
 
-```
-packages/core/src/           (orchestrator wiring, plan gate, scheduling, guardrails)
-apps/cli/src/                (helix CLI binary)
-handoffs/W2-orchestrator.result.md
-```
+Include one short, generic example plan (two tasks plus a contract task) in the prompt.
 
----
+### 2. Export the prompt from `@helix/harness`
+- `export const ORCHESTRATOR_PROMPT: string`, loaded from the `.md`
+- `export function orchestratorPrompt(ctx: { project: Project; session: Session }): string`, matching `CoreDeps.orchestratorPrompt`. It prepends a short header with the project name, default branch, project id and session id to `ORCHESTRATOR_PROMPT`.
 
-## Acceptance criteria
+Make sure the `.md` is loadable both from source (tsx / Vitest) and however the package is consumed today. Test that.
 
-1. `POST /api/plans` succeeds and emits `plan.submitted`; no worker session is spawned yet.
-2. `POST /api/plans/:id/decision` with `{ decision: "approved" }` emits `plan.approved` and then begins spawning workers in dependency order (roots first; dependents only after their prerequisite sessions have merged).
-3. `POST /api/plans/:id/decision` with `{ decision: "rejected" }` emits `plan.rejected` and spawns nothing.
-4. Plan submission fails with `INVALID_REQUEST` + a `plan.validation_failed` event when two parallel nodes declare overlapping `files` globs. Serialize-or-dedicate is the caller's responsibility — rejection is the gate.
-5. Dependent workers start from a freshly fetched `origin/<defaultBranch>` SHA (not local `main`) so they always include merged prerequisites.
-6. `helix` CLI binary is callable from an agent's working directory:
-   - `helix plan submit <plan.json>` → `POST /api/plans`; prints the plan id; exits non-zero on error.
-   - `helix spawn <planNodeId>` → `POST /api/projects/:id/sessions` with the node's config; prints session id.
-   - `helix send <sessionId> <message>` → `POST /api/sessions/:id/messages`; mode=queue by default; `--interrupt` flag for interrupt.
-   - `helix status <sessionId>` → derived status from the latest project events for that session.
-   - `helix explain "<text>" [--caused-by <seq>]` → `POST /api/explain`.
-   - `helix stop-all` → `POST /api/projects/:id/stop-all`.
-   - All commands read `HELIX_DAEMON_URL` (default `http://localhost:4317`) and `HELIX_PROJECT_ID` from the environment.
-7. Turn cap guardrail: a session that completes more than 20 agent turns (configurable via `HELIX_MAX_TURNS`) is stopped and surfaced as a `session.exited` + `explain.note` with reason "turn cap reached".
-8. Max parallel workers guardrail: no more than 4 worker sessions run at once across a project (configurable via `HELIX_MAX_WORKERS`); excess nodes stay pending until a slot opens.
-9. `pnpm check` passes (format, typecheck, lint, boundaries, all tests) on both Ubuntu and Windows.
+### 3. CLI
+- **`helix plan submit <file.json>`:**
+  - Validate locally with `submitPlanRequestSchema` before calling the daemon.
+  - Print each problem on its own line with its JSON path (e.g. `nodes[1].files: must not be empty`). Also run the core-side rules you can check offline: empty `files`, and overlapping files between parallel tasks.
+  - Reuse `globsMayOverlap` from `@helix/core` **only if** `.dependency-cruiser.mjs` allows the CLI to depend on core; otherwise skip the overlap check and leave it to the daemon.
+  - Exit 1 for local validation errors (2 stays for API/transport errors, as today).
+  - Fill in `projectId` and `orchestratorSessionId` from `HELIX_PROJECT_ID` / `HELIX_SESSION_ID` when the file omits them.
+- **`helix plan show <planId>` (new):** find the plan by replaying project events, as `status` does, and print the goal, its status (`awaiting_approval` / `approved` / `rejected`) and each task (id, agent, `dependsOn`, files, node status). `--json` prints the plan state.
+- **`helix explain <text>`:** `--session` defaults to `HELIX_SESSION_ID`, and `--node` is optional. Error clearly when neither the flag nor the variable is set.
+- Update the usage text and `apps/cli/README.md`, including the environment variables `HELIX_URL`, `HELIX_DATA_DIR`, `HELIX_SESSION_ID` and `HELIX_PROJECT_ID`.
 
----
+### 4. Not in this task (record under CONTRACT-REQUESTs / follow-ups)
+Running a real orchestrator end to end needs #19 (`HarnessStartOptions.env`), so the daemon can put the `helix` CLI on the agent's `PATH` and set `HELIX_URL`, `HELIX_SESSION_ID` and `HELIX_PROJECT_ID`. It also needs the daemon to pass `orchestratorPrompt` into core. Neither is owned here.
 
-## Contracts to implement (already in `packages/contracts`)
+Still write the `HELIX_E2E=1` smoke test the issue asks for (in the CLI or harness package). Gate it so it **skips with a clear message** when the wiring isn't available yet.
 
-| Contract | Where |
-|---|---|
-| `decidePlan` route (`POST /api/plans/:id/decision`) | daemon route → `core.decidePlan()` |
-| `plan.approved`, `plan.rejected`, `plan.validation_failed` events | emitted from `core.decidePlan()` / `core.submitPlan()` |
-| `PlanNode.files` glob array | validated in `submitPlan` for overlaps |
-| `stopAll` route (`POST /api/projects/:id/stop-all`) | daemon route → `core.stopAll()` |
-| `MetaStore` (via `HelixStore`) | use for storing resume tokens / delivery receipts (replacing the `IdempotencyStore` workaround) |
+## Verification
+- `pnpm check` exits 0 (`pnpm.cmd` on Windows PowerShell).
+- **CLI tests:**
+  - local validation errors with paths, and exit 1
+  - env fallback for the project and session ids
+  - `plan show` output, human and `--json`
+  - `explain` using `HELIX_SESSION_ID`
+- **Harness test:** the prompt loads, contains the key rules, and `orchestratorPrompt()` includes the header.
 
----
-
-## Key behaviours to preserve (do not regress)
-
-- Status is never stored — `deriveStatus(facts)` is the only path.
-- Dirty worktrees are never force-deleted.
-- Replay determinism: live UI state at t == replayed UI state at t.
-- No merge without a human click (merge still comes through `POST /api/sessions/:id/merge`).
-- Append-only event store — no event mutations.
-
----
-
-## Fakes for missing neighbours
-
-- Use the existing `FakeCore` in `apps/daemon/src/testing/fake-core.ts` for CLI integration tests.
-- For the plan gate tests, use an in-memory `HelixStore` (already in `packages/storage/src/index.ts` behind the test export).
-
----
-
-## Test command
-
-```bash
-pnpm --filter @helix/core test
-pnpm --filter @helix/cli test
-```
-
----
-
-## Windows gotchas
-
-- CLI shebang: use `#!/usr/bin/env node` and ship a `helix.cmd` wrapper via the `bin` field in `package.json` so `helix` resolves without `.cmd` on Windows.
-- Path separators: always use `path.posix` / forward slashes in glob comparisons.
-
----
-
-## Result file format
-
-Write `handoffs/W2-orchestrator.result.md` with:
-- Summary (2–3 sentences).
-- Files changed (list).
-- Decisions made (any schema or behaviour choices).
-- Contract-change requests (new additions you need Claude to approve — do NOT edit contracts directly).
-- Gaps / known issues.
+## Result file (`handoffs/W2-orchestrator.result.md`)
+Summary · public API · files · decisions · CONTRACT-REQUESTs / follow-ups · verification (exact counts) · known gaps.

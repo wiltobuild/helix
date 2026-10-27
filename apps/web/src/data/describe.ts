@@ -16,6 +16,8 @@ export type EventTone =
 export function eventTone(e: HelixEvent): EventTone {
   switch (e.type) {
     case 'plan.submitted':
+    case 'plan.approved':
+    case 'plan.rejected':
     case 'plan.node_updated':
     case 'explain.note':
       return 'plan';
@@ -44,6 +46,46 @@ export function eventTone(e: HelixEvent): EventTone {
         : 'quiet';
     default:
       return 'quiet';
+  }
+}
+
+/**
+ * Where a Why entry comes from. Never present an agent's claim as something Helix observed:
+ * - plan:   the orchestrator's stated rationale (the plan and its notes)
+ * - helix:  facts Helix recorded when it acted (CI, routing, PRs, commits, decisions)
+ * - agent:  the agent's own description of what it did or thought (unverified)
+ */
+export type Provenance = 'plan' | 'helix' | 'agent';
+
+export const provenanceLabel: Record<Provenance, string> = {
+  plan: 'Stated in the plan',
+  helix: 'Recorded by Helix',
+  agent: "Agent's own summary",
+};
+
+export function provenance(e: HelixEvent, state: ProjectState): Provenance {
+  switch (e.type) {
+    case 'plan.submitted':
+    case 'plan.node_updated':
+      return 'plan';
+    case 'reasoning.summary':
+      return 'agent';
+    case 'chat.item': {
+      const item = e.payload.item;
+      return item.kind === 'reasoning_summary' ||
+        item.kind === 'question' ||
+        (item.kind === 'message' && item.role === 'assistant')
+        ? 'agent'
+        : 'helix';
+    }
+    case 'explain.note':
+      // CONTRACT-REQUEST: explain.note needs a source. Until then, notes on the orchestrator's
+      // session are its stated rationale; Helix's own notes (commits, harness) are on workers.
+      return e.sessionId && state.sessions[e.sessionId]?.session.role === 'orchestrator'
+        ? 'plan'
+        : 'helix';
+    default:
+      return 'helix';
   }
 }
 
@@ -101,6 +143,10 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
       return `You ${e.payload.decision === 'approved' ? 'approved' : e.payload.decision === 'rejected' ? 'rejected' : 'requested changes to'} the request.`;
     case 'plan.submitted':
       return `Orchestrator split “${e.payload.plan.goal}” into ${e.payload.plan.nodes.length} tasks.`;
+    case 'plan.approved':
+      return 'You approved the plan.';
+    case 'plan.rejected':
+      return `You rejected the plan: ${e.payload.reason}`;
     case 'plan.node_updated':
       return e.payload.note ?? 'Orchestrator updated the plan.';
     case 'explain.note':

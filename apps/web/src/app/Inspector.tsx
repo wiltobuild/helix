@@ -13,7 +13,14 @@ import {
   type SessionState,
 } from '@helix/contracts';
 import { AgentBadge, Button, IconButton, Segmented, StatusPill, TabPanel, Tabs } from '@helix/ui';
-import { describeEvent, eventTone, statusLine } from '../data/describe';
+import {
+  describeEvent,
+  eventTone,
+  provenance,
+  provenanceLabel,
+  statusLine,
+  type Provenance,
+} from '../data/describe';
 import s from './Inspector.module.css';
 
 interface InspectorProps {
@@ -105,7 +112,8 @@ export function Inspector({
         items={[
           { value: 'summary', label: 'Summary' },
           { value: 'activity', label: 'Activity', count: session.chat.length },
-          ...(client ? [{ value: 'files', label: 'Files' }] : []),
+          // The diff endpoint only knows the present; never imply it shows the moment being viewed.
+          ...(client ? [{ value: 'files', label: isLive ? 'Files' : 'Current changes' }] : []),
           { value: 'why', label: 'Why' },
         ]}
         className={s.tabs}
@@ -116,6 +124,7 @@ export function Inspector({
               <h3 className={s.blockTitle}>
                 <Sparkles size={13} aria-hidden /> Intent
               </h3>
+              <SourceTag source="plan" />
               <p className={s.rationale}>{node.rationale}</p>
               {node.acceptance.length > 0 && (
                 <ul className={s.acceptance}>
@@ -227,6 +236,11 @@ export function Inspector({
 
         {client && (
           <TabPanel value="files" className={s.panel}>
+            {!isLive && (
+              <p className={s.pastNotice}>
+                You’re viewing the past, but this shows the task’s changes as they are now.
+              </p>
+            )}
             <FilesPanel
               client={client}
               sessionId={id}
@@ -238,15 +252,24 @@ export function Inspector({
 
         <TabPanel value="why" className={s.panel}>
           <p className={s.muted}>
-            Everything that happened to this task, newest first. Select an event to rewind to it.
+            Everything that happened to this task, newest first. Select an event to replay the
+            project to that moment.
           </p>
+          <div className={s.legend} aria-label="Where each entry comes from">
+            <SourceTag source="plan" />
+            <SourceTag source="helix" />
+            <SourceTag source="agent" />
+          </div>
           <ol className={s.history}>
             {history.map((e) => (
               <li key={e.seq}>
                 <button type="button" onClick={() => onJump(e.seq)} data-tone={eventTone(e)}>
                   <span className={s.histSeq}>#{e.seq}</span>
                   <span className={s.histText}>{describeEvent(e, state)}</span>
-                  {e.causedBy && <span className={s.cause}>caused by #{e.causedBy}</span>}
+                  <span className={s.histMeta}>
+                    <SourceTag source={provenance(e, state)} />
+                    {e.causedBy && <span className={s.cause}>caused by #{e.causedBy}</span>}
+                  </span>
                 </button>
               </li>
             ))}
@@ -258,6 +281,14 @@ export function Inspector({
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function SourceTag({ source }: { source: Provenance }) {
+  return (
+    <span className={s.source} data-source={source}>
+      {provenanceLabel[source]}
+    </span>
+  );
+}
 
 function reviewLabel(d: string) {
   return d === 'approved'

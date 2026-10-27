@@ -11,24 +11,24 @@ import type {
   MergeResponse,
   MessageMode,
   PlanDecisionRequest,
+  PlanDecisionResponse,
   RecordingImportResponse,
-  RecordingListEntry,
-  RecordingListResponse,
   SendMessageRequest,
-  StopAllResponse,
   SubmitPlanRequest,
   TerminalOutput,
 } from './api.js';
 import type {
+  AgentKind,
   Approval,
   ApprovalDecision,
+  MetaValue,
   Plan,
   Project,
   PullRequestFacts,
   Session,
 } from './entities.js';
 import type { HelixEvent, PayloadFor, UnsequencedEvent } from './events.js';
-import type { ApprovalId, ProjectId, PullRequestNumber, SessionId } from './ids.js';
+import type { ApprovalId, PlanId, ProjectId, PullRequestNumber, SessionId } from './ids.js';
 import type { Worktree } from './projection.js';
 
 export type Unsubscribe = () => void;
@@ -146,22 +146,16 @@ export interface IdempotencyStore {
 export interface RecordingStore {
   exportProject(projectId: ProjectId): Promise<string>;
   importRecording(text: string): Promise<RecordingImportResponse>;
-  /** Lists all imported recordings available for replay. */
-  listRecordings(): Promise<RecordingListEntry[]>;
-  /** Returns the stored recording text by id, or undefined if not found. */
-  getRecording(id: string): Promise<string | undefined>;
 }
-
-/** Typed key-value store for durable per-project/session metadata (Wave 2 seam).
- * Keys are arbitrary strings (e.g. 'resume-token:<sessionId>').
- * Values are JSON-serialisable; overwrite on set; missing keys return undefined.
+/** Mutable durable metadata, separate from immutable command responses and replay logs.
+ * Keys are scoped; writes atomically replace a JSON value. Missing keys resolve undefined;
+ * null is a stored value. Reads/writes must not alias caller-owned objects. No event is emitted.
+ * Resume tokens are private metadata and must never appear in recording exports.
  */
 export interface MetaStore {
-  getMeta(scope: string, key: string): Promise<unknown>;
-  setMeta(scope: string, key: string, value: unknown): Promise<void>;
-  deleteMeta(scope: string, key: string): Promise<void>;
+  getMeta(scope: string, key: string): Promise<MetaValue | undefined>;
+  setMeta(scope: string, key: string, value: MetaValue): Promise<void>;
 }
-
 export interface HelixStore
   extends EventStore, ProjectIndex, IdempotencyStore, RecordingStore, MetaStore {
   close(): Promise<void>;
@@ -220,17 +214,17 @@ export interface HelixCore {
   ): Promise<Session>;
   sendMessage(sessionId: SessionId, request: SendMessageRequest): Promise<void>;
   stopSession(sessionId: SessionId): Promise<void>;
-  /** Stop all running sessions for a project immediately (guardrail / emergency stop). */
-  stopAll(projectId: ProjectId): Promise<StopAllResponse>;
+  stopAll(projectId: ProjectId): Promise<{ stopped: SessionId[] }>;
   archiveSession(sessionId: SessionId): Promise<Session>;
   decideApproval(approvalId: ApprovalId, request: ApprovalDecisionRequest): Promise<Approval>;
   diff(sessionId: SessionId, scope: DiffScope): Promise<DiffResponse>;
   merge(sessionId: SessionId): Promise<MergeResponse>;
   submitPlan(request: SubmitPlanRequest): Promise<Plan>;
-  /** Approve or reject a submitted plan. Workers only spawn after an 'approved' decision. */
-  decidePlan(request: PlanDecisionRequest): Promise<Plan>;
+  /** Records a human decision. Repeated matching decisions are idempotent; reversal conflicts.
+   * A rejection without a reason records "Rejected by human". Scheduling enforcement is core's job.
+   */
+  decidePlan(planId: PlanId, request: PlanDecisionRequest): Promise<PlanDecisionResponse>;
   explain(request: ExplainRequest): Promise<HelixEvent<'explain.note'>>;
   exportRecording(projectId: ProjectId): Promise<string>;
   importRecording(text: string): Promise<RecordingImportResponse>;
-  listRecordings(): Promise<RecordingListResponse>;
 }
