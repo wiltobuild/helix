@@ -6,7 +6,13 @@ import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { openStore } from '@helix/storage';
 import { HelixError } from '@helix/contracts';
-import { consoleLog, createRealCore, resolveGitHubToken } from './real-core.js';
+import {
+  codexOverrides,
+  consoleLog,
+  createRealCore,
+  limitsFromEnv,
+  resolveGitHubToken,
+} from './real-core.js';
 import { startDaemon } from './lifecycle.js';
 
 vi.mock('node:child_process', async (original) => ({
@@ -81,6 +87,39 @@ test('real composition runs without SCM and closes its store exactly once', asyn
     await Promise.all([daemon.stop(), core.shutdown(), core.shutdown()]);
     expect(close).toHaveBeenCalledOnce();
     await expect(store.listProjects()).rejects.toThrow();
+  } finally {
+    await core.shutdown();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Codex model/effort and limits come from validated environment variables', () => {
+  expect(codexOverrides({})).toEqual([]);
+  expect(
+    codexOverrides({ HELIX_CODEX_MODEL: 'gpt-6.1-sol', HELIX_CODEX_EFFORT: 'medium' }),
+  ).toEqual(['-c', 'model=gpt-6.1-sol', '-c', 'model_reasoning_effort=medium']);
+  expect(() => codexOverrides({ HELIX_CODEX_MODEL: 'x"; rm -rf /' })).toThrow(/model id/);
+  expect(() => codexOverrides({ HELIX_CODEX_EFFORT: 'extreme' })).toThrow(/HELIX_CODEX_EFFORT/);
+  expect(limitsFromEnv({})).toEqual({});
+  expect(limitsFromEnv({ HELIX_MAX_TURNS: '8', HELIX_MAX_WORKERS: '2' })).toEqual({
+    maxTurnsPerTask: 8,
+    maxParallelWorkers: 2,
+  });
+  for (const bad of ['0', '-1', '2.5', 'many'])
+    expect(() => limitsFromEnv({ HELIX_MAX_TURNS: bad })).toThrow(/positive integer/);
+});
+
+test('HELIX_GITHUB=off never looks up a GitHub token', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'helix-github-off-'));
+  const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  vi.mocked(spawn).mockClear();
+  const core = await createRealCore({
+    dataDir,
+    env: { HELIX_GITHUB: 'off', GH_TOKEN: 'should-not-be-used' },
+  });
+  try {
+    expect(vi.mocked(spawn).mock.calls.some(([cmd]) => cmd === 'gh')).toBe(false);
+    expect(info.mock.calls.map((c) => String(c[0])).join('\n')).toContain('HELIX_GITHUB=off');
   } finally {
     await core.shutdown();
     await rm(dataDir, { recursive: true, force: true });

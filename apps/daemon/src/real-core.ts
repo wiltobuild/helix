@@ -71,19 +71,67 @@ export function resolveGitHubToken(env: NodeJS.ProcessEnv): Promise<string | und
   });
 }
 
+/**
+ * Optional Codex overrides from the environment: HELIX_CODEX_MODEL (e.g. gpt-6.1-sol) and
+ * HELIX_CODEX_EFFORT (low|medium|high|xhigh|max). Unset means Codex's own configured default.
+ */
+export function codexOverrides(env: NodeJS.ProcessEnv): string[] {
+  const args: string[] = [];
+  const model = env.HELIX_CODEX_MODEL?.trim();
+  const effort = env.HELIX_CODEX_EFFORT?.trim();
+  if (model) {
+    if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error('HELIX_CODEX_MODEL is not a model id');
+    args.push('-c', `model=${model}`);
+  }
+  if (effort) {
+    if (!['low', 'medium', 'high', 'xhigh', 'max'].includes(effort))
+      throw new Error('HELIX_CODEX_EFFORT must be low, medium, high, xhigh or max');
+    args.push('-c', `model_reasoning_effort=${effort}`);
+  }
+  return args;
+}
+
+/** Optional #9 limits from HELIX_MAX_TURNS and HELIX_MAX_WORKERS (positive integers). */
+export function limitsFromEnv(env: NodeJS.ProcessEnv): {
+  maxTurnsPerTask?: number;
+  maxParallelWorkers?: number;
+} {
+  const read = (name: string) => {
+    const raw = env[name]?.trim();
+    if (!raw) return undefined;
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value <= 0)
+      throw new Error(`${name} must be a positive integer`);
+    return value;
+  };
+  const maxTurnsPerTask = read('HELIX_MAX_TURNS');
+  const maxParallelWorkers = read('HELIX_MAX_WORKERS');
+  return {
+    ...(maxTurnsPerTask ? { maxTurnsPerTask } : {}),
+    ...(maxParallelWorkers ? { maxParallelWorkers } : {}),
+  };
+}
+
 export async function createRealCore(options: {
   dataDir: string;
   env: NodeJS.ProcessEnv;
 }): Promise<HelixCore> {
   const { dataDir, env } = options;
-  const token = await resolveGitHubToken(env);
+  // Validate configuration before touching storage or credentials.
+  const codexArgs = codexOverrides(env);
+  const limits = limitsFromEnv(env);
+  // HELIX_GITHUB=off never looks up a token. `gh auth token` reads the OS keyring directly, so
+  // an empty GH_CONFIG_DIR alone does not keep the operator's GitHub login away from Helix.
+  const githubOff = env.HELIX_GITHUB?.trim().toLowerCase() === 'off';
+  const token = githubOff ? undefined : await resolveGitHubToken(env);
   if (!token)
     console.info(
       JSON.stringify({
         ts: new Date().toISOString(),
         level: 'info',
-        message:
-          'GitHub SCM disabled: no token resolved from GH_TOKEN, GITHUB_TOKEN or gh auth token.',
+        message: githubOff
+          ? 'GitHub SCM disabled: HELIX_GITHUB=off.'
+          : 'GitHub SCM disabled: no token resolved from GH_TOKEN, GITHUB_TOKEN or gh auth token.',
       }),
     );
   const store = openStore({ dataDir });
@@ -110,7 +158,10 @@ export async function createRealCore(options: {
     };
     const harnesses = {
       'claude-code': createHarness('claude-code', harnessOptions),
-      codex: createHarness('codex', harnessOptions),
+      codex: createHarness('codex', {
+        ...harnessOptions,
+        ...(codexArgs.length ? { extraArgs: codexArgs } : {}),
+      }),
     };
     const core = createHelixCore({
       store,
@@ -121,6 +172,7 @@ export async function createRealCore(options: {
         consoleLog.error(message, error),
       ),
       ...(env.HELIX_STALL_TIMEOUT_MS ? { stallTimeoutMs: Number(env.HELIX_STALL_TIMEOUT_MS) } : {}),
+      ...(Object.keys(limits).length ? { limits } : {}),
       ...(token
         ? {
             scm: createGitHubScm({
