@@ -23,6 +23,10 @@ for automatic PR shipping, observation, feedback and merge.
 
 Optional composition hooks:
 
+- `orchestratorPrompt({ project, session }): string` prepends planning instructions
+  and a blank line to the first delivered message of an orchestrator session.
+  `Session.prompt` remains exactly the user's text. Worker prompts and later
+  messages are unchanged. Without the hook, delivery is unchanged.
 - `harnessStartsWithPrompt(agent: AgentKind): boolean` is deprecated and ignored
   for compatibility with existing composition roots. All adapters establish a
   session without starting a turn. Core sends the initial prompt once, caused by
@@ -78,6 +82,35 @@ without a worktree in `waiting_input`; a later scheduling pass can retry it.
 Merged-state PR snapshots do not unblock workers: core accepts and deduplicates
 the subsequent `pr.merged` with its merge SHA, including after restart.
 
+`submitPlan` records `plan.submitted` without starting any workers. Human approval
+records `plan.approved` and schedules roots with that approval as their cause;
+rejection records `plan.rejected` and permanently excludes the plan from scheduling.
+Startup also honors this gate. For legacy histories only, an awaiting plan with
+an existing node `sessionId` may continue scheduling its remaining dependents;
+its projected status stays `awaiting_approval`, with no synthetic decision event.
+
+Every newly submitted task must declare a non-empty `files` array of repository-relative
+globs. Legacy replay may still contain `files: []`. Tasks ordered by dependencies,
+including transitive dependencies, may share files. Parallel tasks cannot have
+potentially overlapping claims. The exported pure `globsMayOverlap(a, b)` helper
+compares slash-separated segments case-insensitively: `**` consumes zero or more
+segments, and any segment containing `*`, `?`, `[` or `{` conservatively matches
+any single segment. Different lengths overlap only through `**`. This deliberately
+permits false positives; use dependencies or narrower ownership to resolve them.
+
+When parallel tasks share a new interface, include a contract task that both
+depend on, so the interface merges first. Core warns after submission when both
+descriptions contain any of `interface`, `contract`, `shared type`, `schema`, or
+`API shape` (case-insensitive whole phrases, optional plural `s`) and their
+transitive dependency sets have no common node. One `explain.note` per pair is
+attached to the orchestrator and caused by `plan.submitted`. This heuristic is
+advisory; it cannot establish whether two descriptions refer to the same interface.
+
+Open PRs remain watched after another PR merges. A subsequent SCM `pr.updated`
+reporting `mergeable: 'conflicting'` routes a repair to that PR's worker, caused by
+the update and deduplicated by PR/reason/head. `ScmObserver` exposes a watch stream;
+core relies on its updates rather than an explicit refresh operation.
+
 Automatic feedback is deduped by project, PR, reason and head SHA. Counts rebuild
 from `feedback.routed` events and cap at three per PR/reason. An exhausted reason
 produces an explanation and `waiting_input`. Delivery waits while any approval
@@ -86,13 +119,20 @@ after its PR closes or merges. Terminal output never implies chat activity.
 
 ## Frozen-v1 workarounds
 
-`CONTRACT-REQUEST` comments mark the absent durable resume-token/outbox seams and
-reattach capability. Immutable idempotency records currently hold tokens keyed
-by session/event, message modes and delivery receipts. Undelivered user messages
+Mutable `getMeta`/`setMeta` records hold one latest resume token per session,
+message modes and delivery receipts. If metadata is absent, core reads the old
+immutable `recall` records and copies recovered values into metadata. Legacy
+resume tokens are scanned newest event first. Command idempotency remains on
+`remember`/`recall`. Undelivered user messages
 and feedback are reconstructed from the event log after restart. A crash between
 `send()` acceptance and its receipt can redeliver a message: exactly-once delivery
 requires a delivery ID/acknowledgment seam in the harness. A crash between the
 user event append and mode persistence falls back to queue mode on recovery.
+
+`CONTRACT-REQUEST`: add `env?: Record<string, string>` to `HarnessStartOptions`
+so the composition root and harness can put the `helix` CLI on the agent's PATH.
+Core does not modify process-wide environment variables as a workaround.
+Explicit harness reattachment capability is also still absent.
 
 Adapters must emit activity transitions at turn boundaries. V1 has no turn ID to
 disambiguate overlapping turns. External worktree/PR creation and event append

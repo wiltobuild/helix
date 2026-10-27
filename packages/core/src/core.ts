@@ -52,6 +52,7 @@ import {
 } from '@helix/contracts';
 import { fingerprint, githubRemote, repoPath, slug, validate } from './helpers.js';
 import { reload } from './reload.js';
+import { validateFileOwnership } from './plan-validation.js';
 
 export type CoreLog = { error(message: string, error?: unknown): void };
 export type CoreDeps = {
@@ -74,6 +75,8 @@ export type CoreDeps = {
   stallTimeoutMs?: number;
   /** Composition may supply cached detection shared with the HTTP endpoint. */
   detectHarnesses?: () => Promise<HarnessInfo[]>;
+  /** Prepended to the first delivery only; the stored user prompt is unchanged. */
+  orchestratorPrompt?: (ctx: { project: Project; session: Session }) => string;
 };
 
 type Delivery = { text: string; mode: MessageMode; cause: EventSeq; automatic?: true };
@@ -225,6 +228,16 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   function eventsFor(s: Session): HelixEvent[] {
     return (history.get(s.projectId) ?? []).filter((e) => e.sessionId === s.id);
   }
+  async function readMeta(scope: string, key: string) {
+    const value = await deps.store.getMeta(scope, key);
+    if (value !== undefined) return value;
+    const legacy = await deps.store.recall(scope, key, META_HASH);
+    if (legacy === true || typeof legacy === 'string') {
+      await deps.store.setMeta(scope, key, legacy);
+      return legacy;
+    }
+    return undefined;
+  }
   async function emit<T extends EventType>(
     type: T,
     payload: PayloadFor<T>,
@@ -286,7 +299,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           seenFeedback.add(
             feedbackKey(s, e.payload.prNumber, e.payload.reason, heads.get(s.id) ?? 'unknown'),
           );
-          if (!(await deps.store.recall(DELIVERY_SCOPE, String(e.seq), META_HASH)))
+          if (!(await readMeta(DELIVERY_SCOPE, String(e.seq))))
             hold(s.id, { text: e.payload.summary, mode: 'queue', cause: e.seq, automatic: true });
         }
         if (
@@ -294,11 +307,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           e.sessionId &&
           e.payload.item.kind === 'message' &&
           e.payload.item.role === 'user' &&
-          !(await deps.store.recall(DELIVERY_SCOPE, String(e.seq), META_HASH))
+          !(await readMeta(DELIVERY_SCOPE, String(e.seq)))
         ) {
-          // CONTRACT-REQUEST: durable message/outbox records should be a dedicated
-          // store seam. v1 receipts cannot make harness delivery exactly-once.
-          const mode = await deps.store.recall(MESSAGE_SCOPE, String(e.seq), META_HASH);
+          // Receipts cannot make harness delivery exactly-once without an adapter ack.
+          const mode = await readMeta(MESSAGE_SCOPE, String(e.seq));
           hold(e.sessionId, {
             text: e.payload.item.text,
             mode: mode === 'interrupt' ? 'interrupt' : 'queue',
@@ -307,8 +319,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         }
       }
       for (const s of Object.values(project(p.id).sessions)) {
-        // CONTRACT-REQUEST: add durable resume-token storage to HelixStore. v1 uses
-        // immutable idempotency records keyed by the event where the token was observed.
+        const latest = await deps.store.getMeta(RESUME_SCOPE, s.session.id);
+        if (typeof latest === 'string') {
+          resumes.set(s.session.id, latest);
+          continue;
+        }
+        if (latest !== undefined) continue;
+        // Read through pre-metadata tokens, newest event first, then migrate once.
         for (const e of [...eventsFor(s.session)].reverse()) {
           const token = await deps.store.recall(
             RESUME_SCOPE,
@@ -316,6 +333,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             META_HASH,
           );
           if (typeof token === 'string') {
+            await deps.store.setMeta(RESUME_SCOPE, s.session.id, token);
             resumes.set(s.session.id, token);
             break;
           }
@@ -335,10 +353,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   function blocked(s: SessionState): boolean {
     return s.pendingApprovalIds.length > 0 || s.activity === 'blocked';
   }
-  async function saveResume(id: SessionId, seq: EventSeq): Promise<void> {
+  async function saveResume(id: SessionId): Promise<void> {
     const token = runtimes.get(id)?.handle?.resumeToken;
     if (token && token !== resumes.get(id)) {
-      await deps.store.remember(RESUME_SCOPE, `${id}:${seq}`, META_HASH, token);
+      await deps.store.setMeta(RESUME_SCOPE, id, token);
       resumes.set(id, token);
     }
   }
@@ -354,7 +372,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (runtime.turnOpen) {
       if (runtime.awaitingInput && !delivery.automatic) {
         await runtime.handle.send(delivery.text, delivery.mode);
-        await deps.store.remember(DELIVERY_SCOPE, String(delivery.cause), META_HASH, true);
+        await deps.store.setMeta(DELIVERY_SCOPE, String(delivery.cause), true);
         return;
       }
       hold(id, delivery);
@@ -368,8 +386,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     delete runtime.lastAssistantMessage;
     try {
       await runtime.handle.send(delivery.text, 'queue');
-      await deps.store.remember(DELIVERY_SCOPE, String(delivery.cause), META_HASH, true);
-      await saveResume(id, delivery.cause);
+      await deps.store.setMeta(DELIVERY_SCOPE, String(delivery.cause), true);
+      await saveResume(id);
     } catch (error) {
       runtime.turnOpen = false;
       runtime.turnNumber--;
@@ -422,6 +440,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }),
     );
   }
+  function initialPrompt(s: Session): string {
+    return s.role === 'orchestrator' && deps.orchestratorPrompt
+      ? `${deps.orchestratorPrompt({ project: project(s.projectId).project, session: s })}\n\n${s.prompt}`
+      : s.prompt;
+  }
   async function launch(
     s: Session,
     cause: EventSeq,
@@ -456,7 +479,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         });
         if (!resume && sendInitial) {
           // Bracketed paste preserves multiline prompts in interactive CLIs and .cmd shims.
-          runtime.attachment.write(`\x1b[200~${s.prompt.replace(/\r\n/g, '\n')}\x1b[201~\r`);
+          runtime.attachment.write(
+            `\x1b[200~${initialPrompt(s).replace(/\r\n/g, '\n')}\x1b[201~\r`,
+          );
         }
         await emit('activity.changed', { activity: 'active' }, context(s, cause));
         return;
@@ -489,9 +514,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         });
       });
       subscribing = false;
-      await saveResume(s.id, cause);
+      await saveResume(s.id);
       if (sendInitial) {
-        await deliver(s.id, { text: s.prompt, mode: 'queue', cause });
+        await deliver(s.id, { text: initialPrompt(s), mode: 'queue', cause });
       }
       await flush(s.id);
     } catch (error) {
@@ -554,7 +579,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (emission.type === 'approval.requested' && emission.payload.approval.sessionId !== id)
       throw new HelixError('INVALID_REQUEST', 'Harness approval has the wrong session');
     const e = await emit(emission.type, emission.payload, context(before.session, cause));
-    await saveResume(id, e.seq);
+    await saveResume(id);
     if (emission.type === 'activity.changed') {
       if (
         emission.payload.activity === 'idle' &&
@@ -825,7 +850,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       runtimes.get(s.id)?.stopped ||
       (s.interface === 'terminal' && !runtimes.get(s.id)?.attachment)
     ) {
-      const delivered = await deps.store.recall(DELIVERY_SCOPE, String(start.seq), META_HASH);
+      const delivered = await readMeta(DELIVERY_SCOPE, String(start.seq));
       await launch(s, start.seq, false, !delivered);
     }
     await deps.store.remember(`${scope}:result`, key, hash, s);
@@ -833,7 +858,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   }
   async function schedule(projectId: ProjectId, cause: EventSeq): Promise<void> {
     const p = project(projectId);
-    for (const plan of Object.values(p.plans))
+    for (const plan of Object.values(p.plans)) {
+      const legacyRunning =
+        plan.status === 'awaiting_approval' && plan.nodes.some((node) => node.sessionId);
+      if (plan.status !== 'approved' && !legacyRunning) continue;
+      const approval = (history.get(projectId) ?? []).find(
+        (e) => e.type === 'plan.approved' && e.payload.planId === plan.id,
+      );
       for (const node of plan.nodes) {
         if (
           node.sessionId &&
@@ -849,6 +880,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         if (merges.some((e) => !e)) continue;
         const unblockedBy =
           merges.reduce((latest, e) => (e && e.seq > latest ? e.seq : latest), 0 as EventSeq) ||
+          approval?.seq ||
           cause;
         const s = await create(
           p.project,
@@ -878,6 +910,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           context(s, unblockedBy),
         );
       }
+    }
   }
   async function stop(id: SessionId): Promise<void> {
     const s = session(id);
@@ -920,9 +953,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
                 );
               else {
                 const initial = eventsFor(s.session).find((e) => e.type === 'session.started');
-                const delivered =
-                  initial &&
-                  (await deps.store.recall(DELIVERY_SCOPE, String(initial.seq), META_HASH));
+                const delivered = initial && (await readMeta(DELIVERY_SCOPE, String(initial.seq)));
                 const sendInitial = Boolean(
                   initial && !delivered && s.session.interface === 'chat',
                 );
@@ -1046,7 +1077,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           { item: { kind: 'message', role: 'user', text: input.text } },
           context(s.session),
         );
-        await deps.store.remember(MESSAGE_SCOPE, String(e.seq), META_HASH, input.mode);
+        await deps.store.setMeta(MESSAGE_SCOPE, String(e.seq), input.mode);
         await deliver(id, { ...input, cause: e.seq });
       }),
     stopSession: (id) => command(() => stop(id)),
@@ -1155,13 +1186,15 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             );
           harnessFor(node.agent);
         }
+        const warnings = validateFileOwnership(input.nodes);
         const plan: Plan = {
           ...input,
           id: validate(planIdSchema, deps.ids('plan')),
           createdAt: deps.clock(),
         };
         const e = await emit('plan.submitted', { plan }, context(orchestrator.session));
-        await schedule(input.projectId, e.seq);
+        for (const text of warnings)
+          await emit('explain.note', { text }, context(orchestrator.session, e.seq));
         const projected = project(input.projectId).plans[plan.id]!;
         return { ...plan, nodes: structuredClone(projected.nodes) };
       }),
@@ -1184,10 +1217,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           (e) => e.type === 'plan.submitted' && e.payload.plan.id === planId,
         );
         const ctx = context(session(plan.orchestratorSessionId).session, submitted?.seq);
-        if (status === 'approved')
-          await emit('plan.approved', { planId, approvedBy: 'human' }, ctx);
-        else await emit('plan.rejected', { planId, reason }, ctx);
-        // #4 owns scheduling enforcement and resuming workers after approval.
+        if (status === 'approved') {
+          const approved = await emit('plan.approved', { planId, approvedBy: 'human' }, ctx);
+          await schedule(plan.projectId, approved.seq);
+        } else await emit('plan.rejected', { planId, reason }, ctx);
         return { planId, status };
       }),
     explain: (request) =>

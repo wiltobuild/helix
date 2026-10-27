@@ -17,7 +17,7 @@ async function pendingPlan() {
     },
     'planner',
   );
-  // Empty plan isolates the new decision command from the scheduler work in #4.
+  // Empty plan isolates decision idempotency from worker scheduling.
   const plan = await f.core.submitPlan({
     projectId: project.id,
     orchestratorSessionId: orchestrator.id,

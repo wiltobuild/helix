@@ -74,6 +74,7 @@ test('core owns initial prompt delivery even with the deprecated auto-start opti
   );
   // A fresh daemon with no usable token must not repeat the already-delivered task.
   f.store.records.clear();
+  f.store.metadata.clear();
   const started = f.store.events.find((e) => e.type === 'session.started')!;
   await f.store.remember('helix:core:delivered:v1', String(started.seq), 'v1', true);
   const restarted = createHelixCore(f.deps);
@@ -211,12 +212,14 @@ async function golden() {
     { ...request, title: 'Planner', planWithOrchestrator: true },
     'planner',
   );
-  const plan = await f.core.submitPlan({
+  const submitted = await f.core.submitPlan({
     projectId: p.id,
     orchestratorSessionId: orchestrator.id,
     goal: 'Ship an API and client',
     nodes,
   });
+  await f.core.decidePlan(submitted.id, { decision: 'approve' });
+  const plan = f.state(p.id).plans[submitted.id]!;
   const api = plan.nodes[0]!.sessionId!;
   const ui = plan.nodes[1]!.sessionId!;
   const columns = () => {
@@ -282,6 +285,7 @@ test('golden plan → PR → CI repair → approval → merge → dependent work
     'worktree.created',
     'session.started',
     'plan.submitted',
+    'plan.approved',
     'session.created',
     'worktree.created',
     'session.started',
@@ -829,12 +833,14 @@ describe('plan integrity and restart', () => {
       { ...request, planWithOrchestrator: true },
       'planner',
     );
-    const plan = await f.core.submitPlan({
+    const submitted = await f.core.submitPlan({
       projectId: p.id,
       orchestratorSessionId: o.id,
       goal: 'Join two branches',
       nodes: [nodes[0]!, nodes[1]!, { ...nodes[2]!, dependsOn: [nodes[0]!.id, nodes[1]!.id] }],
     });
+    await f.core.decidePlan(submitted.id, { decision: 'approve' });
+    const plan = f.state(p.id).plans[submitted.id]!;
     f.git.ahead = 1;
     for (const n of plan.nodes.slice(0, 2))
       f.harness.handles.get(n.sessionId!)!.emit(activity('idle'));
