@@ -28,7 +28,8 @@ import type {
   Session,
 } from './entities.js';
 import type { HelixEvent, PayloadFor, UnsequencedEvent } from './events.js';
-import type { ApprovalId, ProjectId, PullRequestNumber, SessionId } from './ids.js';import type { Worktree } from './projection.js';
+import type { ApprovalId, ProjectId, PullRequestNumber, SessionId } from './ids.js';
+import type { Worktree } from './projection.js';
 
 export type Unsubscribe = () => void;
 export type HarnessEmissionType =
@@ -161,7 +162,8 @@ export interface MetaStore {
   deleteMeta(scope: string, key: string): Promise<void>;
 }
 
-export interface HelixStore extends EventStore, ProjectIndex, IdempotencyStore, RecordingStore, MetaStore {
+export interface HelixStore
+  extends EventStore, ProjectIndex, IdempotencyStore, RecordingStore, MetaStore {
   close(): Promise<void>;
 }
 
