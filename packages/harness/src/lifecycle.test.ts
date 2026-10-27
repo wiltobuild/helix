@@ -415,3 +415,49 @@ describe('detection and executable resolution', () => {
     20_000,
   );
 });
+
+it.each([
+  ['codex', 'PATH'],
+  ['codex', 'Path'],
+  ['claude-code', 'PATH'],
+  ['claude-code', 'Path'],
+] as const)(
+  '%s merges per-session %s env without leaking it into later sessions',
+  async (kind, pathKey) => {
+    const cwd = await directory();
+    const snapshot = join(cwd, 'env.json');
+    const base = {
+      HELIX_FAKE_ENV_FILE: snapshot,
+      HELIX_FAKE_BASE_VALUE: 'base',
+      ...(process.platform === 'win32'
+        ? { [pathKey === 'PATH' ? 'Path' : 'PATH']: process.env.Path ?? process.env.PATH ?? '' }
+        : {}),
+    };
+    const harness = createHarness(kind, opts(kind, base));
+    const original = { ...process.env };
+    const sessionPath = process.platform === 'win32' ? 'C:/session path' : '/session path';
+    const first = await harness.start({
+      cwd,
+      session: { ...template, agent: kind },
+      env: {
+        HELIX_FAKE_BASE_VALUE: 'overridden',
+        HELIX_FAKE_SESSION_VALUE: 'session-only',
+        [pathKey]: sessionPath,
+        HELIX_FAKE_PATH_KEY: pathKey,
+      },
+    });
+    sessions.push(first);
+    const observed = record(JSON.parse(await readFile(snapshot, 'utf8')) as unknown);
+    expect(observed).toMatchObject({ base: 'overridden', only: 'session-only', path: sessionPath });
+    if (process.platform === 'win32') expect(observed.pathKeys).toHaveLength(1);
+    const second = await harness.start({ cwd, session: { ...template, agent: kind } });
+    sessions.push(second);
+    const next = record(JSON.parse(await readFile(snapshot, 'utf8')) as unknown);
+    expect(next.base).toBe('base');
+    expect(next.only).toBeUndefined();
+    expect(next.path).not.toBe(sessionPath);
+    expect(base.HELIX_FAKE_BASE_VALUE).toBe('base');
+    expect(process.env).toEqual(original);
+  },
+  30_000,
+);

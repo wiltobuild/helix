@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { openStore } from '@helix/storage';
+import { createHelixCore } from '@helix/core';
+import { orchestratorPrompt } from '@helix/harness';
 import { HelixError } from '@helix/contracts';
 import {
   codexOverrides,
@@ -19,6 +21,10 @@ vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof import('node:child_process')>()),
   spawn: vi.fn(),
 }));
+vi.mock('@helix/core', async (original) => {
+  const core = await original<typeof import('@helix/core')>();
+  return { ...core, createHelixCore: vi.fn(core.createHelixCore) };
+});
 vi.mock('@helix/storage', async (original) => {
   const storage = await original<typeof import('@helix/storage')>();
   return { ...storage, openStore: vi.fn(storage.openStore) };
@@ -79,6 +85,9 @@ test('real composition runs without SCM and closes its store exactly once', asyn
   const close = vi.spyOn(store, 'close');
   try {
     const daemon = await startDaemon({ core, dataDir, port: 0, version: 'test' });
+    const deps = vi.mocked(createHelixCore).mock.calls.at(-1)![0];
+    expect(deps.orchestratorPrompt).toBe(orchestratorPrompt);
+    expect(deps.sessionEnv).toBeTypeOf('function');
     expect(await core.health()).toEqual({ status: 'ok', version: '0.0.0' });
     expect(info).toHaveBeenCalledOnce();
     expect(String(info.mock.calls[0]?.[0])).toContain('GitHub SCM disabled');

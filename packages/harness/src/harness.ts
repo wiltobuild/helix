@@ -19,11 +19,11 @@ class CliHarness implements AgentHarness {
     readonly kind: KnownAgentKind,
     private options: HarnessOptions,
   ) {}
-  private executable(): Promise<string | undefined> {
+  private executable(options = this.options): Promise<string | undefined> {
     return resolveExecutable(
-      this.options.bin ?? (this.kind === 'claude-code' ? 'claude' : 'codex'),
-      environment(this.options),
-      this.options.cwd,
+      options.bin ?? (this.kind === 'claude-code' ? 'claude' : 'codex'),
+      environment(options),
+      options.cwd,
     );
   }
   async detect(): Promise<HarnessInfo> {
@@ -60,12 +60,20 @@ class CliHarness implements AgentHarness {
     if (options.session.interface !== 'chat')
       throw new HelixError('INVALID_REQUEST', 'Harness adapters support chat sessions only');
     try {
-      const bin = await this.executable();
+      const sessionOptions = {
+        ...this.options,
+        env: Object.fromEntries(
+          Object.entries(environment(this.options, options.env)).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
+        ),
+      };
+      const bin = await this.executable(sessionOptions);
       if (!bin)
         throw new HelixError('HARNESS_UNAVAILABLE', `${this.kind} executable was not found`);
       return await (this.kind === 'claude-code' ? ClaudeSession : CodexSession).start(
         bin,
-        this.options,
+        sessionOptions,
         options,
       );
     } catch (error) {

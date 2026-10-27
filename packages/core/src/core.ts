@@ -77,6 +77,8 @@ export type CoreDeps = {
   detectHarnesses?: () => Promise<HarnessInfo[]>;
   /** Prepended to the first delivery only; the stored user prompt is unchanged. */
   orchestratorPrompt?: (ctx: { project: Project; session: Session }) => string;
+  /** Process environment additions evaluated for each launch, including resumes. */
+  sessionEnv?: (ctx: { project: Project; session: Session }) => Record<string, string> | undefined;
   limits?: { maxTurnsPerTask?: number; maxParallelWorkers?: number };
 };
 
@@ -538,6 +540,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }),
     );
   }
+  function sessionEnv(s: Session): Record<string, string> | undefined {
+    return deps.sessionEnv?.({ project: project(s.projectId).project, session: s });
+  }
   function initialPrompt(s: Session): string {
     return s.role === 'orchestrator' && deps.orchestratorPrompt
       ? `${deps.orchestratorPrompt({ project: project(s.projectId).project, session: s })}\n\n${s.prompt}`
@@ -585,8 +590,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
               'HARNESS_UNAVAILABLE',
               'Terminal process is not available for reattachment',
             );
-        } else if (!deps.terminals.list().includes(s.id))
-          await deps.terminals.spawn(s.id, await terminalOptions(s));
+        } else if (!deps.terminals.list().includes(s.id)) {
+          const options = { ...(await terminalOptions(s)) };
+          const additions = sessionEnv(s);
+          if (additions) {
+            const env = { ...options.env };
+            for (const [key, value] of Object.entries(additions)) {
+              if (process.platform === 'win32')
+                for (const existing of Object.keys(env))
+                  if (existing.toLowerCase() === key.toLowerCase()) delete env[existing];
+              env[key] = value;
+            }
+            options.env = env;
+          }
+          await deps.terminals.spawn(s.id, options);
+        }
         runtime.attachment = await deps.terminals.attach(s.id, () => {
           /* Terminal bytes are not domain activity. */
         });
@@ -600,9 +618,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         return;
       }
       const token = resumes.get(s.id);
+      const env = sessionEnv(s);
       runtime.handle = await harnessFor(s.agent).start({
         session: s,
         cwd: s.worktreePath!,
+        ...(env ? { env } : {}),
         ...(token ? { resumeToken: token } : {}),
       });
       let subscribing = true;
