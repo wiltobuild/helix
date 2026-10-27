@@ -230,7 +230,11 @@ export interface HelixCore {
    * A rejection without a reason records "Rejected by human". Scheduling enforcement is core's job.
    */
   decidePlan(planId: PlanId, request: PlanDecisionRequest): Promise<PlanDecisionResponse>;
+  /** An agent's or orchestrator's note; the source comes from the calling session's role. */
   explain(request: ExplainRequest): Promise<HelixEvent<'explain.note'>>;
+  /** Helix's own note about a session (source "helix"), e.g. from a harness adapter.
+   * Composition-only: deliberately not an HTTP route, so agents cannot claim Helix's voice. */
+  recordNote(sessionId: SessionId, text: string): Promise<HelixEvent<'explain.note'>>;
   exportRecording(projectId: ProjectId): Promise<string>;
   importRecording(text: string): Promise<RecordingImportResponse>;
 }

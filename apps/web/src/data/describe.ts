@@ -79,11 +79,19 @@ export function provenance(e: HelixEvent, state: ProjectState): Provenance {
         : 'helix';
     }
     case 'explain.note':
-      // CONTRACT-REQUEST: explain.note needs a source. Until then, notes on the orchestrator's
-      // session are its stated rationale; Helix's own notes (commits, harness) are on workers.
-      return e.sessionId && state.sessions[e.sessionId]?.session.role === 'orchestrator'
-        ? 'plan'
-        : 'helix';
+      switch (e.payload.source) {
+        case 'helix':
+          return 'helix';
+        case 'orchestrator':
+          return 'plan';
+        case 'agent':
+          return 'agent';
+        default:
+          // Legacy notes recorded before notes carried a source (#17).
+          return e.sessionId && state.sessions[e.sessionId]?.session.role === 'orchestrator'
+            ? 'plan'
+            : 'helix';
+      }
     default:
       return 'helix';
   }
