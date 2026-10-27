@@ -42,7 +42,10 @@ function makePathRegex(rawPath: string): RegExp {
   const clean = rawPath.replace(/[/\\]+$/, '');
   const isWin = /^[A-Za-z]:/.test(clean) || clean.includes('\\');
   const startsWithSep = /^[/\\]/.test(clean);
-  const segments = clean.split(/[/\\]+/).filter(Boolean).map(escapeRegex);
+  const segments = clean
+    .split(/[/\\]+/)
+    .filter(Boolean)
+    .map(escapeRegex);
   const pattern = (startsWithSep ? '[/\\\\]' : '') + segments.join('[/\\\\]');
   return new RegExp(pattern, isWin ? 'gi' : 'g');
 }
@@ -60,7 +63,8 @@ export function redact<T>(input: T, options: RedactionOptions = {}): RedactionRe
   const triggered = new Set<string>();
 
   const shouldRedactRepo = options.repoPath && !isPlaceholderPath(options.repoPath);
-  const repoRegex = shouldRedactRepo && options.repoPath ? makePathRegex(options.repoPath) : undefined;
+  const repoRegex =
+    shouldRedactRepo && options.repoPath ? makePathRegex(options.repoPath) : undefined;
 
   function redactString(text: string): string {
     let result = text;

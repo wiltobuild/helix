@@ -5,11 +5,13 @@ import {
   parseHelixlog,
   projectSchema,
   projectUpTo,
+  serializeHelixlog,
   type HelixEvent,
+  type Helixlog,
+  type ProjectState,
   type UnsequencedEvent,
 } from '@helix/contracts';
-import { openStore } from '@helix/storage';
-import { verifyRecordingRoundTrip } from './recordings.js';
+import { openStore, sanitizeForExport, type OpenStoreOptions } from '@helix/storage';
 
 function unsequence(events: readonly HelixEvent[]): UnsequencedEvent[] {
   return events.map((event) => {
@@ -23,6 +25,85 @@ function toEvent(value: unknown): HelixEvent {
   const result = parseEvent(value);
   if (!result.success) throw new Error(result.error.message);
   return result.data;
+}
+
+/**
+ * Verifies that exporting and importing a recorded run preserves identical state projection.
+ */
+async function verifyRecordingRoundTrip(
+  originalEvents: HelixEvent[],
+  storeOptions: OpenStoreOptions = { memory: true },
+): Promise<{
+  originalProjection: ProjectState;
+  replayedProjection: ProjectState;
+  isIdentical: boolean;
+  redactions: string[];
+}> {
+  const store = openStore(storeOptions);
+  try {
+    const first = originalEvents[0];
+    if (!first || first.type !== 'project.added') {
+      throw new Error('Events must begin with project.added');
+    }
+
+    const originalProjection = projectUpTo(originalEvents, Number.MAX_SAFE_INTEGER, {
+      strict: true,
+    });
+
+    const sanitized = sanitizeForExport(first.payload.project, originalEvents);
+    const log: Helixlog = {
+      header: {
+        format: 'helixlog',
+        version: 1,
+        project: sanitized.project,
+        recordedAt: originalEvents.at(-1)!.ts,
+        redactions: sanitized.redactions,
+      },
+      events: sanitized.events as HelixEvent[],
+    };
+
+    const text = serializeHelixlog(log);
+    const parsed = parseHelixlog(text);
+    if (!parsed.success) {
+      throw new Error(`Failed to parse exported helixlog: ${parsed.error.message}`);
+    }
+
+    await store.importRecording(text);
+    const recordings = await store.listRecordings();
+    if (recordings.length === 0) {
+      throw new Error('Recording was not stored in store.listRecordings()');
+    }
+
+    const replayed = await store.readRecording(recordings[0]!.id);
+    if (!replayed) {
+      throw new Error('Could not read imported recording');
+    }
+
+    const replayedProjection = projectUpTo(replayed.events, Number.MAX_SAFE_INTEGER, {
+      strict: true,
+    });
+
+    // Strip volatile fields (like repoPath which is sanitized to <repo>) before deep equality
+    const normOriginal = {
+      ...originalProjection,
+      project: { ...originalProjection.project, repoPath: '<repo>' },
+    };
+    const normReplayed = {
+      ...replayedProjection,
+      project: { ...replayedProjection.project, repoPath: '<repo>' },
+    };
+
+    const isIdentical = JSON.stringify(normOriginal) === JSON.stringify(normReplayed);
+
+    return {
+      originalProjection,
+      replayedProjection,
+      isIdentical,
+      redactions: log.header.redactions,
+    };
+  } finally {
+    await store.close();
+  }
 }
 
 describe('daemon recordings round-trip and redaction', () => {
