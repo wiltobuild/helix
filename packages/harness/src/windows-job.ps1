@@ -38,12 +38,6 @@ public static class HelixProcessJob {
   static extern bool SetInformationJobObject(IntPtr job, int kind, ref ExtendedLimits limits, uint size);
   [DllImport("kernel32.dll", SetLastError=true)]
   static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-  public static bool AssignProcess(IntPtr process) {
-    if (job != IntPtr.Zero && process != IntPtr.Zero) {
-      return AssignProcessToJobObject(job, process);
-    }
-    return false;
-  }
   [DllImport("kernel32.dll")]
   static extern IntPtr GetCurrentProcess();
   [DllImport("kernel32.dll", SetLastError=true)]
@@ -121,7 +115,6 @@ public static class HelixProcessJob {
   # Copy raw byte streams, without PowerShell's text pipeline or StreamWriter's
   # buffering/encoding conversion. All three directions progress independently.
   $agentProcess = [System.Diagnostics.Process]::Start($startInfo)
-  try { [HelixProcessJob]::AssignProcess($agentProcess.Handle) } catch {}
   [HelixProcessJob]::Stage('child started pid=' + $agentProcess.Id)
   $inputCopy = [HelixProcessJob]::Pump([HelixProcessJob]::StandardStream(-10, $true), $agentProcess.StandardInput.BaseStream, $true, 'stdin')
   $outputCopy = [HelixProcessJob]::Pump($agentProcess.StandardOutput.BaseStream, [HelixProcessJob]::StandardStream(-11, $false), $false, 'stdout')
