@@ -19,6 +19,7 @@ import {
   provenance,
   provenanceLabel,
   statusLine,
+  turnLimitNote,
   type Provenance,
 } from '../data/describe';
 import s from './Inspector.module.css';
@@ -55,6 +56,7 @@ export function Inspector({
   );
   const node = plan?.nodes.find((n) => n.id === session.session.planNodeId);
   const canAct = Boolean(client && isLive);
+  const turnLimit = turnLimitNote(session);
   const label = statusLine(session, status, state);
 
   const history = useMemo(
@@ -119,6 +121,13 @@ export function Inspector({
         className={s.tabs}
       >
         <TabPanel value="summary" className={s.panel}>
+          {turnLimit && (
+            <section className={s.pastNotice} role="status">
+              <strong>Turn limit reached.</strong> Helix paused this task so it can’t run away with
+              time or usage. Send a message in <em>Activity</em> to let it continue.
+              <SourceTag source="helix" /> {turnLimit}
+            </section>
+          )}
           {node && (
             <section className={s.block}>
               <h3 className={s.blockTitle}>

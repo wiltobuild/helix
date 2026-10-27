@@ -20,7 +20,7 @@ import {
   statusMeta,
   toneVar,
 } from '@helix/ui';
-import { provenanceLabel } from '../data/describe';
+import { provenanceLabel, slotWaitNote } from '../data/describe';
 import s from './PlanView.module.css';
 
 const NODE_W = 248;
@@ -257,6 +257,7 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
           {graph.placed.map(({ node, x, y }) => {
             const st = status(node.id);
             const tone = toneVar(statusMeta[st].tone);
+            const slotWait = slotWaitNote(state, node.id);
             return (
               <Tooltip
                 key={node.id}
@@ -265,6 +266,12 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                   <span className={s.tip}>
                     <strong>Why this task · {provenanceLabel.plan}</strong>
                     {node.rationale}
+                    {slotWait && (
+                      <>
+                        <strong>Waiting · {provenanceLabel.helix}</strong>
+                        {slotWait}
+                      </>
+                    )}
                   </span>
                 }
               >
@@ -291,7 +298,11 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                     )}
                   </span>
                   <span className={s.nodeTitle}>{node.title}</span>
-                  <StatusPill status={st} variant="inline" />
+                  {slotWait ? (
+                    <span className={s.slotWait}>Waiting for a worker slot</span>
+                  ) : (
+                    <StatusPill status={st} variant="inline" />
+                  )}
                 </button>
               </Tooltip>
             );

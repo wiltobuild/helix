@@ -133,3 +133,24 @@
     justify-content: space-between;
   }
 }
+
+/* Tasks held back by the parallel-worker limit (#9): informational, not an alarm. */
+.slotBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.stopError {
+  margin: 0;
+  color: var(--status-failed);
+  font-size: var(--text-sm);
+}
