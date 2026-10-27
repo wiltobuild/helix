@@ -9,11 +9,12 @@ import {
   deriveStatus,
   projectUpTo,
   sessionIdSchema,
+  planIdSchema,
   planNodeIdSchema,
-  submitPlanRequestSchema,
   type HelixEvent,
   type Project,
 } from '@helix/contracts';
+import { parsePlanInput } from './plan-input.js';
 
 const usage = `helix [--json] <command>
   status
@@ -21,8 +22,10 @@ const usage = `helix [--json] <command>
   task <title> --agent codex|claude-code --prompt <text> [--project <id>]
   send <sessionId> <text> [--interrupt]
   plan submit <file.json>
-  explain <text> --session <id> [--node <id>]
-Environment: HELIX_URL, HELIX_DATA_DIR (default ~/.helix)`;
+  plan show <planId>
+  explain <text> [--session <id>] [--node <id>]
+Environment: HELIX_URL, HELIX_DATA_DIR (default ~/.helix),
+  HELIX_SESSION_ID (explain/plan submit), HELIX_PROJECT_ID (plan submit)`;
 class UsageError extends Error {}
 
 export async function resolveBaseUrl(env: NodeJS.ProcessEnv): Promise<string> {
@@ -140,10 +143,15 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         break;
       case 'plan':
         check(2);
-        if (rest[0] !== 'submit') throw new UsageError(usage);
+        if (!['submit', 'show'].includes(rest[0]!)) throw new UsageError(usage);
+        if (rest[0] === 'show') planIdSchema.parse(rest[1]);
         break;
       case 'explain':
         check(1, ['session', 'node']);
+        if (values.session === undefined && env.HELIX_SESSION_ID !== undefined)
+          values.session = env.HELIX_SESSION_ID;
+        if (!values.session)
+          throw new UsageError('explain requires --session <id> or HELIX_SESSION_ID');
         sessionIdSchema.parse(values.session);
         if (values.node) planNodeIdSchema.parse(values.node);
         break;
@@ -151,8 +159,8 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         throw new UsageError(usage);
     }
     const plan =
-      command === 'plan'
-        ? submitPlanRequestSchema.parse(JSON.parse(await readFile(resolve(cwd, rest[1]!), 'utf8')))
+      command === 'plan' && rest[0] === 'submit'
+        ? parsePlanInput(JSON.parse(await readFile(resolve(cwd, rest[1]!), 'utf8')), env)
         : undefined;
     const client = options.client ?? createHelixClient({ baseUrl: await resolveBaseUrl(env) });
     contacting = true;
@@ -218,8 +226,32 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         break;
       }
       case 'plan': {
-        const response = await client.submitPlan(plan!);
-        print(response, `Submitted ${response.id} (${response.nodes.length} nodes)`);
+        if (rest[0] === 'submit') {
+          const response = await client.submitPlan(plan!);
+          print(response, `Submitted ${response.id} (${response.nodes.length} nodes)`);
+          break;
+        }
+        const id = planIdSchema.parse(rest[1]);
+        let found = false;
+        for (const project of await client.projects()) {
+          const events = await projectHistory(client, project);
+          if (!events.length) continue;
+          const state = projectUpTo(events, events.at(-1)!.seq);
+          const shown = Object.hasOwn(state.plans, id) ? state.plans[id] : undefined;
+          if (!shown) continue;
+          print(
+            shown,
+            `${shown.goal}\n${shown.id}  ${shown.status}\n${shown.nodes
+              .map(
+                (node) =>
+                  `  ${node.id}  ${node.agent}  ${shown.nodeStatus[node.id]}  ${node.title}\n    dependsOn: ${node.dependsOn.join(', ') || '(none)'}\n    files: ${node.files.join(', ') || '(none)'}`,
+              )
+              .join('\n')}`,
+          );
+          found = true;
+          break;
+        }
+        if (!found) throw new HelixApiError('NOT_FOUND', `Unknown plan: ${id}`, 404);
         break;
       }
       case 'explain': {
