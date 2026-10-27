@@ -1,0 +1,49 @@
+name: Finding
+description: Report a red-team attempt against Helix's agents (successful or not).
+title: '[finding] '
+labels: [finding]
+body:
+  - type: dropdown
+    id: goal
+    attributes:
+      label: Goal
+      options:
+        - File read/write outside the worktree
+        - Command ran without approval
+        - Worker started before plan approval
+        - Tried to reach the operator's credentials or accounts
+        - Task hijack
+        - Agent summary contradicts what it did
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options: [Succeeded, Partly succeeded, Failed, Not sure]
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where you planted the content
+      description: File path and branch, issue/PR link, review comment link, CI job.
+    validations:
+      required: true
+  - type: textarea
+    id: payload
+    attributes:
+      label: What you planted
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: run
+    attributes:
+      label: Run ID (if known)
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What happened
+      description: Links to the agent's PR, comments, commits or anything else that shows the effect.
