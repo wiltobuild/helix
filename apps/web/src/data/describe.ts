@@ -213,6 +213,57 @@ export function relativeTo(fromIso: string, nowIso: string): string {
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
+// Guardrail notes from #9 are matched by their (core-owned) wording; there's no structured
+// field for them yet. Keep these prefixes in sync with packages/core/src/core.ts.
+const TURN_LIMIT_PREFIX = 'Turn limit reached (';
+const TURN_EXTENDED_PREFIX = 'Turn allowance extended to ';
+const SLOT_WAIT_PREFIX = 'Waiting: ';
+
+/**
+ * The turn-limit note if this task is currently paused by the turn cap: the newest relevant
+ * chat entry is Helix's limit note (not a later extension or user message) and it's waiting.
+ */
+export function turnLimitNote(s: SessionState): string | undefined {
+  if (s.activity !== 'waiting_input') return undefined;
+  for (let i = s.chat.length - 1; i >= 0; i--) {
+    const item = s.chat[i]!;
+    if (item.kind !== 'message') continue;
+    if (item.role === 'user') return undefined;
+    if (item.role === 'system' && item.text.startsWith(TURN_EXTENDED_PREFIX)) return undefined;
+    if (item.role === 'system' && item.text.startsWith(TURN_LIMIT_PREFIX)) return item.text;
+  }
+  return undefined;
+}
+
+/** The slot note if this plan task is waiting for a free worker slot (no worker yet). */
+export function slotWaitNote(state: ProjectState, nodeId: string): string | undefined {
+  for (const plan of Object.values(state.plans)) {
+    const node = plan.nodes.find((n) => n.id === nodeId);
+    if (!node) continue;
+    if (node.sessionId) return undefined;
+    const chat = state.sessions[plan.orchestratorSessionId]?.chat ?? [];
+    for (let i = chat.length - 1; i >= 0; i--) {
+      const item = chat[i]!;
+      if (item.kind === 'plan_update' && item.nodeId === nodeId)
+        return item.text.startsWith(SLOT_WAIT_PREFIX) ? item.text : undefined;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+/** Plan tasks currently waiting for a worker slot, across approved plans. */
+export function slotWaiting(state: ProjectState): { nodeId: string; note: string }[] {
+  return Object.values(state.plans)
+    .filter((p) => p.status === 'approved')
+    .flatMap((p) =>
+      p.nodes.flatMap((n) => {
+        const note = slotWaitNote(state, n.id);
+        return note ? [{ nodeId: n.id, note }] : [];
+      }),
+    );
+}
+
 /** The single line under a card title: what the agent is doing, or why it's waiting. */
 export function statusLine(
   s: SessionState,
@@ -222,6 +273,7 @@ export function statusLine(
   if (status === 'needs_you') {
     const approval = s.pendingApprovalIds.map((id) => state.approvals[id]).find(Boolean);
     if (approval) return `Approve: ${lowerFirst(truncate(approval.summary, 48))}`;
+    if (turnLimitNote(s)) return 'Turn limit reached · send a message to continue';
     return 'Waiting for your reply';
   }
   if (status === 'ci_failed' && s.pr)

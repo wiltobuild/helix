@@ -228,3 +228,9 @@
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
+
+/* A task held back by the parallel-worker limit (#9). */
+.slotWait {
+  color: var(--status-needs);
+  font: 500 var(--text-2xs) / 1.4 var(--font-mono);
+}

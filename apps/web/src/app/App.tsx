@@ -4,7 +4,8 @@ import type { HelixEvent } from '@helix/contracts';
 import { Button, Segmented, Spinner, type BoardColumn } from '@helix/ui';
 import { useHelixSource, type HelixSource } from '../data/useHelixSource';
 import { useRun } from '../data/useRun';
-import { boardCards } from '../data/describe';
+import { boardCards, slotWaiting } from '../data/describe';
+import { StopAll, runningAgents } from './StopAll';
 import { Sidebar } from './Sidebar';
 import { Board } from './Board';
 import { TimelineBar } from './TimelineBar';
@@ -41,6 +42,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     : undefined;
   const live = source.mode === 'live';
   const pendingPlan = Object.values(state.plans).find((p) => p.status === 'awaiting_approval');
+  const waitingForSlot = slotWaiting(state);
 
   // Keyboard: [ ] step the timeline, L back to live, ⌘/Ctrl+N new task, Esc closes the inspector.
   useEffect(() => {
@@ -96,6 +98,14 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
                 { value: 'plan', label: 'Plan', icon: <Network size={13} /> },
               ]}
             />
+            {live && source.client && (
+              <StopAll
+                client={source.client}
+                projectId={state.project.id}
+                running={runningAgents(state)}
+                canAct={run.isLive}
+              />
+            )}
             <Button
               variant="primary"
               icon={<Plus size={14} />}
@@ -116,6 +126,20 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               </span>
               <Button size="sm" variant="primary" onClick={() => setView('plan')}>
                 Review plan
+              </Button>
+            </div>
+          )}
+          {view === 'board' && waitingForSlot.length > 0 && (
+            <div className={s.slotBanner} role="status">
+              <span>
+                <strong>
+                  {waitingForSlot.length} {waitingForSlot.length === 1 ? 'task is' : 'tasks are'}{' '}
+                  waiting for a worker slot.
+                </strong>{' '}
+                {waitingForSlot[0]!.note} The next one starts when a running task merges or stops.
+              </span>
+              <Button size="sm" onClick={() => setView('plan')}>
+                Show in plan
               </Button>
             </div>
           )}
