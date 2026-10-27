@@ -37,7 +37,13 @@ export type HarnessEmissionType =
 export type HarnessEmission = {
   [K in HarnessEmissionType]: { type: K; payload: PayloadFor<K> };
 }[HarnessEmissionType];
-export type HarnessStartOptions = { session: Session; cwd: string; resumeToken?: string };
+export type HarnessStartOptions = {
+  session: Session;
+  cwd: string;
+  resumeToken?: string;
+  /** Per-session additions merged over the adapter's base environment. */
+  env?: Record<string, string>;
+};
 export interface AgentHarness {
   readonly kind: AgentKind;
   detect(): Promise<HarnessInfo>;

@@ -68,14 +68,12 @@ Exit codes: 0 success, 1 usage/configuration/local validation, 2 API/transport
 failure; errors include the contract ErrorCode (transport failures use
 INTERNAL_ERROR).
 
-The real orchestrator smoke test is gated by `HELIX_E2E=1`. It clearly skips until
-#19 provides per-session CLI PATH/environment and the daemon passes
-`orchestratorPrompt` into core. Once wired, set
-`HELIX_ORCHESTRATOR_E2E_READY=1`, `HELIX_URL`, and `HELIX_PROJECT_ID` pointing to an
-isolated registered smoke repository and running daemon with a signed-in Codex.
-Run `pnpm test:e2e --filter=@helix/cli`. The test creates and stops its own
-orchestrator, verifies a submitted plan and the approval gate, and leaves the
-unapproved plan in the isolated daemon's history.
+The self-contained real orchestrator smoke test lives in
+`apps/daemon/src/orchestrator-real.e2e.test.ts`. With Codex installed and signed in,
+run `pnpm test:e2e --filter=@helix/daemon`. It is gated only by `HELIX_E2E=1`,
+creates its own temporary git repository and daemon, verifies plan submission
+through the per-session CLI launcher and the approval gate, then stops the
+orchestrator. Diagnostic artifacts are retained and their path is printed.
 
 Exports: `runCli(args: string[], options?: CliOptions): Promise<0 | 1 | 2>` and
 `resolveBaseUrl(env: NodeJS.ProcessEnv): Promise<string>`. Options allow an injected

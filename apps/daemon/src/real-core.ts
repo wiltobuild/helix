@@ -5,9 +5,10 @@ import { isHelixError, type HelixCore } from '@helix/contracts';
 import { openStore } from '@helix/storage';
 import { GitWorktreeManager } from '@helix/git';
 import { NodePtyHost } from '@helix/pty-host';
-import { createHarness } from '@helix/harness';
+import { createHarness, orchestratorPrompt } from '@helix/harness';
 import { createGitHubScm, buildFeedbackMessage } from '@helix/scm';
 import { cacheHarnessDetection } from './harness-cache.js';
+import { sessionEnvironment, writeHelixLauncher } from './helix-launcher.js';
 
 /** Only caller-authored messages and error codes reach logs, never adapter error bodies. */
 export const consoleLog: CoreLog = {
@@ -134,6 +135,7 @@ export async function createRealCore(options: {
           : 'GitHub SCM disabled: no token resolved from GH_TOKEN, GITHUB_TOKEN or gh auth token.',
       }),
     );
+  await writeHelixLauncher(dataDir);
   const store = openStore({ dataDir });
   const terminals = new NodePtyHost({
     dataDir,
@@ -168,6 +170,8 @@ export async function createRealCore(options: {
       worktrees: new GitWorktreeManager({ dataDir, projects: store }),
       terminals,
       harnesses,
+      orchestratorPrompt,
+      sessionEnv: sessionEnvironment(dataDir, env),
       detectHarnesses: cacheHarnessDetection(harnesses, (message, error) =>
         consoleLog.error(message, error),
       ),

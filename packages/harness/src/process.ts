@@ -13,9 +13,15 @@ function quoteWindowsArgument(value: string): string {
   return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
 }
 
-export function environment(options: HarnessOptions): NodeJS.ProcessEnv {
+export function environment(
+  options: HarnessOptions,
+  additions?: Record<string, string>,
+): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const [key, value] of Object.entries(options.env ?? {})) {
+  for (const [key, value] of [
+    ...Object.entries(options.env ?? {}),
+    ...Object.entries(additions ?? {}),
+  ]) {
     if (process.platform === 'win32') {
       for (const existing of Object.keys(env)) {
         if (existing.toLowerCase() === key.toLowerCase()) delete env[existing];

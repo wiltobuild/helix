@@ -17,6 +17,16 @@ if (process.env.HELIX_FAKE_CHILD_FILE) {
 }
 if (process.env.HELIX_FAKE_ARGS_FILE)
   writeFileSync(process.env.HELIX_FAKE_ARGS_FILE, JSON.stringify(args));
+if (process.env.HELIX_FAKE_ENV_FILE)
+  writeFileSync(
+    process.env.HELIX_FAKE_ENV_FILE,
+    JSON.stringify({
+      base: process.env.HELIX_FAKE_BASE_VALUE,
+      only: process.env.HELIX_FAKE_SESSION_VALUE,
+      path: process.env[process.env.HELIX_FAKE_PATH_KEY || 'PATH'] ?? process.env.Path,
+      pathKeys: Object.keys(process.env).filter((key) => key.toLowerCase() === 'path'),
+    }),
+  );
 const scenario = process.env.HELIX_FAKE_SCENARIO;
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\r\n');
 let thread = 'fixture-thread';
