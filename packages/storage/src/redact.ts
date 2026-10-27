@@ -38,6 +38,15 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function makePathRegex(rawPath: string): RegExp {
+  const clean = rawPath.replace(/[/\\]+$/, '');
+  const isWin = /^[A-Za-z]:/.test(clean) || clean.includes('\\');
+  const startsWithSep = /^[/\\]/.test(clean);
+  const segments = clean.split(/[/\\]+/).filter(Boolean).map(escapeRegex);
+  const pattern = (startsWithSep ? '[/\\\\]' : '') + segments.join('[/\\\\]');
+  return new RegExp(pattern, isWin ? 'gi' : 'g');
+}
+
 function isPlaceholderPath(path: string | undefined): boolean {
   if (!path) return true;
   return path.startsWith('/demo/') || path.startsWith('<repo>') || path === '/demo';
@@ -51,8 +60,7 @@ export function redact<T>(input: T, options: RedactionOptions = {}): RedactionRe
   const triggered = new Set<string>();
 
   const shouldRedactRepo = options.repoPath && !isPlaceholderPath(options.repoPath);
-  const repoPath = shouldRedactRepo ? options.repoPath?.replace(/[/\\]+$/, '') : undefined;
-  const repoRegex = repoPath ? new RegExp(escapeRegex(repoPath), 'g') : undefined;
+  const repoRegex = shouldRedactRepo && options.repoPath ? makePathRegex(options.repoPath) : undefined;
 
   function redactString(text: string): string {
     let result = text;
@@ -66,9 +74,8 @@ export function redact<T>(input: T, options: RedactionOptions = {}): RedactionRe
     // 2. Redact extra absolute paths if provided
     if (options.extraPaths) {
       for (const extra of options.extraPaths) {
-        const clean = extra.replace(/[/\\]+$/, '');
-        if (!clean || isPlaceholderPath(clean)) continue;
-        const reg = new RegExp(escapeRegex(clean), 'g');
+        if (!extra || isPlaceholderPath(extra)) continue;
+        const reg = makePathRegex(extra);
         if (reg.test(result)) {
           result = result.replace(reg, '<repo>');
           triggered.add('path:repo');
