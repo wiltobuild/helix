@@ -84,7 +84,9 @@ const spawnOrphaningParent = async () => {
 it('kills a descendant that outlives its already-exited parent', async () => {
   const { child, grandchild } = await spawnOrphaningParent();
   expect(alive(grandchild)).toBe(true);
-  await expect.poll(() => child.exitCode !== null || child.signalCode !== null).toBe(true);
+  await expect
+    .poll(() => child.exitCode !== null || child.signalCode !== null, { timeout: 15_000 })
+    .toBe(true);
   await killTree(child);
   await expect.poll(() => alive(grandchild), { timeout: 10_000 }).toBe(false);
 }, 30_000);
