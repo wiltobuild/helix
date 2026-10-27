@@ -47,6 +47,7 @@ const cases = [
   },
   { name: 'sendMessage', method: 'sendMessage', payload: { text: 'Hi', mode: 'queue' } },
   { name: 'stopSession', method: 'stopSession' },
+  { name: 'stopProjectAgents', method: 'stopAll' },
   { name: 'archiveSession', method: 'archiveSession' },
   { name: 'decideApproval', method: 'decideApproval', payload: { decision: 'approved' } },
   { name: 'sessionDiff', method: 'diff', query: '?scope=workspace' },
@@ -87,7 +88,9 @@ describe('contract routes', () => {
             ? approval.id
             : item.name === 'decidePlan'
               ? plan.id
-              : item.name === 'projectEvents' || item.name === 'createSession'
+              : item.name === 'projectEvents' ||
+                  item.name === 'createSession' ||
+                  item.name === 'stopProjectAgents'
                 ? project.id
                 : session.id,
         ) + ('query' in item ? item.query : '');
@@ -332,4 +335,31 @@ it('round trips typed client commands, raw recordings and typed errors', async (
   });
   core.health.mockRejectedValueOnce(new HelixError('NOT_FOUND', 'Gone'));
   await expect(client.health()).rejects.toBeInstanceOf(HelixApiError);
+});
+
+it('stop-all uses project IDs and rejects hostile Host/Origin before dispatch', async () => {
+  const { app, core } = await setup();
+  const request = {
+    method: 'POST' as const,
+    url: `/api/projects/${project.id}/stop-all`,
+  };
+  for (const headers of [{ host: 'evil.example' }, { origin: 'https://evil.example' }]) {
+    const response = await app.inject({ ...request, headers });
+    expect(response.statusCode).toBe(403);
+    expect(apiErrorSchema.parse(response.json()).error.code).toBe('FORBIDDEN');
+  }
+  expect(core.stopAll).not.toHaveBeenCalled();
+  const invalid = await app.inject({
+    ...request,
+    payload: { unexpected: true },
+  });
+  expect(invalid.statusCode).toBe(400);
+  expect(core.stopAll).not.toHaveBeenCalled();
+  const response = await app.inject({
+    ...request,
+    headers: { origin: 'http://localhost:5317' },
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toEqual({ stopped: [session.id] });
+  expect(core.stopAll).toHaveBeenCalledExactlyOnceWith(project.id);
 });

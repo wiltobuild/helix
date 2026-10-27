@@ -97,6 +97,7 @@ export function createFakeCore() {
     createSession: vi.fn<HelixCore['createSession']>().mockResolvedValue(session),
     sendMessage: vi.fn<HelixCore['sendMessage']>().mockResolvedValue(undefined),
     stopSession: vi.fn<HelixCore['stopSession']>().mockResolvedValue(undefined),
+    stopAll: vi.fn<HelixCore['stopAll']>().mockResolvedValue({ stopped: [session.id] }),
     archiveSession: vi.fn<HelixCore['archiveSession']>().mockResolvedValue(session),
     decideApproval: vi.fn<HelixCore['decideApproval']>().mockResolvedValue(approval),
     diff: vi.fn<HelixCore['diff']>().mockResolvedValue({ unifiedDiff: '', files: [] }),

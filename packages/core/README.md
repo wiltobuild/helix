@@ -39,6 +39,9 @@ Optional composition hooks:
 - `canReattach(agent: AgentKind): boolean` explicitly allows leaving a chat agent
   running on shutdown, provided a resume token has been captured. Defaults to
   false. A conversation resume token alone does not prove process reattachment.
+- `limits?: { maxTurnsPerTask?: number; maxParallelWorkers?: number }` defaults to
+  20 turns per worker and 3 worker slots per project. Supplied limits must be
+  positive safe integers; invalid values throw during construction.
 
 The returned object's API is exactly `HelixCore`, including `events` and
 `terminals`. `PACKAGE_NAME` remains exported for scaffold compatibility.
@@ -88,6 +91,37 @@ rejection records `plan.rejected` and permanently excludes the plan from schedul
 Startup also honors this gate. For legacy histories only, an awaiting plan with
 an existing node `sessionId` may continue scheduling its remaining dependents;
 its projected status stays `awaiting_approval`, with no synthetic decision event.
+
+Scheduling admits ready nodes in node order, oldest plan first, while project
+worker slots are available. A worker holds a slot from `session.started` until
+`pr.merged`, exit or archival, including time idle, in review, waiting on CI or
+waiting for human input. Manually created workers also occupy slots. Each ready
+node waiting for capacity gets one visible `plan.node_updated` note per blocking
+period, recovered on restart. Merge, exit and archival schedule another pass;
+workers admitted from the queue carry the freeing event as their cause.
+
+Chat worker turns, including automatic CI/review/conflict repairs, consume the
+turn allowance. Orchestrators are exempt. Core holds an over-limit delivery,
+explains the limit with that delivery as cause, and emits `waiting_input` so the
+derived status is Needs you. A user message at the limit adds another tranche of
+`maxTurnsPerTask` and delivers; automatic feedback cannot grant more turns.
+Answers to a question inside an existing turn do not consume another turn.
+Held repairs remain queued after continuation. Recovery counts distinct delivery
+causes at active/idle turn boundaries in the event log, supplemented by accepted
+turn receipts for a crash before adapter activity. User extension receipts persist
+the allowance; explanatory text alone cannot grant turns.
+
+`stopAll(projectId): Promise<{ stopped: SessionId[] }>` stops all live runtimes
+in that project, including orchestrators and terminal workers, through the same
+stop path as `stopSession`. Already exited sessions are skipped. It persists a
+project scheduling pause **before** stopping anything, so exits, later merges and
+daemon restart cannot start queued workers. A newly approved plan or a newly
+created session resumes scheduling; rejection, repeated approval of an old plan
+and an idempotent retry of an existing session do not. The daemon exposes this as
+`POST /api/projects/:id/stop-all`, with an empty request and HTTP 200 response
+`{ stopped: SessionId[] }`, under its global Host/Origin protection. A stop failure
+does not prevent attempts to stop the remaining runtimes; it fails the command
+after those attempts and leaves scheduling paused.
 
 Every newly submitted task must declare a non-empty `files` array of repository-relative
 globs. Legacy replay may still contain `files: []`. Tasks ordered by dependencies,
