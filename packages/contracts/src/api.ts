@@ -9,12 +9,15 @@ import {
   projectSchema,
   sessionInterfaceSchema,
   sessionSchema,
+  timestampSchema,
 } from './entities.js';
 import {
   approvalIdSchema,
   eventSeqSchema,
+  planIdSchema,
   planNodeIdSchema,
   projectIdSchema,
+  recordingIdSchema,
   sessionIdSchema,
 } from './ids.js';
 import { eventSchemas, helixEventSchema } from './events.js';
@@ -192,6 +195,35 @@ export const recordingImportResponseSchema = z.strictObject({
   lastSeq: countSchema,
 });
 export type RecordingImportResponse = z.infer<typeof recordingImportResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Wave 2 additions
+// ---------------------------------------------------------------------------
+
+/** POST /api/plans/:id/decision — approve or reject a submitted plan. */
+export const planDecisionRequestSchema = z.strictObject({
+  decision: z.enum(['approved', 'rejected']),
+  reason: z.string().optional(),
+});
+export type PlanDecisionRequest = z.infer<typeof planDecisionRequestSchema>;
+
+/** POST /api/projects/:id/stop-all — stops every running session for a project. */
+export const stopAllResponseSchema = z.strictObject({
+  stopped: z.array(sessionIdSchema),
+});
+export type StopAllResponse = z.infer<typeof stopAllResponseSchema>;
+
+/** Entry in the recordings list (GET /api/recordings). */
+export const recordingListEntrySchema = z.strictObject({
+  id: recordingIdSchema,
+  project: projectSchema,
+  eventCount: countSchema,
+  recordedAt: timestampSchema,
+  redactions: z.array(z.string()),
+});
+export type RecordingListEntry = z.infer<typeof recordingListEntrySchema>;
+export const recordingListResponseSchema = z.array(recordingListEntrySchema);
+export type RecordingListResponse = z.infer<typeof recordingListResponseSchema>;
 const empty = z.strictObject({});
 const projectParams = z.strictObject({ id: projectIdSchema });
 const sessionParams = z.strictObject({ id: sessionIdSchema });
@@ -313,6 +345,15 @@ export const routes = {
     response: planSchema,
     status: 201,
   },
+  /** Approve or reject a plan; emits plan.approved or plan.rejected. Workers only spawn after plan.approved. */
+  decidePlan: {
+    method: 'POST',
+    path: '/api/plans/:id/decision',
+    params: z.strictObject({ id: planIdSchema }),
+    request: planDecisionRequestSchema,
+    response: planSchema,
+    status: 200,
+  },
   explain: {
     method: 'POST',
     path: '/api/explain',
@@ -336,6 +377,23 @@ export const routes = {
     response: recordingImportResponseSchema,
     status: 201,
     contentType: 'application/x-helixlog',
+  },
+  /** List all imported recordings available for replay. */
+  listRecordings: {
+    method: 'GET',
+    path: '/api/recordings',
+    request: empty,
+    response: recordingListResponseSchema,
+    status: 200,
+  },
+  /** Stop all running sessions for a project (emergency stop-all guardrail). */
+  stopAll: {
+    method: 'POST',
+    path: '/api/projects/:id/stop-all',
+    params: projectParams,
+    request: empty,
+    response: stopAllResponseSchema,
+    status: 200,
   },
   terminal: {
     method: 'GET',

@@ -65,6 +65,15 @@ export const eventSchemas = {
       note: z.string().optional(),
     }),
   ),
+  /** Emitted once when the human approves a submitted plan; nothing spawns before this event. */
+  'plan.approved': event('plan.approved', z.strictObject({ planId: planIdSchema })),
+  /** Emitted when a submitted plan is rejected by the human; no workers start. */
+  'plan.rejected': event('plan.rejected', z.strictObject({ planId: planIdSchema, reason: z.string() })),
+  /** Emitted when plan validation rejects a submission (e.g. overlapping file claims). */
+  'plan.validation_failed': event(
+    'plan.validation_failed',
+    z.strictObject({ reason: z.string(), overlappingNodes: z.array(planNodeIdSchema).optional() }),
+  ),
   'explain.note': event('explain.note', z.strictObject({ text: z.string() })),
   'worktree.created': event(
     'worktree.created',

@@ -6,6 +6,7 @@ export const sessionIdSchema = id.brand<'SessionId'>();
 export const planIdSchema = id.brand<'PlanId'>();
 export const planNodeIdSchema = id.brand<'PlanNodeId'>();
 export const approvalIdSchema = id.brand<'ApprovalId'>();
+export const recordingIdSchema = id.brand<'RecordingId'>();
 export const eventSeqSchema = z
   .number()
   .int()
@@ -24,5 +25,6 @@ export type SessionId = z.infer<typeof sessionIdSchema>;
 export type PlanId = z.infer<typeof planIdSchema>;
 export type PlanNodeId = z.infer<typeof planNodeIdSchema>;
 export type ApprovalId = z.infer<typeof approvalIdSchema>;
+export type RecordingId = z.infer<typeof recordingIdSchema>;
 export type EventSeq = z.infer<typeof eventSeqSchema>;
 export type PullRequestNumber = z.infer<typeof pullRequestNumberSchema>;

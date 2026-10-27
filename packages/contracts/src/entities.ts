@@ -91,6 +91,11 @@ export const planNodeSchema = z.strictObject({
   title: z.string().min(1),
   description: z.string(),
   acceptance: z.array(z.string().min(1)),
+  /** Glob patterns (relative to repo root) the worker is allowed to write.
+   * Helix rejects plans where parallel nodes declare overlapping files.
+   * A contract-task node that owns a shared interface file must be listed
+   * as a dependency of any node that consumes that file. */
+  files: z.array(z.string().min(1)),
   dependsOn: z.array(planNodeIdSchema),
   agent: agentKindSchema,
   rationale: z.string(),
