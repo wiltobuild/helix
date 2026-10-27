@@ -39,7 +39,7 @@ function summary(state: ProjectState) {
     plans: Object.fromEntries(
       Object.entries(state.plans).map(([id, p]) => [
         id,
-        { goal: p.goal, nodeStatus: p.nodeStatus },
+        { goal: p.goal, status: p.status, nodeStatus: p.nodeStatus },
       ]),
     ),
   };
@@ -289,7 +289,7 @@ it('skips unknown approvals, PR mismatches and malformed payloads', () => {
 it('validates every reference before mutating plans or their session links', () => {
   const before = projectUpTo(run, 9);
   const submission = helixEventSchema.parse({
-    ...run[5],
+    ...run[4],
     seq: 10,
     payload: {
       plan: { ...fixtures.passwordResetPlan, id: 'plan_bad', orchestratorSessionId: 'missing' },

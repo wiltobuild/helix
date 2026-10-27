@@ -13,6 +13,7 @@ import {
   type HarnessStartOptions,
   type HelixEvent,
   type HelixStore,
+  type MetaValue,
   type Project,
   type ProjectId,
   type PullRequestFacts,
@@ -34,6 +35,14 @@ export class MemoryStore implements HelixStore {
   events: HelixEvent[] = [];
   projects = new Map<ProjectId, Project>();
   records = new Map<string, { hash: string; response: unknown }>();
+  metadata = new Map<string, MetaValue>();
+  getMeta(scope: string, key: string): Promise<MetaValue | undefined> {
+    return Promise.resolve(structuredClone(this.metadata.get(JSON.stringify([scope, key]))));
+  }
+  setMeta(scope: string, key: string, value: MetaValue): Promise<void> {
+    this.metadata.set(JSON.stringify([scope, key]), structuredClone(value));
+    return Promise.resolve();
+  }
   listeners = new Set<(event: HelixEvent) => void>();
   append(input: UnsequencedEvent[]): Promise<HelixEvent[]> {
     const events = input.map((event, index) => {

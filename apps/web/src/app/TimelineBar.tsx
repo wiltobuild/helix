@@ -2,7 +2,13 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { ChevronRight, Pause, Play, Radio, StepBack, StepForward } from 'lucide-react';
 import { whyChain } from '@helix/contracts';
 import { Button, IconButton, cx } from '@helix/ui';
-import { describeEvent, eventTone, type EventTone } from '../data/describe';
+import {
+  describeEvent,
+  eventTone,
+  provenance,
+  provenanceLabel,
+  type EventTone,
+} from '../data/describe';
 import type { RunView } from '../data/useRun';
 import s from './TimelineBar.module.css';
 
@@ -24,9 +30,10 @@ const clock = (fromIso: string, toIso: string) => {
 };
 
 /**
- * The timeline: always visible under the board. Live by default; drag to rewind the whole
- * project (board, plan, chat). The caption explains the event under the cursor, and "Why"
- * walks its causedBy chain back to the plan.
+ * The timeline: always visible under the board. Live by default; drag to replay the project's
+ * history (board, plan, chat) as it was at any moment. Replay changes the view, never files or
+ * branches. The caption explains the event under the cursor, and "Why" walks its causedBy
+ * chain back to the plan, labelling where each step comes from.
  */
 export function TimelineBar({ run }: { run: RunView }) {
   const [whyOpen, setWhyOpen] = useState(false);
@@ -73,6 +80,9 @@ export function TimelineBar({ run }: { run: RunView }) {
                 <span className={s.chainSeq}>#{e.seq}</span>
                 <span className={s.chainDot} style={{ background: TONE_VAR[eventTone(e)] }} />
                 <span>{describeEvent(e, state)}</span>
+                <span className={s.chainSource} data-source={provenance(e, state)}>
+                  {provenanceLabel[provenance(e, state)]}
+                </span>
               </button>
             </li>
           ))}

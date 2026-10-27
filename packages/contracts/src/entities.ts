@@ -86,11 +86,29 @@ export const pullRequestFactsSchema = z.strictObject({
   updatedAt: timestampSchema,
 });
 export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
+/** Positive, slash-separated repository-relative globs; never absolute or traversing. */
+export const repoRelativeGlobSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (path) =>
+      path === path.trim() &&
+      !/^[!/]|^[A-Za-z]:|\\/.test(path) &&
+      !Array.from(path).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
+      !path.split('/').some((part) => part === '' || part === '.' || part === '..'),
+    'Expected a positive repository-relative glob using forward slashes without traversal',
+  );
+export const planStatusSchema = z.enum(['awaiting_approval', 'approved', 'rejected']);
+export type PlanStatus = z.infer<typeof planStatusSchema>;
+export const metaValueSchema = z.json();
+export type MetaValue = z.infer<typeof metaValueSchema>;
+
 export const planNodeSchema = z.strictObject({
   id: planNodeIdSchema,
   title: z.string().min(1),
   description: z.string(),
   acceptance: z.array(z.string().min(1)),
+  files: z.array(repoRelativeGlobSchema),
   dependsOn: z.array(planNodeIdSchema),
   agent: agentKindSchema,
   rationale: z.string(),
@@ -98,7 +116,7 @@ export const planNodeSchema = z.strictObject({
 });
 export type PlanNode = z.infer<typeof planNodeSchema>;
 /** Graph integrity (unique IDs, known dependencies and DAG) is validated at submission. */
-export const planNodesSchema = z.array(planNodeSchema).superRefine((nodes, ctx) => {
+const validatePlanGraph = (nodes: PlanNode[], ctx: z.RefinementCtx) => {
   const ids = new Set(nodes.map((n) => n.id));
   if (ids.size !== nodes.length)
     ctx.addIssue({ code: 'custom', message: 'Duplicate plan node ID' });
@@ -123,13 +141,19 @@ export const planNodesSchema = z.array(planNodeSchema).superRefine((nodes, ctx) 
       break;
     }
   }
-});
+};
+export const planNodesSchema = z.array(planNodeSchema).superRefine(validatePlanGraph);
+// Persisted v1 plans predate file declarations. Preserve replay, but never infer ownership.
+// New submissions use planNodesSchema and must explicitly provide files on every node.
+const recordedPlanNodesSchema = z
+  .array(planNodeSchema.extend({ files: z.array(repoRelativeGlobSchema).default([]) }))
+  .superRefine(validatePlanGraph);
 export const planSchema = z.strictObject({
   id: planIdSchema,
   projectId: projectIdSchema,
   orchestratorSessionId: sessionIdSchema,
   goal: z.string().min(1),
-  nodes: planNodesSchema,
+  nodes: recordedPlanNodesSchema,
   createdAt: timestampSchema,
 });
 export type Plan = z.infer<typeof planSchema>;

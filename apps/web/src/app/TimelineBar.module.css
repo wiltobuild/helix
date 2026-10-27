@@ -22,6 +22,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Who is making the claim; matches the Inspector's Why tab. */
+.chainSource {
+  flex: none;
+  margin-left: auto;
+  padding: 1px var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  font: 500 var(--text-2xs) / 1.4 var(--font-mono);
+  white-space: nowrap;
+}
+.chainSource[data-source='plan'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chainSource[data-source='agent'] {
+  border-style: dashed;
+}
+
 .toneDot,
 .chainDot {
   flex: none;

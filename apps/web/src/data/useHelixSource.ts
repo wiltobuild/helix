@@ -79,6 +79,16 @@ export function useHelixSource(): HelixSource {
         await client.createProject({ repoPath });
         await loadProjects();
       } catch (e) {
+        // The project may exist even if this request failed (a dropped response, a retry of an
+        // earlier add). Move on to the board whenever the daemon has a project.
+        const exists = await client
+          .projects()
+          .then((projects) => projects.length > 0)
+          .catch(() => false);
+        if (exists) {
+          await loadProjects();
+          return;
+        }
         setError(e instanceof Error ? e.message : String(e));
         throw e;
       }

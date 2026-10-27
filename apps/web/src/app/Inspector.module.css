@@ -264,10 +264,59 @@
   font-size: var(--text-sm);
 }
 
-.cause {
+.histMeta {
   grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.cause {
   color: var(--text-3);
   font: var(--text-2xs) var(--font-mono);
+}
+
+/* Provenance: who is making this claim. Agent self-reports read as unverified (dashed). */
+.source {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  width: fit-content;
+  padding: 1px var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font: 500 var(--text-2xs) / 1.4 var(--font-mono);
+  white-space: nowrap;
+}
+.source[data-source='plan'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.source[data-source='helix'] {
+  background: var(--surface-2);
+}
+.source[data-source='agent'] {
+  border-style: dashed;
+  color: var(--text-3);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+.pastNotice {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--status-needs);
+  border-radius: var(--radius-md);
+  background: var(--status-needs-soft);
+  color: var(--text);
+  font-size: var(--text-sm);
 }
 
 @keyframes slide {
