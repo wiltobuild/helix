@@ -160,10 +160,17 @@ export function hasExited(child: ChildProcessWithoutNullStreams): boolean {
 export async function killTree(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (!child.pid) return;
   if (process.platform === 'win32') {
-    if (hasExited(child)) return;
     // Closing the supervisor closes its unique job handle and kills descendants.
     // This uses libuv's retained handle instead of reopening by PID.
-    if (jobProcesses.has(child) && child.kill('SIGKILL')) return;
+    if (jobProcesses.has(child)) {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* Already exited */
+      }
+      return;
+    }
+    if (hasExited(child)) return;
     const taskkill = join(
       envValue(process.env, 'SystemRoot') ?? 'C:\\Windows',
       'System32',

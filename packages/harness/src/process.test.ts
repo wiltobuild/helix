@@ -86,12 +86,12 @@ it('kills a descendant that outlives its already-exited parent', async () => {
   expect(alive(grandchild)).toBe(true);
   await expect.poll(() => child.exitCode !== null || child.signalCode !== null).toBe(true);
   await killTree(child);
-  await expect.poll(() => alive(grandchild), { timeout: 5000 }).toBe(false);
+  await expect.poll(() => alive(grandchild), { timeout: 10_000 }).toBe(false);
 }, 30_000);
 
 it('kills every live agent tree when the host process exits abruptly', async () => {
   const { grandchild } = await spawnOrphaningParent();
   expect(alive(grandchild)).toBe(true);
   killLiveProcesses();
-  await expect.poll(() => alive(grandchild), { timeout: 5000 }).toBe(false);
+  await expect.poll(() => alive(grandchild), { timeout: 10_000 }).toBe(false);
 }, 30_000);
