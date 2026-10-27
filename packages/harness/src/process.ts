@@ -7,6 +7,33 @@ import { HelixError } from '@helix/contracts';
 import type { HarnessOptions } from './options.js';
 
 const jobProcesses = new WeakSet<ChildProcessWithoutNullStreams>();
+const liveProcesses = new Set<ChildProcessWithoutNullStreams>();
+let exitHookInstalled = false;
+
+/**
+ * Synchronously kills every agent process tree this process started and has not seen exit.
+ * Runs from the `exit` hook so an abrupt daemon exit cannot orphan agents. Windows agents run
+ * inside a kill-on-close job owned by their supervisor, so killing the supervisor is enough.
+ */
+export function killLiveProcesses(): void {
+  for (const child of liveProcesses) {
+    try {
+      if (process.platform === 'win32') child.kill('SIGKILL');
+      else if (child.pid) process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      /* Already gone. */
+    }
+  }
+  liveProcesses.clear();
+}
+
+function track(child: ChildProcessWithoutNullStreams): void {
+  liveProcesses.add(child);
+  child.once('close', () => liveProcesses.delete(child));
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', killLiveProcesses);
+}
 
 /** Windows CRT quoting; the resulting string is passed directly to CreateProcess. */
 function quoteWindowsArgument(value: string): string {
@@ -124,9 +151,12 @@ export function spawnExecutable(
       { ...shared, stdio: 'pipe' },
     );
     jobProcesses.add(child);
+    track(child);
     return child;
   }
-  return spawn(bin, args, { ...shared, stdio: 'pipe', shell: false });
+  const child = spawn(bin, args, { ...shared, stdio: 'pipe', shell: false });
+  track(child);
+  return child;
 }
 
 export function hasExited(child: ChildProcessWithoutNullStreams): boolean {
