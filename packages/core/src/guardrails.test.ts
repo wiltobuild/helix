@@ -111,6 +111,7 @@ test('default cap allows 20 worker turns, holds automatic feedback and explains 
       causedBy: routed.seq,
       payload: {
         text: 'Turn limit reached (20 turns). Helix paused this task; send a message to continue for another 20.',
+        source: 'helix',
       },
     }),
   );

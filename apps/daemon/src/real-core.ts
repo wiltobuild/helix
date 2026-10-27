@@ -152,7 +152,7 @@ export async function createRealCore(options: {
         console.info(JSON.stringify({ ts: new Date().toISOString(), level: 'info', message })),
       note: (sessionId: import('@helix/contracts').SessionId, text: string) => {
         void core
-          .explain({ sessionId, text })
+          .recordNote(sessionId, text)
           .catch((error: unknown) =>
             consoleLog.error('Could not record harness explanation', error),
           );

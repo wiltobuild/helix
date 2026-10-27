@@ -107,6 +107,7 @@ export function createFakeCore() {
       .fn<HelixCore['decidePlan']>()
       .mockResolvedValue({ planId: plan.id, status: 'approved' }),
     explain: vi.fn<HelixCore['explain']>().mockResolvedValue(explanation),
+    recordNote: vi.fn<HelixCore['recordNote']>().mockResolvedValue(explanation),
     exportRecording: vi
       .fn<HelixCore['exportRecording']>()
       .mockResolvedValue('{"recording":true}\n'),

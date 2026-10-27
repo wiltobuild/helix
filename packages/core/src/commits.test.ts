@@ -53,7 +53,7 @@ test('Helix commits dirty edits before snapshots and shipping, with a bounded me
   )!;
   expect(note).toMatchObject({
     type: 'explain.note',
-    payload: { text: `Committed abcdef1: ${'A'.repeat(72)}` },
+    payload: { text: `Committed abcdef1: ${'A'.repeat(72)}`, source: 'helix' },
   });
   expect(f.store.events.find((e) => e.seq === note.causedBy)).toMatchObject({
     type: 'activity.changed',
@@ -91,7 +91,10 @@ test('a failed commit preserves dirty edits, blocks the session and skips snapsh
   expect(f.store.events).toContainEqual(
     expect.objectContaining({
       type: 'explain.note',
-      payload: { text: 'Helix could not commit this turn: index.lock is locked' },
+      payload: {
+        text: 'Helix could not commit this turn: index.lock is locked',
+        source: 'helix',
+      },
     }),
   );
 });

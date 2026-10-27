@@ -261,8 +261,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     payload: PayloadFor<T>,
     ctx: Context,
   ): Promise<HelixEvent<T>> {
+    // Notes core writes itself are Helix's recorded facts; `explain` sets agent/orchestrator.
+    const body =
+      type === 'explain.note' && !('source' in (payload as object))
+        ? { ...(payload as PayloadFor<'explain.note'>), source: 'helix' as const }
+        : payload;
     // The generic pair is correlated at each call; TS cannot distribute generic object construction.
-    const input = { v: 1, ts: deps.clock(), ...ctx, type, payload } as UnsequencedEvent;
+    const input = { v: 1, ts: deps.clock(), ...ctx, type, payload: body } as UnsequencedEvent;
     const [event] = await deps.store.append([input]);
     if (!event || event.type !== type)
       throw new HelixError('INTERNAL_ERROR', 'Store did not return the appended event');
@@ -1448,12 +1453,20 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           );
         return emit(
           'explain.note',
-          { text: input.text },
+          // The caller never chooses the source: it is the calling session's role.
+          { text: input.text, source: s.role === 'orchestrator' ? 'orchestrator' : 'agent' },
           {
             ...context(s, input.causedBy),
             ...(input.planNodeId ? { planNodeId: input.planNodeId } : {}),
           },
         );
+      }),
+    recordNote: (id, text) =>
+      command(async () => {
+        const s = session(validate(sessionIdSchema, id)).session;
+        if (typeof text !== 'string' || !text.trim())
+          throw new HelixError('INVALID_REQUEST', 'Note text is required');
+        return emit('explain.note', { text, source: 'helix' }, context(s));
       }),
     exportRecording: (id) =>
       command(() => {

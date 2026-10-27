@@ -74,7 +74,15 @@ export const eventSchemas = {
       note: z.string().optional(),
     }),
   ),
-  'explain.note': event('explain.note', z.strictObject({ text: z.string() })),
+  'explain.note': event(
+    'explain.note',
+    z.strictObject({
+      text: z.string(),
+      /** Who is making the claim: Helix itself (a recorded fact), the orchestrator (plan
+       * rationale) or an agent (its own unverified summary). Absent on legacy events. */
+      source: z.enum(['helix', 'orchestrator', 'agent']).optional(),
+    }),
+  ),
   'worktree.created': event(
     'worktree.created',
     z.strictObject({
