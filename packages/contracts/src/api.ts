@@ -85,6 +85,9 @@ export const explainRequestSchema = z.strictObject({
 export type ExplainRequest = z.infer<typeof explainRequestSchema>;
 export const acceptedResponseSchema = z.strictObject({ accepted: z.literal(true) });
 export type AcceptedResponse = z.infer<typeof acceptedResponseSchema>;
+export const stopProjectAgentsResponseSchema = z.strictObject({
+  stopped: z.array(sessionIdSchema),
+});
 export const mergeResponseSchema = z.strictObject({ mergeSha: z.string().min(1) });
 export type MergeResponse = z.infer<typeof mergeResponseSchema>;
 export const diffScopeSchema = z.enum(['workspace', 'pr', 'last_turn']);
@@ -283,6 +286,14 @@ export const routes = {
     request: empty,
     response: acceptedResponseSchema,
     status: 202,
+  },
+  stopProjectAgents: {
+    method: 'POST',
+    path: '/api/projects/:id/stop-all',
+    params: projectParams,
+    request: empty,
+    response: stopProjectAgentsResponseSchema,
+    status: 200,
   },
   archiveSession: {
     method: 'POST',

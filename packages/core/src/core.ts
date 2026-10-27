@@ -77,6 +77,7 @@ export type CoreDeps = {
   detectHarnesses?: () => Promise<HarnessInfo[]>;
   /** Prepended to the first delivery only; the stored user prompt is unchanged. */
   orchestratorPrompt?: (ctx: { project: Project; session: Session }) => string;
+  limits?: { maxTurnsPerTask?: number; maxParallelWorkers?: number };
 };
 
 type Delivery = { text: string; mode: MessageMode; cause: EventSeq; automatic?: true };
@@ -104,10 +105,18 @@ type Reason = PayloadFor<'feedback.routed'>['reason'];
 const RESUME_SCOPE = 'helix:core:resume:v1';
 const DELIVERY_SCOPE = 'helix:core:delivered:v1';
 const MESSAGE_SCOPE = 'helix:core:message:v1';
+const TURN_SCOPE = 'helix:core:turn:v1';
+const EXTENSION_SCOPE = 'helix:core:turn-extension:v1';
+const SCHEDULING_SCOPE = 'helix:core:scheduling-paused:v1';
+const EXTENSION_PREFIX = 'Turn allowance extended to ';
 const META_HASH = 'v1';
 
 /** A single writer owns domain commands and adapter callbacks. State is only a replay cache. */
 export function createHelixCore(deps: CoreDeps): HelixCore {
+  const { maxTurnsPerTask = 20, maxParallelWorkers = 3 } = deps.limits ?? {};
+  for (const [name, value] of Object.entries({ maxTurnsPerTask, maxParallelWorkers }))
+    if (!Number.isSafeInteger(value) || value <= 0)
+      throw new HelixError('INVALID_REQUEST', `${name} must be a positive integer`);
   const states = new Map<ProjectId, ProjectState>();
   const history = new Map<ProjectId, HelixEvent[]>();
   const runtimes = new Map<SessionId, Runtime>();
@@ -117,10 +126,17 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   const seenFeedback = new Set<string>();
   const attempts = new Map<string, number>();
   const escalated = new Set<string>();
+  const turnLimits = new Map<SessionId, number>();
+  const turnReceipts = new Set<EventSeq>();
+  const extendedMessages = new Set<EventSeq>();
+  const cappedDeliveries = new Set<EventSeq>();
+  const waitingNodes = new Set<string>();
+  const pausedProjects = new Set<ProjectId>();
   let tail = Promise.resolve();
   let loaded = false;
   let started = false;
   let closing = false;
+  let shutdownRequested = false;
   let exitOff: Unsubscribe | undefined;
   const stallTimeoutMs = deps.stallTimeoutMs ?? 180_000;
   if (!Number.isFinite(stallTimeoutMs) || stallTimeoutMs <= 0)
@@ -288,8 +304,31 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       states.set(p.id, recovered.state);
       // Invalid events stay in storage but must never be replayed as deliveries.
       history.set(p.id, recovered.events);
+      if (await deps.store.getMeta(SCHEDULING_SCOPE, p.id)) pausedProjects.add(p.id);
       const heads = new Map<SessionId, string>();
       for (const e of recovered.events) {
+        if (e.type === 'explain.note' && e.sessionId) {
+          if (e.payload.text.startsWith('Turn limit reached (') && e.causedBy)
+            cappedDeliveries.add(e.causedBy);
+        }
+        if (
+          e.type === 'chat.item' &&
+          e.sessionId &&
+          e.payload.item.kind === 'message' &&
+          e.payload.item.role === 'user'
+        ) {
+          const limit = await deps.store.getMeta(EXTENSION_SCOPE, String(e.seq));
+          if (typeof limit === 'number' && Number.isSafeInteger(limit) && limit > 0) {
+            turnLimits.set(e.sessionId, Math.max(turnLimit(e.sessionId), limit));
+            extendedMessages.add(e.seq);
+          }
+        }
+        if (e.type === 'plan.node_updated') {
+          const key = JSON.stringify([p.id, e.payload.nodeId]);
+          if (e.payload.note?.startsWith('Waiting: ')) waitingNodes.add(key);
+          else waitingNodes.delete(key);
+        }
+        if (await deps.store.getMeta(TURN_SCOPE, String(e.seq))) turnReceipts.add(e.seq);
         if ((e.type === 'pr.opened' || e.type === 'pr.updated') && e.sessionId)
           heads.set(e.sessionId, e.payload.pr.headSha);
         if (e.type === 'feedback.routed') {
@@ -380,12 +419,57 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       if (delivery.mode === 'interrupt') await runtime.handle.interrupt();
       return;
     }
+    if (
+      s.session.role === 'worker' &&
+      runtime.turnNumber >= turnLimit(id) &&
+      !delivery.automatic &&
+      !extendedMessages.has(delivery.cause)
+    ) {
+      const trigger = eventsFor(s.session).find((e) => e.seq === delivery.cause);
+      if (
+        trigger?.type === 'chat.item' &&
+        trigger.payload.item.kind === 'message' &&
+        trigger.payload.item.role === 'user'
+      ) {
+        const limit = turnLimit(id) + maxTurnsPerTask;
+        await deps.store.setMeta(EXTENSION_SCOPE, String(delivery.cause), limit);
+        extendedMessages.add(delivery.cause);
+        turnLimits.set(id, limit);
+        await emit(
+          'explain.note',
+          { text: `${EXTENSION_PREFIX}${limit} turns by user message.` },
+          context(s.session, delivery.cause),
+        );
+      }
+    }
+    if (s.session.role === 'worker' && runtime.turnNumber >= turnLimit(id)) {
+      hold(id, delivery);
+      if (!cappedDeliveries.has(delivery.cause)) {
+        await emit(
+          'explain.note',
+          {
+            text: `Turn limit reached (${turnLimit(id)} turns). Helix paused this task; send a message to continue for another ${maxTurnsPerTask}.`,
+          },
+          context(s.session, delivery.cause),
+        );
+        cappedDeliveries.add(delivery.cause);
+      }
+      await emit(
+        'activity.changed',
+        { activity: 'waiting_input' },
+        context(s.session, delivery.cause),
+      );
+      return;
+    }
     runtime.cause = delivery.cause;
     runtime.turnOpen = true;
     runtime.turnNumber++;
     delete runtime.lastAssistantMessage;
     try {
       await runtime.handle.send(delivery.text, 'queue');
+      // Backstop recovery when the daemon dies before an adapter publishes active.
+      await deps.store.setMeta(TURN_SCOPE, String(delivery.cause), true);
+      turnReceipts.add(delivery.cause);
       await deps.store.setMeta(DELIVERY_SCOPE, String(delivery.cause), true);
       await saveResume(id);
     } catch (error) {
@@ -398,8 +482,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   async function flush(id: SessionId): Promise<void> {
     if (blocked(session(id)) || !runtimes.get(id)?.handle || runtimes.get(id)?.turnOpen) return;
     const queue = held.get(id) ?? [];
-    while (queue.length && !runtimes.get(id)?.turnOpen) await deliver(id, queue.shift()!);
+    while (queue.length && !runtimes.get(id)?.turnOpen) {
+      const delivery = queue.shift()!;
+      await deliver(id, delivery);
+      // A capped delivery was put back; leave it held until human continuation.
+      const requeued = queue.findIndex((d) => d.cause === delivery.cause);
+      if (requeued !== -1) {
+        queue.splice(requeued, 1);
+        queue.unshift(delivery);
+        break;
+      }
+    }
     if (!queue.length) held.delete(id);
+  }
+  function turnLimit(id: SessionId): number {
+    return turnLimits.get(id) ?? maxTurnsPerTask;
   }
   function harnessFor(agent: AgentKind): AgentHarness {
     const harness = Object.hasOwn(deps.harnesses, agent) ? deps.harnesses[agent] : undefined;
@@ -432,11 +529,12 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           return;
         const rt = runtimes.get(id);
         await emit('activity.changed', { activity: 'exited' }, context(s.session, rt?.cause));
-        await emit('session.exited', { code }, context(s.session, rt?.cause));
+        const exited = await emit('session.exited', { code }, context(s.session, rt?.cause));
         if (rt) {
           rt.stopped = true;
           rt.attachment?.detach();
         }
+        await schedule(s.session.projectId, exited.seq);
       }),
     );
   }
@@ -451,15 +549,30 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     resume: boolean,
     sendInitial = !resume,
   ): Promise<void> {
+    const events = eventsFor(s);
+    const deliveryCauses = new Set(
+      events
+        .filter(
+          (e) =>
+            e.type === 'session.started' ||
+            e.type === 'feedback.routed' ||
+            (e.type === 'chat.item' &&
+              e.payload.item.kind === 'message' &&
+              e.payload.item.role === 'user'),
+        )
+        .map((e) => e.seq),
+    );
     const turnNumber = new Set(
-      eventsFor(s)
+      events
         .filter(
           (e) =>
             e.type === 'activity.changed' &&
-            e.payload.activity === 'active' &&
-            e.causedBy !== undefined,
+            (e.payload.activity === 'active' || e.payload.activity === 'idle') &&
+            e.causedBy !== undefined &&
+            deliveryCauses.has(e.causedBy),
         )
-        .map((e) => e.causedBy),
+        .map((e) => e.causedBy)
+        .concat(events.filter((e) => turnReceipts.has(e.seq)).map((e) => e.seq)),
     ).size;
     const runtime: Runtime = { cause, turnOpen: false, turnNumber, stopped: false };
     runtimes.set(s.id, runtime);
@@ -592,7 +705,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }
       if (emission.payload.activity === 'exited') {
         rt.stopped = true;
-        await emit('session.exited', { code: null }, context(before.session, e.seq));
+        const exited = await emit('session.exited', { code: null }, context(before.session, e.seq));
+        await schedule(before.session.projectId, exited.seq);
       } else await flush(id);
     }
     armWatchdog(id);
@@ -857,8 +971,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     return structuredClone(s);
   }
   async function schedule(projectId: ProjectId, cause: EventSeq): Promise<void> {
+    if (closing || shutdownRequested || pausedProjects.has(projectId)) return;
     const p = project(projectId);
-    for (const plan of Object.values(p.plans)) {
+    const plans = Object.values(p.plans).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    for (const plan of plans) {
       const legacyRunning =
         plan.status === 'awaiting_approval' && plan.nodes.some((node) => node.sessionId);
       if (plan.status !== 'approved' && !legacyRunning) continue;
@@ -868,7 +984,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       for (const node of plan.nodes) {
         if (
           node.sessionId &&
-          (session(node.sessionId).worktree || session(node.sessionId).session.archivedAt)
+          (session(node.sessionId).worktree ||
+            session(node.sessionId).session.archivedAt ||
+            session(node.sessionId).activity === 'exited')
         )
           continue;
         const merges = node.dependsOn.map((id) => {
@@ -878,7 +996,35 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             : undefined;
         });
         if (merges.some((e) => !e)) continue;
+        const waitingKey = JSON.stringify([projectId, node.id]);
+        const occupied = Object.values(project(projectId).sessions).filter(
+          (s) =>
+            s.session.role === 'worker' &&
+            !s.session.archivedAt &&
+            s.activity !== 'exited' &&
+            eventsFor(s.session).some((e) => e.type === 'session.started') &&
+            !eventsFor(s.session).some((e) => e.type === 'pr.merged'),
+        ).length;
+        if (occupied >= maxParallelWorkers) {
+          if (!waitingNodes.has(waitingKey)) {
+            await emit(
+              'plan.node_updated',
+              {
+                nodeId: node.id,
+                note: `Waiting: ${occupied} of ${maxParallelWorkers} worker slots are in use.`,
+              },
+              {
+                ...context(session(plan.orchestratorSessionId).session, cause),
+                planNodeId: node.id,
+              },
+            );
+            waitingNodes.add(waitingKey);
+          }
+          continue;
+        }
+        const wasWaiting = waitingNodes.delete(waitingKey);
         const unblockedBy =
+          (wasWaiting ? cause : undefined) ||
           merges.reduce((latest, e) => (e && e.seq > latest ? e.seq : latest), 0 as EventSeq) ||
           approval?.seq ||
           cause;
@@ -930,7 +1076,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       rt.attachment?.detach();
     }
     held.delete(id);
-    await emit('session.exited', { code: null }, context(s.session, rt?.cause));
+    const exited = await emit('session.exited', { code: null }, context(s.session, rt?.cause));
+    await schedule(s.session.projectId, exited.seq);
   }
 
   const api: HelixCore = {
@@ -968,8 +1115,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         }
         started = true;
       }),
-    shutdown: () =>
-      enqueue(async () => {
+    shutdown: () => {
+      // Suppress scheduling even for exit callbacks already ahead of shutdown in the queue.
+      shutdownRequested = true;
+      return enqueue(async () => {
         if (closing) return;
         closing = true;
         for (const off of watchers.values()) off();
@@ -995,7 +1144,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         if (failures.length)
           throw new HelixError('INTERNAL_ERROR', `Failed to stop ${failures.length} sessions`);
         // Store lifetime belongs to the composition root, which also serves SSE/recordings.
-      }),
+      });
+    },
     health: () => command(() => Promise.resolve({ status: 'ok', version: '0.0.0' })),
     harnesses: () => detectHarnesses(),
     listProjects: () => command(() => deps.store.listProjects()),
@@ -1062,7 +1212,15 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             'INVALID_REQUEST',
             'Idempotency key must contain 1 to 255 characters',
           );
-        return create(project(id).project, input, key);
+        const before = history.get(id)?.at(-1)?.seq ?? 0;
+        const created = await create(project(id).project, input, key);
+        const creation = eventsFor(created).find((e) => e.type === 'session.created')!;
+        if (pausedProjects.has(id) && creation.seq > before) {
+          await deps.store.setMeta(SCHEDULING_SCOPE, id, false);
+          pausedProjects.delete(id);
+          await schedule(id, creation.seq);
+        }
+        return created;
       }),
     sendMessage: (id, request) =>
       command(async () => {
@@ -1081,6 +1239,29 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await deliver(id, { ...input, cause: e.seq });
       }),
     stopSession: (id) => command(() => stop(id)),
+    stopAll: (id) =>
+      command(async () => {
+        const p = project(id);
+        // Persist before stopping: exits and later SCM callbacks must not restart workers.
+        await deps.store.setMeta(SCHEDULING_SCOPE, id, true);
+        pausedProjects.add(id);
+        const stopped: SessionId[] = [];
+        const failures: unknown[] = [];
+        for (const s of Object.values(p.sessions)) {
+          const rt = runtimes.get(s.session.id);
+          if (!rt || rt.stopped || s.activity === 'exited' || s.session.archivedAt) continue;
+          try {
+            await stop(s.session.id);
+            stopped.push(s.session.id);
+          } catch (error) {
+            failures.push(error);
+            deps.log.error(`Failed to stop ${s.session.id}`, error);
+          }
+        }
+        if (failures.length)
+          throw new HelixError('INTERNAL_ERROR', `Failed to stop ${failures.length} sessions`);
+        return { stopped };
+      }),
     archiveSession: (id) =>
       command(async () => {
         const s = session(id);
@@ -1089,6 +1270,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         watchers.get(id)?.();
         watchers.delete(id);
         const archived = await emit('session.archived', {}, context(s.session));
+        await schedule(s.session.projectId, archived.seq);
         if (s.worktree) {
           if ((await deps.worktrees.status(s.worktree.path)).dirty)
             await emit(
@@ -1219,6 +1401,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         const ctx = context(session(plan.orchestratorSessionId).session, submitted?.seq);
         if (status === 'approved') {
           const approved = await emit('plan.approved', { planId, approvedBy: 'human' }, ctx);
+          await deps.store.setMeta(SCHEDULING_SCOPE, plan.projectId, false);
+          pausedProjects.delete(plan.projectId);
           await schedule(plan.projectId, approved.seq);
         } else await emit('plan.rejected', { planId, reason }, ctx);
         return { planId, status };

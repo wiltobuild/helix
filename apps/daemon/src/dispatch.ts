@@ -41,6 +41,7 @@ export function createDispatch(core: HelixCore) {
       return { accepted: true };
     },
     archiveSession: ({ params }) => core.archiveSession(params.id),
+    stopProjectAgents: ({ params }) => core.stopAll(params.id),
     decideApproval: ({ params, body }) => core.decideApproval(params.id, body),
     sessionDiff: ({ params, query }) => core.diff(params.id, query.scope),
     mergeSession: ({ params }) => core.merge(params.id),

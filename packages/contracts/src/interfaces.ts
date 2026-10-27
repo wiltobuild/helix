@@ -214,6 +214,7 @@ export interface HelixCore {
   ): Promise<Session>;
   sendMessage(sessionId: SessionId, request: SendMessageRequest): Promise<void>;
   stopSession(sessionId: SessionId): Promise<void>;
+  stopAll(projectId: ProjectId): Promise<{ stopped: SessionId[] }>;
   archiveSession(sessionId: SessionId): Promise<Session>;
   decideApproval(approvalId: ApprovalId, request: ApprovalDecisionRequest): Promise<Approval>;
   diff(sessionId: SessionId, scope: DiffScope): Promise<DiffResponse>;
