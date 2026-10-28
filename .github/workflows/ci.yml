@@ -26,6 +26,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        # Fail the step before the job-level 20-minute cancel so the process dumps below still
+        # run and show what a hung job was waiting on (#12).
+        timeout-minutes: 15
         env:
           HELIX_DEBUG_PROCESS: '1'
       - name: Dump Windows processes on failure or timeout
