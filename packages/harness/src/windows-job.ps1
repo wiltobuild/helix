@@ -1,7 +1,15 @@
 # Own a non-inheritable kill-on-close job before starting the CLI. Node retains
 # this supervisor's process handle, so stop works even when taskkill/OpenProcess
 # is denied by a restricted Windows token. Nested jobs require Windows 8+.
-param([Parameter(Mandatory=$true)][string]$Launch)
+#
+# Two modes:
+#   -CompileTo <path>  Compile the supervisor assembly to <path> and exit. Node runs this once
+#                      per process; it hashes the result and keeps the hash in memory.
+#   -Launch <base64>   Supervise one agent. If the launch config carries { assembly, sha256 },
+#                      load that assembly only after its bytes match the hash Node supplied.
+#                      Anything else compiles in memory. Never load an unverified file: this
+#                      process is the unsandboxed parent of the agent (see #36).
+param([string]$Launch, [string]$CompileTo)
 $ErrorActionPreference = 'Stop'
 try {
   $source = @'
@@ -99,36 +107,39 @@ public static class HelixProcessJob {
   }
 }
 '@
-  # Compiling the C# with Add-Type costs about 0.5-1.5 s per launch, more under
-  # parallel load. Cache the compiled assembly keyed by a hash of the source so
-  # only the first launch pays. Any cache failure falls back to the in-memory
-  # compile, so caching can never prevent an agent from starting.
+  if ($CompileTo) {
+    Add-Type -TypeDefinition $source -OutputAssembly $CompileTo
+    [Environment]::Exit(0)
+  }
+  if (-not $Launch) { throw 'Either -Launch or -CompileTo is required' }
+  $configuration = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Launch)) | ConvertFrom-Json
+
+  # Compiling with Add-Type costs about 0.5-1.5 s per launch. Node precompiles once and passes
+  # the assembly path plus its SHA-256. Read the bytes once, check them and load those exact
+  # bytes, so nothing can swap the file between the check and the load. Any problem falls back
+  # to the in-memory compile, so this can never prevent an agent from starting.
   $loaded = $false
-  try {
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $hash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($source))) -replace '-', '').Substring(0, 16).ToLowerInvariant()
-    $cacheDirectory = Join-Path ([IO.Path]::GetTempPath()) 'helix-windows-job'
-    [void][IO.Directory]::CreateDirectory($cacheDirectory)
-    $cachedAssembly = Join-Path $cacheDirectory ('HelixProcessJob-' + $hash + '.dll')
-    if (-not (Test-Path -LiteralPath $cachedAssembly)) {
-      # Compile to a unique .dll file, then publish atomically: concurrent launches
-      # never observe a partially written assembly, and csc.exe receives a .dll path.
-      $staging = Join-Path $cacheDirectory ('HelixProcessJob-' + $hash + '-' + [Guid]::NewGuid().ToString('N') + '.dll')
-      Add-Type -TypeDefinition $source -OutputAssembly $staging
-      try { [IO.File]::Move($staging, $cachedAssembly) }
-      catch { Remove-Item -LiteralPath $staging -Force -ErrorAction SilentlyContinue }
+  $cacheState = 'in-memory'
+  if ($configuration.assembly -and $configuration.sha256) {
+    try {
+      $bytes = [IO.File]::ReadAllBytes($configuration.assembly)
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      $actual = ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
+      if ($actual -eq ([string]$configuration.sha256).ToLowerInvariant()) {
+        [void][Reflection.Assembly]::Load($bytes)
+        $loaded = $true
+        $cacheState = 'verified cache'
+      } else {
+        $cacheState = 'fallback: hash mismatch'
+      }
+    } catch {
+      $cacheState = 'fallback: ' + $_.Exception.Message
     }
-    [void][Reflection.Assembly]::LoadFrom($cachedAssembly)
-    $loaded = $true
-    $cacheState = 'cache'
-  } catch {
-    $cacheState = 'fallback: ' + $_.Exception.Message
   }
   if (-not $loaded) { Add-Type -TypeDefinition $source }
   [HelixProcessJob]::Stage('compiled (' + $cacheState + ')')
   [HelixProcessJob]::Enter()
   [HelixProcessJob]::Stage('job entered')
-  $configuration = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Launch)) | ConvertFrom-Json
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $configuration.bin
   $startInfo.Arguments = $configuration.arguments

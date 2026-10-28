@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, stat } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { delimiter, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HelixError } from '@helix/contracts';
@@ -64,6 +65,90 @@ function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
   return key ? env[key] : undefined;
 }
 
+const supervisorScript = () => fileURLToPath(new URL('./windows-job.ps1', import.meta.url));
+const powershellPath = () =>
+  join(
+    envValue(process.env, 'SystemRoot') ?? 'C:\\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  );
+
+export type SupervisorAssembly = { assembly: string; sha256: string };
+type SupervisorCache = {
+  ready?: SupervisorAssembly;
+  pending?: Promise<SupervisorAssembly | undefined>;
+};
+const supervisorCaches = new Map<string, SupervisorCache>();
+const supervisorDir = (dataDir: string) => join(resolve(dataDir), 'cache', 'windows-job');
+
+/**
+ * Compiles the Windows supervisor assembly once per process into <dataDir>/cache/windows-job
+ * (outside every agent worktree) and records its SHA-256 **in memory**. The supervisor runs
+ * outside the agent's sandbox, so it only loads an assembly whose bytes match this hash; a file
+ * left on disk by an earlier process is never trusted (#36). Resolves undefined when caching is
+ * unavailable, in which case every launch compiles in memory.
+ */
+export function prepareSupervisorAssembly(
+  dataDir: string | undefined,
+): Promise<SupervisorAssembly | undefined> {
+  if (process.platform !== 'win32' || !dataDir) return Promise.resolve(undefined);
+  const dir = supervisorDir(dataDir);
+  const cache = supervisorCaches.get(dir) ?? {};
+  supervisorCaches.set(dir, cache);
+  if (cache.ready) return Promise.resolve(cache.ready);
+  cache.pending ??= (async () => {
+    try {
+      await mkdir(dir, { recursive: true });
+      // Earlier compiles are never trusted; remove them best effort (loading holds no lock).
+      for (const name of await readdir(dir))
+        if (/^HelixProcessJob-.*\.dll$/i.test(name))
+          await rm(join(dir, name), { force: true }).catch(() => undefined);
+      const assembly = join(dir, `HelixProcessJob-${randomUUID()}.dll`);
+      await new Promise<void>((done, fail) => {
+        const child = spawn(
+          powershellPath(),
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            supervisorScript(),
+            '-CompileTo',
+            assembly,
+          ],
+          { windowsHide: true, stdio: 'ignore' },
+        );
+        child.once('error', fail);
+        child.once('close', (code) =>
+          code === 0 ? done() : fail(new Error(`Supervisor compile exited ${code}`)),
+        );
+      });
+      const sha256 = createHash('sha256')
+        .update(await readFile(assembly))
+        .digest('hex');
+      cache.ready = { assembly, sha256 };
+      return cache.ready;
+    } catch {
+      // A later launch may try again; until then launches compile in memory.
+      delete cache.pending;
+      return undefined;
+    }
+  })();
+  return cache.pending;
+}
+
+/** The verified assembly if it is ready; otherwise starts preparing it and returns undefined. */
+function readySupervisorAssembly(dataDir: string | undefined): SupervisorAssembly | undefined {
+  if (process.platform !== 'win32' || !dataDir) return undefined;
+  const ready = supervisorCaches.get(supervisorDir(dataDir))?.ready;
+  if (!ready) void prepareSupervisorAssembly(dataDir);
+  return ready;
+}
+
 export async function resolveExecutable(
   name: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -125,18 +210,17 @@ export function spawnExecutable(
       target = envValue(env, 'ComSpec') ?? 'cmd.exe';
       argumentsText = `/d /v:off /s /c "${command}"`;
     }
+    const prepared = readySupervisorAssembly(options.dataDir);
     const launch = Buffer.from(
-      JSON.stringify({ bin: target, arguments: argumentsText, cwd: workingDirectory }),
+      JSON.stringify({
+        bin: target,
+        arguments: argumentsText,
+        cwd: workingDirectory,
+        ...(prepared ?? {}),
+      }),
     ).toString('base64');
-    const powershell = join(
-      envValue(process.env, 'SystemRoot') ?? 'C:\\Windows',
-      'System32',
-      'WindowsPowerShell',
-      'v1.0',
-      'powershell.exe',
-    );
     const child = spawn(
-      powershell,
+      powershellPath(),
       [
         '-NoLogo',
         '-NoProfile',
@@ -144,7 +228,7 @@ export function spawnExecutable(
         '-ExecutionPolicy',
         'Bypass',
         '-File',
-        fileURLToPath(new URL('./windows-job.ps1', import.meta.url)),
+        supervisorScript(),
         '-Launch',
         launch,
       ],
