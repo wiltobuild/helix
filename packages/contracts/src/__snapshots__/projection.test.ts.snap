@@ -23,8 +23,10 @@ exports[`snapshots projection at seq 22 1`] = `
         "node_reset_ui": "needs_you",
       },
       "status": "approved",
+      "waitingNodes": {},
     },
   },
+  "schedulingPaused": false,
   "sessions": {
     "sess_reset_api": {
       "activity": "idle",
@@ -62,6 +64,7 @@ exports[`snapshots projection at seq 22 1`] = `
         "url": "https://github.com/acme-demo/portal/pull/142",
       },
       "status": "ci_failed",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-api",
@@ -82,6 +85,7 @@ exports[`snapshots projection at seq 22 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "pending",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_orchestrator": {
@@ -104,6 +108,7 @@ exports[`snapshots projection at seq 22 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "working",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_ui": {
@@ -122,6 +127,7 @@ exports[`snapshots projection at seq 22 1`] = `
       ],
       "pr": undefined,
       "status": "needs_you",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-ui",
@@ -157,8 +163,10 @@ exports[`snapshots projection at seq 26 1`] = `
         "node_reset_ui": "needs_you",
       },
       "status": "approved",
+      "waitingNodes": {},
     },
   },
+  "schedulingPaused": false,
   "sessions": {
     "sess_reset_api": {
       "activity": "active",
@@ -208,6 +216,7 @@ exports[`snapshots projection at seq 26 1`] = `
         "url": "https://github.com/acme-demo/portal/pull/142",
       },
       "status": "working",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-api",
@@ -228,6 +237,7 @@ exports[`snapshots projection at seq 26 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "pending",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_orchestrator": {
@@ -250,6 +260,7 @@ exports[`snapshots projection at seq 26 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "working",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_ui": {
@@ -266,6 +277,7 @@ exports[`snapshots projection at seq 26 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "needs_you",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-ui",
@@ -301,8 +313,10 @@ exports[`snapshots projection at seq 37 1`] = `
         "node_reset_ui": "ready_to_merge",
       },
       "status": "approved",
+      "waitingNodes": {},
     },
   },
+  "schedulingPaused": false,
   "sessions": {
     "sess_reset_api": {
       "activity": "idle",
@@ -350,6 +364,7 @@ exports[`snapshots projection at seq 37 1`] = `
         "url": "https://github.com/acme-demo/portal/pull/142",
       },
       "status": "ready_to_merge",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-api",
@@ -370,6 +385,7 @@ exports[`snapshots projection at seq 37 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "pending",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_orchestrator": {
@@ -392,6 +408,7 @@ exports[`snapshots projection at seq 37 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "working",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_ui": {
@@ -431,6 +448,7 @@ exports[`snapshots projection at seq 37 1`] = `
         "url": "https://github.com/acme-demo/portal/pull/143",
       },
       "status": "ready_to_merge",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-ui",
@@ -471,8 +489,10 @@ exports[`snapshots projection at seq 44 1`] = `
         "node_reset_ui": "merged",
       },
       "status": "approved",
+      "waitingNodes": {},
     },
   },
+  "schedulingPaused": false,
   "sessions": {
     "sess_reset_api": {
       "activity": "idle",
@@ -520,6 +540,7 @@ exports[`snapshots projection at seq 44 1`] = `
         "url": "https://github.com/acme-demo/portal/pull/142",
       },
       "status": "merged",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-api",
@@ -540,6 +561,7 @@ exports[`snapshots projection at seq 44 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "working",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "5eb8f3d24d3ec9f3f8bb4d520be628602b63a9a4",
         "branch": "helix/reset-e2e",
@@ -577,6 +599,7 @@ exports[`snapshots projection at seq 44 1`] = `
       "pendingApprovalIds": [],
       "pr": undefined,
       "status": "working",
+      "turnLimited": false,
       "worktree": undefined,
     },
     "sess_reset_ui": {
@@ -616,6 +639,7 @@ exports[`snapshots projection at seq 44 1`] = `
         "url": "https://github.com/acme-demo/portal/pull/143",
       },
       "status": "merged",
+      "turnLimited": false,
       "worktree": {
         "baseSha": "a881c62659462bfa98fdcfa5e2605613b701d742",
         "branch": "helix/reset-ui",

@@ -69,7 +69,7 @@ async function planned(overrides: Partial<CoreDeps> = {}) {
   const workers = () => f.state(p.id).plans[plan.id]!.nodes.map((n) => n.sessionId);
   const waits = () =>
     f.store.events.filter(
-      (e) => e.type === 'plan.node_updated' && e.payload.note?.startsWith('Waiting: '),
+      (e) => e.type === 'plan.node_updated' && e.payload.waiting === 'worker_slot',
     );
   const merge = async (id: SessionId) => {
     f.git.ahead = 1;
@@ -112,10 +112,12 @@ test('default cap allows 20 worker turns, holds automatic feedback and explains 
       payload: {
         text: 'Turn limit reached (20 turns). Helix paused this task; send a message to continue for another 20.',
         source: 'helix',
+        code: 'turn_limit_reached',
       },
     }),
   );
   expect(f.state(f.p.id).sessions[f.s.id]!.activity).toBe('waiting_input');
+  expect(f.state(f.p.id).sessions[f.s.id]!.turnLimited).toBe(true);
   expect(deriveStatus(f.state(f.p.id).sessions[f.s.id]!)).toBe('needs_you');
 });
 
@@ -129,6 +131,17 @@ test('repair turns consume the cap; feedback cannot extend it; user continuation
   await f.feedback('repair-3');
   expect(f.handle.send).toHaveBeenCalledTimes(2);
   await f.core.sendMessage(f.s.id, { text: 'Continue', mode: 'queue' });
+  expect(f.state(f.p.id).sessions[f.s.id]!.turnLimited).toBe(false);
+  expect(f.store.events).toContainEqual(
+    expect.objectContaining({
+      type: 'explain.note',
+      payload: {
+        text: 'Turn allowance extended to 4 turns by user message.',
+        source: 'helix',
+        code: 'turn_limit_extended',
+      },
+    }),
+  );
   expect(f.handle.send).toHaveBeenLastCalledWith('Continue', 'queue');
   await f.finish();
   expect(f.handle.send).toHaveBeenCalledTimes(4);
@@ -142,13 +155,25 @@ test('repair turns consume the cap; feedback cannot extend it; user continuation
   expect(f.handle.send).toHaveBeenLastCalledWith(expect.stringContaining('repair-3'), 'queue');
 });
 
-test.each([false, true])(
-  'cap and held feedback survive restart (turn receipts removed=%s)',
-  async (removeReceipts) => {
+test.each([
+  { removeReceipts: false, legacy: false },
+  { removeReceipts: true, legacy: false },
+  { removeReceipts: false, legacy: true },
+  { removeReceipts: true, legacy: true },
+])(
+  'cap and held feedback survive restart (turn receipts removed=$removeReceipts, legacy=$legacy)',
+  async ({ removeReceipts, legacy }) => {
     const f = await worker({ limits: { maxTurnsPerTask: 1 }, canReattach: () => true });
     await f.finish();
     await f.feedback('held');
     await f.core.shutdown();
+    for (const e of f.store.events) {
+      if (e.type !== 'explain.note' || e.payload.code !== 'turn_limit_reached') continue;
+      if (legacy) delete e.payload.code;
+      else e.payload.text = 'Wording changed: task allowance used up.';
+    }
+    const noteCount = () => f.store.events.filter((e) => e.type === 'explain.note').length;
+    const before = noteCount();
     if (removeReceipts) {
       for (const key of f.store.metadata.keys())
         if ((JSON.parse(key) as string[])[0] === 'helix:core:turn:v1') f.store.metadata.delete(key);
@@ -158,6 +183,7 @@ test.each([false, true])(
     await restarted.start();
     const resumed = f.harness.handles.get(f.s.id)!;
     expect(resumed.send).not.toHaveBeenCalled();
+    expect(noteCount()).toBe(before);
     expect(f.state(f.p.id).sessions[f.s.id]!.activity).toBe('waiting_input');
     await restarted.sendMessage(f.s.id, { text: 'Resume', mode: 'queue' });
     expect(resumed.send).toHaveBeenCalledExactlyOnceWith('Resume', 'queue');
@@ -211,7 +237,7 @@ test('orchestrators are exempt from worker turn limits', async () => {
   expect(handle.send).toHaveBeenCalledTimes(5);
   expect(
     f.store.events.some(
-      (e) => e.type === 'explain.note' && e.payload.text.startsWith('Turn limit'),
+      (e) => e.type === 'explain.note' && e.payload.code === 'turn_limit_reached',
     ),
   ).toBe(false);
 });
@@ -279,7 +305,14 @@ test('five approved nodes use three slots; waiting notes dedupe; merge and exit 
   expect(f.workers().map(Boolean)).toEqual([true, true, true, false, false]);
   expect(f.waits()).toHaveLength(2);
   for (const e of f.waits())
-    expect(e.payload).toMatchObject({ note: 'Waiting: 3 of 3 worker slots are in use.' });
+    expect(e.payload).toMatchObject({
+      note: 'Waiting: 3 of 3 worker slots are in use.',
+      waiting: 'worker_slot',
+    });
+  expect(f.state(f.p.id).plans[f.plan.id]!.waitingNodes).toEqual({
+    four: 'worker_slot',
+    five: 'worker_slot',
+  });
   // Idle and in-review workers retain slots, and repeated scheduling does not repeat notes.
   f.git.ahead = 1;
   for (const id of f.workers().filter((id): id is SessionId => Boolean(id)))
@@ -298,6 +331,7 @@ test('five approved nodes use three slots; waiting notes dedupe; merge and exit 
     .emit({ type: 'activity.changed', payload: { activity: 'exited' } });
   await f.drain();
   expect(f.workers().every(Boolean)).toBe(true);
+  expect(f.state(f.p.id).plans[f.plan.id]!.waitingNodes).toEqual({});
   const exited = f.store.events.find((e) => e.type === 'session.exited')!;
   expect(
     f.store.events.find((e) => e.type === 'session.created' && e.planNodeId === 'five')!.causedBy,
@@ -318,6 +352,81 @@ test('manual workers take slots, archive frees one, and older plan nodes precede
   await f.merge(f.workers()[0]!);
   expect(f.workers().map(Boolean)).toEqual([true, true, false, false, false]);
 });
+
+test.each([false, true])(
+  'slot-wait recovery dedupes updates and preserves the release cause (legacy=%s)',
+  async (legacy) => {
+    const f = await planned({ limits: { maxParallelWorkers: 1 }, canReattach: () => true });
+    await f.core.decidePlan(f.plan.id, { decision: 'approve' });
+    await f.core.shutdown();
+    for (const e of f.waits()) {
+      if (e.type !== 'plan.node_updated') continue;
+      if (legacy) delete e.payload.waiting;
+      else e.payload.note = 'Wording changed: capacity exhausted.';
+    }
+    const updates = () => f.store.events.filter((e) => e.type === 'plan.node_updated').length;
+    const before = updates();
+    const restarted = createHelixCore(f.deps);
+    cleanup.push(() => restarted.shutdown());
+    await restarted.start();
+    expect(updates()).toBe(before);
+    expect(f.workers().map(Boolean)).toEqual([true, false, false, false, false]);
+    await restarted.stopSession(f.workers()[0]!);
+    expect(f.workers().map(Boolean)).toEqual([true, true, false, false, false]);
+    const exit = f.store.events.findLast((e) => e.type === 'session.exited')!;
+    const creation = f.store.events.find(
+      (e) => e.type === 'session.created' && e.planNodeId === 'two',
+    )!;
+    expect(creation.causedBy).toBe(exit.seq);
+    expect(updates()).toBe(before + 1);
+  },
+);
+
+test.each([true, false, 'legacy'] as const)(
+  'restart uses the last scheduling event ahead of metadata, or metadata for legacy logs (%s)',
+  async (paused) => {
+    const f = await planned({ limits: { maxParallelWorkers: 1 } });
+    await f.core.decidePlan(f.plan.id, { decision: 'approve' });
+    await f.core.stopAll(f.p.id);
+    await f.core.shutdown();
+    if (paused === 'legacy') {
+      f.store.events = f.store.events.map((e) =>
+        e.type === 'scheduling.changed'
+          ? {
+              ...e,
+              type: 'explain.note',
+              payload: { text: 'Legacy log without scheduling events' },
+            }
+          : e,
+      );
+    } else {
+      if (!paused)
+        await f.store.append([
+          {
+            v: 1,
+            ts: f.deps.clock(),
+            projectId: f.p.id,
+            type: 'scheduling.changed',
+            payload: { paused: false },
+          },
+        ]);
+      await f.store.setMeta('helix:core:scheduling-paused:v1', f.p.id, !paused);
+    }
+    const starts = f.harness.start.mock.calls.length;
+    const restarted = createHelixCore(f.deps);
+    cleanup.push(() => restarted.shutdown());
+    await restarted.start();
+    expect(f.harness.start).toHaveBeenCalledTimes(starts + (paused === false ? 1 : 0));
+    expect(f.workers().map(Boolean)).toEqual([true, paused === false, false, false, false]);
+    if (paused === 'legacy') {
+      await restarted.createSession(f.p.id, { ...request, planWithOrchestrator: true }, 'resume');
+      expect(f.store.events.findLast((e) => e.type === 'scheduling.changed')?.payload).toEqual({
+        paused: false,
+      });
+      expect(await f.store.getMeta('helix:core:scheduling-paused:v1', f.p.id)).toBe(false);
+    }
+  },
+);
 
 test('stopAll stops live orchestrator, chat and terminal workers, skips exited sessions and pauses across merges/restarts', async () => {
   const f = await planned({
@@ -341,6 +450,12 @@ test('stopAll stops live orchestrator, chat and terminal workers, skips exited s
   await f.drain();
   const starts = f.harness.start.mock.calls.length;
   expect(await f.core.stopAll(f.p.id)).toEqual({ stopped: [f.orchestrator.id, root, terminal.id] });
+  const pause = f.store.events.findLast((e) => e.type === 'scheduling.changed')!;
+  expect(pause).toMatchObject({ projectId: f.p.id, payload: { paused: true } });
+  expect(pause.causedBy).toBeUndefined();
+  expect(pause.sessionId).toBeUndefined();
+  expect(f.state(f.p.id).schedulingPaused).toBe(true);
+  expect(await f.store.getMeta('helix:core:scheduling-paused:v1', f.p.id)).toBe(true);
   expect(f.harness.handles.get(f.orchestrator.id)!.stop).toHaveBeenCalledOnce();
   expect(f.harness.handles.get(root)!.stop).toHaveBeenCalledOnce();
   expect(f.harness.handles.get(dead.id)!.stop).not.toHaveBeenCalled();
@@ -364,6 +479,12 @@ test('stopAll stops live orchestrator, chat and terminal workers, skips exited s
     { ...request, planWithOrchestrator: true },
     'resume-planning',
   );
+  const resume = f.store.events.findLast((e) => e.type === 'scheduling.changed')!;
+  expect(resume.payload).toEqual({ paused: false });
+  expect(resume.sessionId).toBeUndefined();
+  expect(f.store.events.find((e) => e.seq === resume.causedBy)?.type).toBe('session.created');
+  expect(f.state(f.p.id).schedulingPaused).toBe(false);
+  expect(await f.store.getMeta('helix:core:scheduling-paused:v1', f.p.id)).toBe(false);
   expect(f.workers().map(Boolean)).toEqual([true, true, false, false, false]);
 });
 
@@ -372,6 +493,8 @@ test('only a new plan approval resumes stop-all; rejection and repeated old appr
   await f.core.decidePlan(f.plan.id, { decision: 'approve' });
   await f.core.stopAll(f.p.id);
   const starts = f.harness.start.mock.calls.length;
+  const changes = () => f.store.events.filter((e) => e.type === 'scheduling.changed');
+  expect(changes()).toHaveLength(1);
   await f.core.createSession(f.p.id, { ...request, planWithOrchestrator: true }, 'planner');
   expect(f.harness.start).toHaveBeenCalledTimes(starts);
   await f.core.decidePlan(f.plan.id, { decision: 'approve' });
@@ -380,6 +503,11 @@ test('only a new plan approval resumes stop-all; rejection and repeated old appr
   expect(f.harness.start).toHaveBeenCalledTimes(starts);
   const approved = await f.submit(['approved']);
   await f.core.decidePlan(approved.id, { decision: 'approve' });
+  expect(changes()).toHaveLength(2);
+  const resume = changes().at(-1)!;
+  expect(resume.payload).toEqual({ paused: false });
+  expect(resume.sessionId).toBeUndefined();
+  expect(f.store.events.find((e) => e.seq === resume.causedBy)?.type).toBe('plan.approved');
   expect(f.workers()[1]).toBeDefined();
   expect(f.harness.start).toHaveBeenCalledTimes(starts + 1);
 });

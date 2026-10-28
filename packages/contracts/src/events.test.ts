@@ -21,6 +21,11 @@ import {
 
 const samples = Object.fromEntries(fixtures.passwordResetRun.map((e) => [e.type, e]));
 const base = fixtures.passwordResetRun[2]!;
+samples['scheduling.changed'] = eventSchemas['scheduling.changed'].parse({
+  ...fixtures.passwordResetRun[0],
+  type: 'scheduling.changed',
+  payload: { paused: true },
+});
 samples['session.exited'] = eventSchemas['session.exited'].parse({
   ...base,
   type: 'session.exited',
@@ -43,6 +48,7 @@ samples['terminal.output_marker'] = eventSchemas['terminal.output_marker'].parse
 });
 const invalid: Record<EventType, unknown> = {
   'project.added': { project: { ...fixtures.passwordResetProject, id: '' } },
+  'scheduling.changed': { paused: 'true' },
   'session.created': { session: { id: 'x' } },
   'session.started': { unexpected: true },
   'session.exited': { code: '0' },
@@ -85,6 +91,27 @@ describe.each(Object.keys(eventSchemas) as EventType[])('%s', (type) => {
     expect(eventSchemas[type].shape.payload.safeParse(invalid[type]).success).toBe(false);
     expect(parseEvent({ ...samples[type], payload: invalid[type] }).success).toBe(false);
   });
+});
+it('accepts structured guardrails and legacy payloads, rejecting unknown codes and wait reasons', () => {
+  const note = eventSchemas['explain.note'].shape.payload;
+  for (const code of ['turn_limit_reached', 'turn_limit_extended'])
+    expect(note.safeParse({ text: 'Wording may change', code }).success).toBe(true);
+  expect(note.safeParse({ text: 'Legacy note' }).success).toBe(true);
+  expect(note.safeParse({ text: 'Invalid', code: 'future_code' }).success).toBe(false);
+  const update = eventSchemas['plan.node_updated'].shape.payload;
+  const nodeId = fixtures.passwordResetIds.apiNode;
+  expect(update.safeParse({ nodeId, waiting: 'worker_slot' }).success).toBe(true);
+  expect(update.safeParse({ nodeId, note: 'Legacy note' }).success).toBe(true);
+  expect(update.safeParse({ nodeId, waiting: 'dependency' }).success).toBe(false);
+});
+it('requires scheduling changes to be project-level boolean events', () => {
+  const sample = samples['scheduling.changed']!;
+  expect(parseEvent({ ...sample, payload: { paused: false } }).success).toBe(true);
+  expect(parseEvent({ ...sample, sessionId: base.sessionId }).success).toBe(false);
+  expect(parseEvent({ ...sample, planNodeId: fixtures.passwordResetIds.apiNode }).success).toBe(
+    false,
+  );
+  expect(parseEvent({ ...sample, payload: {} }).success).toBe(false);
 });
 it.each([
   null,

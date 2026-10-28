@@ -39,6 +39,10 @@ function event<const T extends string, S extends z.ZodType>(type: T, payload: S)
 /** Full envelope schemas keyed by type; payload schemas are available via .shape.payload. */
 export const eventSchemas = {
   'project.added': event('project.added', z.strictObject({ project: projectSchema })),
+  'scheduling.changed': event('scheduling.changed', z.strictObject({ paused: z.boolean() })).refine(
+    (e) => e.sessionId === undefined && e.planNodeId === undefined,
+    'Scheduling changes must be project-level',
+  ),
   'session.created': event('session.created', z.strictObject({ session: sessionSchema })),
   'session.started': event('session.started', z.strictObject({})),
   'session.exited': event(
@@ -72,12 +76,14 @@ export const eventSchemas = {
       nodeId: planNodeIdSchema,
       sessionId: sessionIdSchema.optional(),
       note: z.string().optional(),
+      waiting: z.literal('worker_slot').optional(),
     }),
   ),
   'explain.note': event(
     'explain.note',
     z.strictObject({
       text: z.string(),
+      code: z.enum(['turn_limit_reached', 'turn_limit_extended']).optional(),
       /** Who is making the claim: Helix itself (a recorded fact), the orchestrator (plan
        * rationale) or an agent (its own unverified summary). Absent on legacy events. */
       source: z.enum(['helix', 'orchestrator', 'agent']).optional(),

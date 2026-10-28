@@ -15,6 +15,8 @@ export type EventTone =
 
 export function eventTone(e: HelixEvent): EventTone {
   switch (e.type) {
+    case 'scheduling.changed':
+      return e.payload.paused ? 'needs' : 'work';
     case 'plan.submitted':
     case 'plan.approved':
     case 'plan.rejected':
@@ -65,6 +67,8 @@ export const provenanceLabel: Record<Provenance, string> = {
 
 export function provenance(e: HelixEvent, state: ProjectState): Provenance {
   switch (e.type) {
+    case 'scheduling.changed':
+      return 'helix';
     case 'plan.submitted':
     case 'plan.node_updated':
       return 'plan';
@@ -114,6 +118,10 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
   switch (e.type) {
     case 'project.added':
       return `Added project ${e.payload.project.name}.`;
+    case 'scheduling.changed':
+      return e.payload.paused
+        ? 'You stopped all agents; scheduling is paused.'
+        : 'Scheduling resumed.';
     case 'session.created':
       return e.payload.session.role === 'orchestrator'
         ? `Started the orchestrator for “${e.payload.session.title}”.`
@@ -213,24 +221,17 @@ export function relativeTo(fromIso: string, nowIso: string): string {
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
-// Guardrail notes from #9 are matched by their (core-owned) wording; there's no structured
-// field for them yet. Keep these prefixes in sync with packages/core/src/core.ts.
-const TURN_LIMIT_PREFIX = 'Turn limit reached (';
-const TURN_EXTENDED_PREFIX = 'Turn allowance extended to ';
-const SLOT_WAIT_PREFIX = 'Waiting: ';
-
-/**
- * The turn-limit note if this task is currently paused by the turn cap: the newest relevant
- * chat entry is Helix's limit note (not a later extension or user message) and it's waiting.
- */
+/** Display-only lookup: the structured flag determines whether the callout is shown. */
 export function turnLimitNote(s: SessionState): string | undefined {
-  if (s.activity !== 'waiting_input') return undefined;
+  if (!s.turnLimited) return undefined;
   for (let i = s.chat.length - 1; i >= 0; i--) {
     const item = s.chat[i]!;
-    if (item.kind !== 'message') continue;
-    if (item.role === 'user') return undefined;
-    if (item.role === 'system' && item.text.startsWith(TURN_EXTENDED_PREFIX)) return undefined;
-    if (item.role === 'system' && item.text.startsWith(TURN_LIMIT_PREFIX)) return item.text;
+    if (
+      item.kind === 'message' &&
+      item.role === 'system' &&
+      item.text.startsWith('Turn limit reached (')
+    )
+      return item.text;
   }
   return undefined;
 }
@@ -240,14 +241,15 @@ export function slotWaitNote(state: ProjectState, nodeId: string): string | unde
   for (const plan of Object.values(state.plans)) {
     const node = plan.nodes.find((n) => n.id === nodeId);
     if (!node) continue;
-    if (node.sessionId) return undefined;
+    if (node.sessionId || plan.waitingNodes[node.id] !== 'worker_slot') return undefined;
+    if (state.schedulingPaused) return 'Paused: scheduling is stopped';
     const chat = state.sessions[plan.orchestratorSessionId]?.chat ?? [];
     for (let i = chat.length - 1; i >= 0; i--) {
       const item = chat[i]!;
       if (item.kind === 'plan_update' && item.nodeId === nodeId)
-        return item.text.startsWith(SLOT_WAIT_PREFIX) ? item.text : undefined;
+        return item.text || 'Waiting for a worker slot';
     }
-    return undefined;
+    return 'Waiting for a worker slot';
   }
   return undefined;
 }
@@ -273,7 +275,7 @@ export function statusLine(
   if (status === 'needs_you') {
     const approval = s.pendingApprovalIds.map((id) => state.approvals[id]).find(Boolean);
     if (approval) return `Approve: ${lowerFirst(truncate(approval.summary, 48))}`;
-    if (turnLimitNote(s)) return 'Turn limit reached · send a message to continue';
+    if (s.turnLimited) return 'Turn limit reached · send a message to continue';
     return 'Waiting for your reply';
   }
   if (status === 'ci_failed' && s.pr)

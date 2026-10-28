@@ -16,9 +16,203 @@ import {
 } from './index.js';
 
 const { passwordResetRun: run, passwordResetIds: ids } = fixtures;
+
+function guardrailEvent(
+  seq: number,
+  type: string,
+  payload: unknown,
+  sessionId?: string,
+): HelixEvent {
+  return helixEventSchema.parse({
+    v: 1,
+    seq,
+    ts: run[0]!.ts,
+    projectId: run[0]!.projectId,
+    ...(sessionId ? { sessionId } : {}),
+    type,
+    payload,
+  });
+}
+
+function unassignedPlanRun(): HelixEvent[] {
+  return run.slice(0, 6).map((e) =>
+    e.type === 'plan.submitted'
+      ? {
+          ...e,
+          payload: {
+            plan: {
+              ...e.payload.plan,
+              nodes: e.payload.plan.nodes.map((node) => {
+                const unassigned = { ...node };
+                delete unassigned.sessionId;
+                return unassigned;
+              }),
+            },
+          },
+        }
+      : e,
+  );
+}
+
+it('defaults guardrail state without interpreting legacy note wording', () => {
+  let state = projectUpTo(run, 6);
+  expect(state.schedulingPaused).toBe(false);
+  expect(state.sessions[ids.orchestrator]!.turnLimited).toBe(false);
+  expect(state.plans[fixtures.passwordResetPlan.id]!.waitingNodes).toEqual({});
+  state = applyEvent(
+    state,
+    guardrailEvent(
+      7,
+      'explain.note',
+      {
+        text: 'Turn limit reached (20 turns).',
+      },
+      ids.orchestrator,
+    ),
+    { strict: true },
+  );
+  state = applyEvent(
+    state,
+    guardrailEvent(8, 'plan.node_updated', {
+      nodeId: ids.apiNode,
+      note: 'Waiting: 3 of 3 worker slots are in use.',
+    }),
+    { strict: true },
+  );
+  expect(state.sessions[ids.orchestrator]!.turnLimited).toBe(false);
+  expect(state.plans[fixtures.passwordResetPlan.id]!.waitingNodes).toEqual({});
+});
+
+it.each([
+  ['explain.note', { text: 'More turns allowed', code: 'turn_limit_extended' }],
+  ['chat.item', { item: { kind: 'message', role: 'user', text: 'Continue' } }],
+  ['activity.changed', { activity: 'active' }],
+])('clears a structured turn cap on %s', (type, payload) => {
+  const before = projectUpTo(run, 44);
+  const limited = applyEvent(
+    before,
+    guardrailEvent(
+      45,
+      'explain.note',
+      {
+        text: 'Different wording',
+        code: 'turn_limit_reached',
+      },
+      ids.api,
+    ),
+    { strict: true },
+  );
+  expect(limited.sessions[ids.api]!.turnLimited).toBe(true);
+  expect(before.sessions[ids.api]!.turnLimited).toBe(false);
+  const cleared = applyEvent(limited, guardrailEvent(46, type, payload, ids.api), { strict: true });
+  expect(cleared.sessions[ids.api]!.turnLimited).toBe(false);
+  expect(limited.sessions[ids.api]!.turnLimited).toBe(true);
+});
+
+it('retains the turn cap through unrelated notes, messages and non-active activity', () => {
+  let state = projectUpTo(run, 44);
+  const changes = [
+    ['explain.note', { text: 'Changed wording', code: 'turn_limit_reached' }],
+    ['activity.changed', { activity: 'waiting_input' }],
+    ['chat.item', { item: { kind: 'message', role: 'assistant', text: 'Done' } }],
+    ['explain.note', { text: 'Turn allowance extended to 1000 turns by user message.' }],
+  ] as const;
+  for (const [index, [type, payload]] of changes.entries()) {
+    state = applyEvent(state, guardrailEvent(45 + index, type, payload, ids.api), { strict: true });
+    expect(state.sessions[ids.api]!.turnLimited).toBe(true);
+  }
+});
+
+it('sets and clears worker-slot waits on updates and either way of assigning a session', () => {
+  const before = projectUpTo(unassignedPlanRun(), 6);
+  const wait = guardrailEvent(7, 'plan.node_updated', {
+    nodeId: ids.apiNode,
+    waiting: 'worker_slot',
+    note: 'Any wording',
+  });
+  const waiting = applyEvent(before, wait, { strict: true });
+  const planId = fixtures.passwordResetPlan.id;
+  expect(waiting.plans[planId]!.waitingNodes).toEqual({ [ids.apiNode]: 'worker_slot' });
+  expect(before.plans[planId]!.waitingNodes).toEqual({});
+  const clear = applyEvent(
+    waiting,
+    guardrailEvent(8, 'plan.node_updated', {
+      nodeId: ids.apiNode,
+    }),
+    { strict: true },
+  );
+  expect(clear.plans[planId]!.waitingNodes).toEqual({});
+  const created = applyEvent(
+    waiting,
+    { ...run[6]!, seq: eventSeqSchema.parse(8) },
+    { strict: true },
+  );
+  expect(created.plans[planId]!.waitingNodes).toEqual({});
+  const unlinked = structuredClone(created);
+  delete unlinked.plans[planId]!.nodes[0]!.sessionId;
+  const waitingAgain = applyEvent(
+    unlinked,
+    { ...wait, seq: eventSeqSchema.parse(9) },
+    { strict: true },
+  );
+  const linked = applyEvent(
+    waitingAgain,
+    guardrailEvent(10, 'plan.node_updated', {
+      nodeId: ids.apiNode,
+      sessionId: ids.api,
+      waiting: 'worker_slot',
+    }),
+    { strict: true },
+  );
+  expect(linked.plans[planId]!.waitingNodes).toEqual({});
+  const assignedWait = applyEvent(
+    linked,
+    { ...wait, seq: eventSeqSchema.parse(11) },
+    { strict: true },
+  );
+  expect(assignedWait.plans[planId]!.waitingNodes).toEqual({});
+});
+
+it('replays scheduling pause and resume without a session', () => {
+  const events = [
+    ...run,
+    guardrailEvent(45, 'scheduling.changed', { paused: true }),
+    guardrailEvent(46, 'scheduling.changed', { paused: false }),
+  ];
+  const projector = createProjector(events, { strict: true });
+  for (const [seq, paused] of [
+    [44, false],
+    [45, true],
+    [46, false],
+  ] as const) {
+    expect(projector.at(seq).schedulingPaused).toBe(paused);
+    expect(projector.at(seq)).toEqual(projectUpTo(events, seq, { strict: true }));
+  }
+});
+
+it('forks waiting maps safely across frozen projector checkpoints', () => {
+  const events = unassignedPlanRun();
+  for (let seq = 7; seq <= 102; seq++)
+    events.push(
+      guardrailEvent(seq, 'plan.node_updated', {
+        nodeId: ids.apiNode,
+        ...(seq <= 100 ? { waiting: 'worker_slot' } : {}),
+      }),
+    );
+  const projector = createProjector(events, { strict: true });
+  expect(projector.at(100).plans[fixtures.passwordResetPlan.id]!.waitingNodes).toEqual({
+    [ids.apiNode]: 'worker_slot',
+  });
+  expect(projector.at(101).plans[fixtures.passwordResetPlan.id]!.waitingNodes).toEqual({});
+  expect(projector.at(102)).toEqual(projectUpTo(events, 102, { strict: true }));
+  expect(projector.at(100).plans[fixtures.passwordResetPlan.id]!.waitingNodes).toEqual({
+    [ids.apiNode]: 'worker_slot',
+  });
+});
 function summary(state: ProjectState) {
   return {
     lastSeq: state.lastSeq,
+    schedulingPaused: state.schedulingPaused,
     sessions: Object.fromEntries(
       Object.entries(state.sessions).map(([id, s]) => [
         id,
@@ -26,6 +220,7 @@ function summary(state: ProjectState) {
           status: deriveStatus(s),
           column: boardColumn(deriveStatus(s)),
           activity: s.activity,
+          turnLimited: s.turnLimited,
           lastEventSeq: s.lastEventSeq,
           branch: s.session.branch,
           chat: s.chat,
@@ -39,7 +234,7 @@ function summary(state: ProjectState) {
     plans: Object.fromEntries(
       Object.entries(state.plans).map(([id, p]) => [
         id,
-        { goal: p.goal, status: p.status, nodeStatus: p.nodeStatus },
+        { goal: p.goal, status: p.status, nodeStatus: p.nodeStatus, waitingNodes: p.waitingNodes },
       ]),
     ),
   };

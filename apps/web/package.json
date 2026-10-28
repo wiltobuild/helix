@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
-    "test": "node -e \"console.log('no UI tests yet')\""
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/web"
   },
   "dependencies": {
     "@helix/api-client": "workspace:*",

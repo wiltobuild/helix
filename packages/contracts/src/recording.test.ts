@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   fixtures,
+  helixEventSchema,
   helixlogHeaderSchema,
   parseHelixlog,
   serializeHelixlog,
@@ -22,6 +23,31 @@ it('round-trips the golden recording exactly and deterministically', () => {
   expect(text.split('\n')).toHaveLength(46);
   expect(parseHelixlog(text)).toEqual({ success: true, data: log });
   expect(serializeHelixlog(log)).toBe(text);
+});
+it('round-trips structured guardrails and project scheduling events in v1 recordings', () => {
+  const events = [
+    ['explain.note', { text: 'Limit', code: 'turn_limit_reached' }, fixtures.passwordResetIds.api],
+    [
+      'explain.note',
+      { text: 'Extended', code: 'turn_limit_extended' },
+      fixtures.passwordResetIds.api,
+    ],
+    ['plan.node_updated', { nodeId: fixtures.passwordResetIds.apiNode, waiting: 'worker_slot' }],
+    ['scheduling.changed', { paused: true }],
+    ['scheduling.changed', { paused: false }],
+  ].map(([type, payload, sessionId], index) =>
+    helixEventSchema.parse({
+      v: 1,
+      seq: 45 + index,
+      ts: log.header.recordedAt,
+      projectId: log.header.project.id,
+      type,
+      payload,
+      ...(sessionId ? { sessionId } : {}),
+    }),
+  );
+  const structured = { ...log, events: [...log.events, ...events] };
+  expect(parseHelixlog(serializeHelixlog(structured))).toEqual({ success: true, data: structured });
 });
 it('accepts CRLF, a BOM, and no final newline', () => {
   expect(

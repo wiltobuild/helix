@@ -17,6 +17,7 @@ export type WorktreeState = Worktree & { diff?: PayloadFor<'worktree.diff_update
 export type SessionState = {
   session: Session;
   activity: AgentActivity;
+  turnLimited: boolean;
   pr?: PullRequestFacts;
   worktree?: WorktreeState;
   chat: ChatItem[];
@@ -26,12 +27,14 @@ export type SessionState = {
 export type PlanState = Plan & {
   status: PlanStatus;
   nodeStatus: Record<PlanNodeId, DisplayStatus>;
+  waitingNodes: Record<PlanNodeId, 'worker_slot'>;
   decidedAt?: string;
   approvedBy?: 'human';
   rejectionReason?: string;
 };
 export type ProjectState = {
   project: Project;
+  schedulingPaused: boolean;
   sessions: Record<SessionId, SessionState>;
   plans: Record<PlanId, PlanState>;
   approvals: Record<ApprovalId, Approval>;
@@ -81,6 +84,8 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
   switch (e.type) {
     case 'project.added':
       throw new Error('Project already added');
+    case 'scheduling.changed':
+      break;
     case 'session.created':
       if (
         e.payload.session.projectId !== state.project.id ||
@@ -167,6 +172,7 @@ function reduceInto(
       throw new Error('Projection must begin with matching project.added');
     return {
       project: structuredClone(e.payload.project),
+      schedulingPaused: false,
       sessions: {},
       plans: {},
       approvals: {},
@@ -194,6 +200,9 @@ function reduceInto(
   switch (e.type) {
     case 'project.added':
       throw new Error('Project already added');
+    case 'scheduling.changed':
+      next.schedulingPaused = e.payload.paused;
+      break;
     case 'session.created': {
       const session = structuredClone(e.payload.session);
       if (
@@ -209,6 +218,7 @@ function reduceInto(
         value: {
           session,
           activity: 'unknown',
+          turnLimited: false,
           chat: [],
           lastEventSeq: e.seq,
           pendingApprovalIds: [],
@@ -216,7 +226,10 @@ function reduceInto(
       });
       for (const plan of Object.values(next.plans)) {
         for (const node of plan.nodes)
-          if (node.id === session.planNodeId) node.sessionId = session.id;
+          if (node.id === session.planNodeId) {
+            node.sessionId = session.id;
+            delete plan.waitingNodes[node.id];
+          }
       }
       break;
     }
@@ -231,9 +244,12 @@ function reduceInto(
       break;
     case 'activity.changed':
       getSession().activity = e.payload.activity;
+      if (e.payload.activity === 'active') getSession().turnLimited = false;
       break;
     case 'chat.item':
       getSession().chat.push(e.payload.item);
+      if (e.payload.item.kind === 'message' && e.payload.item.role === 'user')
+        getSession().turnLimited = false;
       break;
     case 'reasoning.summary':
       getSession().chat.push({ kind: 'reasoning_summary', text: e.payload.text });
@@ -278,7 +294,7 @@ function reduceInto(
         if (!node.sessionId && s) node.sessionId = s.session.id;
       }
       Object.defineProperty(next.plans, plan.id, {
-        value: { ...plan, status: 'awaiting_approval', nodeStatus: {} },
+        value: { ...plan, status: 'awaiting_approval', nodeStatus: {}, waitingNodes: {} },
         enumerable: true,
         writable: true,
         configurable: true,
@@ -317,6 +333,14 @@ function reduceInto(
       );
       const node = plan?.nodes.find((n) => n.id === e.payload.nodeId);
       if (!node || !plan) throw new Error('Unknown plan node');
+      if (e.payload.waiting && !node.sessionId && !e.payload.sessionId)
+        Object.defineProperty(plan.waitingNodes, node.id, {
+          value: e.payload.waiting,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      else delete plan.waitingNodes[node.id];
       if (e.payload.sessionId) {
         const s = sessionFor(next, e.payload.sessionId);
         node.sessionId = s.session.id;
@@ -371,9 +395,12 @@ function reduceInto(
       break;
     }
     case 'explain.note':
-      if (e.sessionId)
-        getSession().chat.push({ kind: 'message', role: 'system', text: e.payload.text });
-      else if (e.planNodeId) {
+      if (e.sessionId) {
+        const s = getSession();
+        s.chat.push({ kind: 'message', role: 'system', text: e.payload.text });
+        if (e.payload.code === 'turn_limit_reached') s.turnLimited = true;
+        else if (e.payload.code === 'turn_limit_extended') s.turnLimited = false;
+      } else if (e.planNodeId) {
         const plan = planForNode(next, e.planNodeId);
         const s = sessionFor(next, plan.orchestratorSessionId);
         s.chat.push({
@@ -460,6 +487,7 @@ function forkCheckpoint(state: ProjectState): ProjectState {
           ...p,
           nodes: p.nodes.map((n) => ({ ...n })),
           nodeStatus: { ...p.nodeStatus },
+          waitingNodes: { ...p.waitingNodes },
         },
       ]),
     ),
