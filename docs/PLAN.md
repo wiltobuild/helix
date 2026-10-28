@@ -113,7 +113,7 @@ Every event: `{seq, ts, projectId, sessionId?, planNodeId?, causedBy?: seq, type
 **Real GitHub loop (You + Claude, Days 4–6, highest priority):** a private test repo with a CI workflow built to fail on the first attempt. Run one real task through push → PR → failing check → `feedback.routed` → fix → green → merge-on-click, and check the causedBy links on the timeline. Fix whatever breaks before Wave 2 merges.
 
 **Claude:** plan graph (React Flow + ELK, nodes animate with live status) with an **Approve plan** step, timeline scrubber (replays board + graph + chat together; Files tab labeled "current changes" or disabled while in the past), Why panel (three labeled sources → causal chain via `causedBy`), stop-all control, New-task dialog with "let the orchestrator plan it". Needs-you inbox drops to P1 (the board's Needs-you column covers the demo).
-**Day 10 (Oct 29) milestone:** full demo script runs live and as a replay; **hosting decided** (proposed: static replay build on Vercel).
+**Day 10 (Oct 29) milestone:** full demo script runs live and as a replay; **hosting decided** (done: static replay build on Vercel, https://helix-demo-theta.vercel.app).
 
 ### Days 11–14 — Demo prep
 - Record 2–3 clean runs on the demo repo (you + teammate), each including a real CI failure fixed on GitHub; deploy hosted demo-mode link.
@@ -185,6 +185,6 @@ Merge via PR on GitHub — you (or teammate) click merge after Claude's sign-off
 - Confirm teammate's role (proposed above).
 - ~~GitHub repo location~~ → `wiltobuild/helix`.
 - Which agent should be the orchestrator by default — Claude Code or Codex?
-- Hosted demo: static replay build on Vercel (proposed) — decide by Day 10 (Oct 29).
+- Hosted demo: **decided** — static replay build on Vercel (project `helix-demo`, Pursuit team), auto-deploys from main: https://helix-demo-theta.vercel.app
 - Claude Code's default permission mode for worker sessions.
 - Per-launch token on the local API before the demo, or accept the risk for the MVP?
