@@ -326,24 +326,46 @@ export interface BoardCard {
   card: SessionCardProps;
 }
 
-/** Worker sessions as board cards. The orchestrator lives in the plan view, not on the board. */
+/** Sessions shown as board cards. Includes workers plus orchestrators that are planning or need review. */
 export function boardCards(
   state: ProjectState,
   bySeq: ReadonlyMap<number, HelixEvent>,
   nowIso: string,
 ): BoardCard[] {
-  return Object.values(state.sessions)
-    .filter((s) => s.session.role !== 'orchestrator')
-    .map((s) => {
-      const status = deriveStatus(s);
-      const lastTs = bySeq.get(s.lastEventSeq)?.ts ?? s.session.createdAt;
-      const label = statusLine(s, status, state);
-      return {
+  const plans = Object.values(state.plans);
+  return Object.values(state.sessions).flatMap((s) => {
+    const rawStatus = deriveStatus(s);
+    const isOrchestrator = s.session.role === 'orchestrator';
+    const orchPlan = isOrchestrator
+      ? plans.find((p) => p.orchestratorSessionId === s.session.id)
+      : undefined;
+    const planNeedsReview = orchPlan?.status === 'awaiting_approval';
+    const status: DisplayStatus = planNeedsReview ? 'needs_you' : rawStatus;
+
+    if (isOrchestrator) {
+      const needsAttention =
+        planNeedsReview ||
+        rawStatus === 'needs_you' ||
+        rawStatus === 'in_review' ||
+        rawStatus === 'ci_failed' ||
+        rawStatus === 'changes_requested' ||
+        rawStatus === 'ready_to_merge';
+      const activelyPlanning = !orchPlan && (rawStatus === 'working' || rawStatus === 'pending');
+      if (!needsAttention && !activelyPlanning) return [];
+    }
+
+    const lastTs = bySeq.get(s.lastEventSeq)?.ts ?? s.session.createdAt;
+    const label = planNeedsReview
+      ? `Approve plan · ${orchPlan.nodes.length} task${orchPlan.nodes.length === 1 ? '' : 's'}`
+      : statusLine(s, status, state);
+    const title = isOrchestrator ? `Plan: ${s.session.title}` : s.session.title;
+    return [
+      {
         id: s.session.id,
         column: boardColumn(status),
         status,
         card: {
-          title: s.session.title,
+          title,
           agent: s.session.agent,
           status,
           ...(label ? { statusLabel: label } : {}),
@@ -354,6 +376,7 @@ export function boardCards(
             : {}),
           updated: relativeTo(lastTs, nowIso),
         },
-      };
-    });
+      },
+    ];
+  });
 }

@@ -242,7 +242,12 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
             })}
           </svg>
 
-          <div className={s.root} style={{ top: rootY - 56, width: ROOT_W }}>
+          <button
+            type="button"
+            className={cx(s.root, plan.orchestratorSessionId === selected && s.selected)}
+            style={{ top: rootY - 56, width: ROOT_W }}
+            onClick={() => onSelect(plan.orchestratorSessionId)}
+          >
             <span className={s.rootLabel}>
               <Sparkles size={12} aria-hidden /> Plan
             </span>
@@ -252,7 +257,7 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
               {plan.nodes.filter((n) => status(n.id) === 'merged').length}/{plan.nodes.length}{' '}
               merged
             </span>
-          </div>
+          </button>
 
           {graph.placed.map(({ node, x, y }) => {
             const st = status(node.id);
