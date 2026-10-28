@@ -12,7 +12,14 @@ import {
 import { createHelixClient, HelixApiError } from '@helix/api-client';
 import { createServer, parsePort } from './server.js';
 import { startDaemon } from './lifecycle.js';
-import { createFakeCore, project, session, approval, plan } from './testing/fake-core.js';
+import {
+  createFakeCore,
+  project,
+  session,
+  approval,
+  plan,
+  listenFetchSafe,
+} from './testing/fake-core.js';
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -316,7 +323,7 @@ it('writes run.json, binds loopback and removes it on shutdown', async () => {
 
 it('round trips typed client commands, raw recordings and typed errors', async () => {
   const { app, core } = await setup();
-  const baseUrl = await app.listen({ host: '127.0.0.1', port: 0 });
+  const baseUrl = await listenFetchSafe(app);
   const client = createHelixClient({ baseUrl });
   expect(await client.health()).toEqual({ status: 'ok', version: 'test' });
   expect(
