@@ -38,7 +38,8 @@ export interface HelixSource {
 /** Same origin: Vite proxies /api and /mux to helixd in dev; helixd serves the built app in prod. */
 const client = createHelixClient({ baseUrl: window.location.origin });
 const params = new URLSearchParams(window.location.search);
-const staticBuild = import.meta.env.VITE_HELIX_STATIC === '1';
+/** `build:demo` builds with `--mode demo`: the static site never calls /api and always replays. */
+const staticBuild = import.meta.env.MODE === 'demo';
 const forceDemo = staticBuild || params.has('demo');
 /** `?demo=<name>` picks a bundled recording; plain `?demo` (or the static build) uses the default. */
 const requestedRecording = params.get('demo') || undefined;
