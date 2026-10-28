@@ -1,8 +1,52 @@
 .view {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: var(--space-3);
   min-height: 100%;
+}
+
+.observatoryBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: var(--text-xs);
+}
+
+.strandSummary,
+.statusSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.strandChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.strandCount {
+  color: var(--text-3);
+  font: var(--text-2xs) var(--font-mono);
+}
+
+.statItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font: var(--text-2xs) var(--font-mono);
 }
 
 .decision {
@@ -93,13 +137,13 @@
 }
 
 .edgeDone {
-  stroke: color-mix(in srgb, var(--status-ready) 70%, var(--border));
+  stroke: color-mix(in srgb, var(--edge-strand, var(--status-ready)) 65%, var(--border));
   stroke-dasharray: none;
 }
 
 .flow {
   fill: none;
-  stroke: var(--status-working);
+  stroke: var(--edge-strand, var(--status-working));
   stroke-width: 2;
   stroke-dasharray: 6 12;
   animation: flow 1.4s linear infinite;

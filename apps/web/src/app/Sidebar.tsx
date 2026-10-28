@@ -1,5 +1,5 @@
 import { Bell, FolderGit2, Search, Settings } from 'lucide-react';
-import { Kbd, SectionLabel, StatusDot, cx } from '@helix/ui';
+import { HelixLogo, Kbd, SectionLabel, StatusDot, cx } from '@helix/ui';
 import type { Project } from '@helix/contracts';
 import type { BoardCard } from '../data/describe';
 import s from './Sidebar.module.css';
@@ -30,9 +30,11 @@ export function Sidebar({
 }: SidebarProps) {
   const active = cards.filter((c) => c.column !== 'archive');
   const done = cards.filter((c) => c.column === 'archive');
+  const hasWorking = active.some((c) => c.status === 'working');
   return (
     <nav className={s.sidebar} aria-label="Workspace">
       <div className={s.brand}>
+        <HelixLogo size={22} active={hasWorking} />
         <span className={s.wordmark}>helix</span>
         {demo && <span className={s.demo}>demo</span>}
         {stream && (
@@ -82,7 +84,26 @@ export function Sidebar({
             </li>
           ))}
         </ul>
-        {done.length > 0 && <p className={s.done}>{done.length} merged or archived</p>}
+        {done.length > 0 && (
+          <>
+            <p className={s.done}>{done.length} merged or archived</p>
+            <ul className={s.sessions}>
+              {done.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    className={cx(s.session, selected === c.id && s.selected)}
+                    onClick={() => onSelect(c.id)}
+                    aria-current={selected === c.id || undefined}
+                  >
+                    <StatusDot status={c.status} />
+                    <span>{c.card.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <div className={s.footer}>

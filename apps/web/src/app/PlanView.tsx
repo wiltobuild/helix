@@ -1,21 +1,25 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Check, Sparkles, X } from 'lucide-react';
 import type { HelixClient } from '@helix/api-client';
-import type {
-  DisplayStatus,
-  Plan,
-  PlanNode,
-  PlanNodeId,
-  PlanState,
-  ProjectState,
+import {
+  deriveStatus,
+  type DisplayStatus,
+  type Plan,
+  type PlanNode,
+  type PlanNodeId,
+  type PlanState,
+  type ProjectState,
 } from '@helix/contracts';
 import {
   AgentBadge,
   Button,
   EmptyState,
+  HelixLogo,
+  StatusDot,
   StatusPill,
   TextField,
   Tooltip,
+  agentMeta,
   cx,
   statusMeta,
   toneVar,
@@ -214,10 +218,58 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
   const pos = new Map(graph.placed.map((p) => [p.node.id, p]));
   const rootY = graph.height / 2;
   const orchestrator = state.sessions[plan.orchestratorSessionId];
+  const claudeNodes = plan.nodes.filter((n) => n.agent === 'claude-code');
+  const codexNodes = plan.nodes.filter((n) => n.agent === 'codex');
+  const claudeWorking = claudeNodes.some((n) => status(n.id) === 'working');
+  const codexWorking = codexNodes.some((n) => status(n.id) === 'working');
+  const orchestratorWorking = orchestrator ? deriveStatus(orchestrator) === 'working' : false;
+  const anyWorking = claudeWorking || codexWorking || orchestratorWorking;
+  const workingCount = plan.nodes.filter((n) => status(n.id) === 'working').length;
+  const needsCount = plan.nodes.filter((n) => status(n.id) === 'needs_you').length;
+  const reviewCount = plan.nodes.filter(
+    (n) => status(n.id) === 'in_review' || status(n.id) === 'ready_to_merge',
+  ).length;
+  const mergedCount = plan.nodes.filter((n) => status(n.id) === 'merged').length;
 
   return (
     <div className={s.view}>
       <DecisionBar plan={plan} client={client} isLive={isLive} />
+      <div className={s.observatoryBar} aria-label="Plan strand summary">
+        <div className={s.strandSummary}>
+          <span className={s.strandChip}>
+            <AgentBadge agent="claude-code" active={claudeWorking} />
+            <span className={s.strandCount}>
+              {claudeNodes.length} {claudeNodes.length === 1 ? 'task' : 'tasks'}
+            </span>
+          </span>
+          <span className={s.strandChip}>
+            <AgentBadge agent="codex" active={codexWorking} />
+            <span className={s.strandCount}>
+              {codexNodes.length} {codexNodes.length === 1 ? 'task' : 'tasks'}
+            </span>
+          </span>
+        </div>
+        <div className={s.statusSummary}>
+          <span className={s.statItem}>
+            <StatusDot status="working" />
+            <span>{workingCount} working</span>
+          </span>
+          <span className={s.statItem}>
+            <StatusDot status="needs_you" />
+            <span>{needsCount} needs you</span>
+          </span>
+          <span className={s.statItem}>
+            <StatusDot status="in_review" />
+            <span>{reviewCount} in review</span>
+          </span>
+          <span className={s.statItem}>
+            <StatusDot status="merged" />
+            <span>
+              {mergedCount}/{plan.nodes.length} merged
+            </span>
+          </span>
+        </div>
+      </div>
       <div className={s.scroller}>
         <div className={s.canvas} style={{ width: graph.width, height: graph.height }}>
           <svg className={s.edges} width={graph.width} height={graph.height} aria-hidden>
@@ -226,6 +278,7 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
               const sources = p.node.dependsOn.length
                 ? p.node.dependsOn.map((d) => pos.get(d)).filter((x): x is Placed => !!x)
                 : [undefined];
+              const edgeStrand = agentMeta(p.node.agent).colorVar;
               return sources.map((src) => {
                 const x1 = src ? src.x + NODE_W : ROOT_W;
                 const y1 = src ? src.y + NODE_H / 2 : rootY;
@@ -233,7 +286,10 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                 const flowing = done && isActive(status(p.node.id));
                 const d = curve(x1, y1, p.x, targetY);
                 return (
-                  <g key={`${src?.node.id ?? 'root'}-${p.node.id}`}>
+                  <g
+                    key={`${src?.node.id ?? 'root'}-${p.node.id}`}
+                    style={{ '--edge-strand': edgeStrand } as CSSProperties}
+                  >
                     <path d={d} className={cx(s.edge, done && s.edgeDone)} />
                     {flowing && <path d={d} className={s.flow} />}
                   </g>
@@ -249,13 +305,14 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
             onClick={() => onSelect(plan.orchestratorSessionId)}
           >
             <span className={s.rootLabel}>
-              <Sparkles size={12} aria-hidden /> Plan
+              <HelixLogo size={14} active={anyWorking} /> Plan
             </span>
             <p className={s.goal}>{plan.goal}</p>
-            {orchestrator && <AgentBadge agent={orchestrator.session.agent} />}
+            {orchestrator && (
+              <AgentBadge agent={orchestrator.session.agent} active={orchestratorWorking} />
+            )}
             <span className={s.count}>
-              {plan.nodes.filter((n) => status(n.id) === 'merged').length}/{plan.nodes.length}{' '}
-              merged
+              {mergedCount}/{plan.nodes.length} merged
             </span>
           </button>
 
@@ -297,7 +354,7 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                   data-status={st}
                 >
                   <span className={s.nodeHead}>
-                    <AgentBadge agent={node.agent} />
+                    <AgentBadge agent={node.agent} active={st === 'working'} />
                     {node.dependsOn.length > 0 && (
                       <span className={s.deps}>after {node.dependsOn.length}</span>
                     )}

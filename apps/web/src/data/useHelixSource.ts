@@ -12,6 +12,7 @@ import {
 } from './recordings';
 
 export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
+export type DemoPreset = 'multi-agent' | 'github-ci-repair' | 'custom';
 
 export interface HelixSource {
   mode: SourceMode;
@@ -26,6 +27,10 @@ export interface HelixSource {
   addProject: (repoPath: string) => Promise<void>;
   /** Demo mode: the recording being replayed (undefined while playing the built-in example). */
   recording?: Pick<Recording, 'name' | 'header'>;
+  /** Active demo preset ('multi-agent' example vs bundled 'github-ci-repair' vs 'custom' uploaded .helixlog). */
+  demoPreset?: DemoPreset;
+  /** Switch between the multi-agent Flow Observatory run and the recorded GitHub CI loop. */
+  selectDemoPreset?: (preset: 'multi-agent' | 'github-ci-repair') => void;
   /** Why a requested recording could not be played (the built-in example plays instead). */
   recordingError?: string;
   /** Replays a local .helixlog file in the browser; works in any mode, no daemon needed. */
@@ -40,8 +45,15 @@ const client = createHelixClient({ baseUrl: window.location.origin });
 const params = new URLSearchParams(window.location.search);
 const staticBuild = import.meta.env.VITE_HELIX_STATIC === '1';
 const forceDemo = staticBuild || params.has('demo');
-/** `?demo=<name>` picks a bundled recording; plain `?demo` (or the static build) uses the default. */
-const requestedRecording = params.get('demo') || undefined;
+/**
+ * `?demo=<name>` picks a bundled recording; `?demo` or static build defaults to the multi-agent
+ * Flow Observatory run (`acme-web`), with `github-ci-repair` one click away in RecordingControl.
+ */
+const rawDemoParam = params.get('demo') || undefined;
+const requestedRecording =
+  rawDemoParam && rawDemoParam !== 'multi-agent' && rawDemoParam !== 'example'
+    ? rawDemoParam
+    : undefined;
 
 /**
  * Picks the data source. If a Helix daemon answers, show the real project (live events over SSE,
@@ -56,31 +68,50 @@ export function useHelixSource(): HelixSource {
   const [stream, setStream] = useState<EventStreamStatus>('connecting');
   const [error, setError] = useState<string>();
   const [recording, setRecording] = useState<Recording>();
+  const [demoPreset, setDemoPreset] = useState<DemoPreset>(
+    requestedRecording ? 'github-ci-repair' : 'multi-agent',
+  );
   const [recordingError, setRecordingError] = useState<string>();
   const demoRun = recording?.events ?? fixtures.passwordResetRun;
   const demoEvents = useDemoStream(demoRun, recording ? { startAt: replayStart(demoRun) } : {});
 
-  // Demo mode replays a real recorded run when one is bundled with the site.
+  // Demo mode loads a named .helixlog recording when requested via URL or preset toggle.
   useEffect(() => {
-    if (mode !== 'demo' || recording) return;
+    if (mode !== 'demo') return;
+    if (demoPreset === 'multi-agent') {
+      setRecording(undefined);
+      return;
+    }
+    if (demoPreset === 'custom' || recording) return;
+    const targetName = requestedRecording ?? DEFAULT_RECORDING;
     let cancelled = false;
-    fetchRecording(requestedRecording ?? DEFAULT_RECORDING)
+    fetchRecording(targetName)
       .then((r) => !cancelled && setRecording(r))
       .catch((e: unknown) => {
-        // A missing default is fine (the built-in example plays); a named one is worth saying.
-        if (!cancelled && requestedRecording)
-          setRecordingError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setRecordingError(e instanceof Error ? e.message : String(e));
       });
     return () => {
       cancelled = true;
     };
-  }, [mode, recording]);
+  }, [mode, demoPreset, recording]);
+
+  const selectDemoPreset = useCallback((preset: 'multi-agent' | 'github-ci-repair') => {
+    setRecordingError(undefined);
+    if (preset === 'multi-agent') {
+      setRecording(undefined);
+      setDemoPreset('multi-agent');
+    } else {
+      setRecording(undefined);
+      setDemoPreset('github-ci-repair');
+    }
+  }, []);
 
   const openRecording = useCallback(async (file: File) => {
     try {
       const r = await openRecordingFile(file);
       setRecordingError(undefined);
       setRecording(r);
+      setDemoPreset('custom');
       setMode('demo');
     } catch (e) {
       setRecordingError(e instanceof Error ? e.message : String(e));
@@ -179,6 +210,8 @@ export function useHelixSource(): HelixSource {
         selectProject,
         addProject,
         openRecording,
+        demoPreset,
+        selectDemoPreset,
         staticBuild,
         ...(recording ? { recording: { name: recording.name, header: recording.header } } : {}),
         ...(recordingError ? { recordingError } : {}),
@@ -207,6 +240,8 @@ export function useHelixSource(): HelixSource {
     selectProject,
     addProject,
     openRecording,
+    demoPreset,
+    selectDemoPreset,
     recording,
     recordingError,
     error,

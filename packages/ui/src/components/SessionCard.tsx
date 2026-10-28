@@ -41,7 +41,7 @@ export function SessionCard({
       {/* The whole card is the hit target; the button stretches over it, actions sit above it. */}
       <button type="button" className={s.hit} onClick={onOpen} aria-label={`Open ${title}`} />
       <header className={s.head}>
-        <AgentBadge agent={agent} />
+        <AgentBadge agent={agent} active={status === 'working'} />
         {updated && <time className={s.time}>{updated}</time>}
       </header>
       <h3 className={s.title}>{title}</h3>

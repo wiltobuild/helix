@@ -1,0 +1,105 @@
+.logo {
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+  overflow: visible;
+}
+
+.tile {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+}
+
+.rung {
+  stroke: var(--border-strong);
+  opacity: 0.75;
+}
+
+.strandClaude {
+  stroke: var(--strand-claude);
+}
+
+.strandCodex {
+  stroke: var(--strand-codex);
+}
+
+.nodeClaude {
+  fill: var(--strand-claude);
+}
+
+.nodeCodex {
+  fill: var(--strand-codex);
+}
+
+.nodeA,
+.nodeB {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes helixRungPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    stroke-width: 1.4;
+  }
+  50% {
+    opacity: 0.95;
+    stroke-width: 2;
+  }
+}
+
+@keyframes helixNodeA {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    transform: translateX(1.5px) scale(1.12);
+  }
+}
+
+@keyframes helixNodeB {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    transform: translateX(-1.5px) scale(1.12);
+  }
+}
+
+.logo[data-active='true'] .rung1 {
+  animation: helixRungPulse 2s var(--ease-in-out) infinite 0s;
+}
+
+.logo[data-active='true'] .rung2 {
+  animation: helixRungPulse 2s var(--ease-in-out) infinite 0.35s;
+}
+
+.logo[data-active='true'] .rung3 {
+  animation: helixRungPulse 2s var(--ease-in-out) infinite 0.7s;
+}
+
+.logo[data-active='true'] .rung4 {
+  animation: helixRungPulse 2s var(--ease-in-out) infinite 1.05s;
+}
+
+.logo[data-active='true'] .nodeA {
+  animation: helixNodeA 2.2s var(--ease-in-out) infinite;
+}
+
+.logo[data-active='true'] .nodeB {
+  animation: helixNodeB 2.2s var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo[data-active='true'] .rung1,
+  .logo[data-active='true'] .rung2,
+  .logo[data-active='true'] .rung3,
+  .logo[data-active='true'] .rung4,
+  .logo[data-active='true'] .nodeA,
+  .logo[data-active='true'] .nodeB {
+    animation: none;
+  }
+}
