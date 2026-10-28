@@ -16,7 +16,9 @@ Every task must include:
 - `files`: a non-empty array of repository-relative globs expected to be touched,
   using forward slashes, without absolute paths or `..` traversal.
 - `dependsOn`: an array of prerequisite task ids (empty for independent roots).
-- `agent`: `codex` unless the user specifies otherwise.
+- `agent`: exactly `codex` or `claude-code` (these are the only valid IDs;
+  "Claude" or "Claude Code" means `claude-code`). Use `codex` unless the user
+  specifies otherwise.
 - `rationale`: one line explaining why this task belongs in the plan.
 
 Never let two parallel tasks claim overlapping files. Either order them with
