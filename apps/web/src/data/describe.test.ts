@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { fixtures, helixEventSchema, projectUpTo } from '@helix/contracts';
 import {
+  boardCards,
   describeEvent,
   eventTone,
   provenance,
@@ -107,3 +108,68 @@ test.each([true, false])(
     expect(provenance(event, project)).toBe('helix');
   },
 );
+
+test('statusLine distinguishes starting, thinking, running tools, and idle states', () => {
+  const project = state();
+  const session = project.sessions[ids.api]!;
+
+  session.activity = 'starting';
+  session.chat = [];
+  expect(statusLine(session, 'working', project)).toBe('Starting up');
+
+  session.activity = 'active';
+  expect(statusLine(session, 'working', project)).toBe('Thinking');
+
+  session.chat.push({
+    kind: 'reasoning_summary',
+    text: 'Checking token expiration boundary conditions',
+  });
+  expect(statusLine(session, 'working', project)).toBe(
+    'Thinking · Checking token expiration bound…',
+  );
+
+  session.chat.push({
+    kind: 'tool_call',
+    tool: 'shell',
+    inputSummary: 'pnpm vitest run token.test.ts',
+    status: 'running',
+  });
+  expect(statusLine(session, 'working', project)).toBe('Running · pnpm vitest run token.test.ts');
+
+  session.chat.push({
+    kind: 'tool_call',
+    tool: 'shell',
+    inputSummary: 'pnpm vitest run token.test.ts',
+    status: 'succeeded',
+  });
+  expect(statusLine(session, 'working', project)).toBe('pnpm vitest run token.test.ts');
+
+  session.activity = 'idle';
+  delete session.session.planNodeId;
+  expect(statusLine(session, 'pending', project)).toBe('Idle · turn complete');
+});
+
+test('boardCards surfaces the orchestrator while planning or awaiting review', () => {
+  const bySeq = new Map(run.map((e) => [e.seq, e]));
+  const nowIso = run.at(-1)!.ts;
+
+  // At seq 5, plan is submitted and awaiting approval -> orchestrator appears under needs_you
+  const awaitingState = projectUpTo(run, 5);
+  const awaitingCards = boardCards(awaitingState, bySeq, nowIso);
+  const orchCard = awaitingCards.find((c) => c.id === ids.orchestrator);
+  expect(orchCard).toBeDefined();
+  expect(orchCard?.column).toBe('needs_you');
+  expect(orchCard?.card.statusLabel).toBe('Approve plan · 3 tasks');
+
+  // Once approved and workers are delegated (seq 44), orchestrator steps off the board unless it needs attention
+  const finalState = state();
+  expect(
+    boardCards(finalState, bySeq, nowIso).find((c) => c.id === ids.orchestrator),
+  ).toBeUndefined();
+
+  // If the orchestrator hits a turn limit or requests input, it reappears under needs_you
+  finalState.sessions[ids.orchestrator]!.turnLimited = true;
+  finalState.sessions[ids.orchestrator]!.activity = 'waiting_input';
+  const blockedOrch = boardCards(finalState, bySeq, nowIso).find((c) => c.id === ids.orchestrator);
+  expect(blockedOrch?.column).toBe('needs_you');
+});

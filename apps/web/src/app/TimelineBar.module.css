@@ -1,9 +1,12 @@
 .bar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-3) var(--space-6) var(--space-3);
   border-top: 1px solid var(--border);
   background: var(--surface);
+  overflow: hidden;
 }
 
 .caption {
@@ -181,22 +184,32 @@
 }
 
 .range::-webkit-slider-thumb {
-  width: 14px;
-  height: 14px;
-  margin-top: -6px;
+  width: 18px;
+  height: 18px;
+  margin-top: -8px;
   border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--text);
   box-shadow: 0 0 0 1px var(--text);
   appearance: none;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.range:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
 }
 
 .range::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--text);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.range:hover::-moz-range-thumb {
+  transform: scale(1.15);
 }
 
 .clock {

@@ -287,18 +287,34 @@ export function statusLine(
     return s.pr.draft ? 'Draft PR' : 'Awaiting review';
   }
   if (status === 'working') {
-    const last = [...s.chat].reverse().find((c) => c.kind === 'tool_call' || c.kind === 'message');
-    if (last?.kind === 'tool_call') return truncate(last.inputSummary, 40);
+    if (s.activity === 'starting') return 'Starting up';
+    const last = [...s.chat]
+      .reverse()
+      .find(
+        (c) => c.kind === 'tool_call' || c.kind === 'reasoning_summary' || c.kind === 'message',
+      );
+    if (last?.kind === 'tool_call') {
+      return last.status === 'running' || last.status === 'pending'
+        ? `Running · ${truncate(last.inputSummary, 32)}`
+        : truncate(last.inputSummary, 40);
+    }
+    if (last?.kind === 'reasoning_summary') {
+      return `Thinking · ${truncate(last.text, 32)}`;
+    }
     if (s.pr && s.pr.checks.failed > 0) return 'Fixing the CI failure';
-    return 'Working';
+    if (last?.kind === 'message') return 'Working';
+    return 'Thinking';
   }
-  if (status === 'pending' && s.session.planNodeId) {
-    const plan = Object.values(state.plans).find((p) =>
-      p.nodes.some((n) => n.id === s.session.planNodeId),
-    );
-    const node = plan?.nodes.find((n) => n.id === s.session.planNodeId);
-    const waiting = node?.dependsOn.filter((d) => plan?.nodeStatus[d] !== 'merged').length ?? 0;
-    if (waiting) return `Waiting on ${waiting} task${waiting > 1 ? 's' : ''}`;
+  if (status === 'pending') {
+    if (s.session.planNodeId) {
+      const plan = Object.values(state.plans).find((p) =>
+        p.nodes.some((n) => n.id === s.session.planNodeId),
+      );
+      const node = plan?.nodes.find((n) => n.id === s.session.planNodeId);
+      const waiting = node?.dependsOn.filter((d) => plan?.nodeStatus[d] !== 'merged').length ?? 0;
+      if (waiting) return `Waiting on ${waiting} task${waiting > 1 ? 's' : ''}`;
+    }
+    if (s.activity === 'idle') return 'Idle · turn complete';
   }
   return undefined;
 }
@@ -310,24 +326,46 @@ export interface BoardCard {
   card: SessionCardProps;
 }
 
-/** Worker sessions as board cards. The orchestrator lives in the plan view, not on the board. */
+/** Sessions shown as board cards. Includes workers plus orchestrators that are planning or need review. */
 export function boardCards(
   state: ProjectState,
   bySeq: ReadonlyMap<number, HelixEvent>,
   nowIso: string,
 ): BoardCard[] {
-  return Object.values(state.sessions)
-    .filter((s) => s.session.role !== 'orchestrator')
-    .map((s) => {
-      const status = deriveStatus(s);
-      const lastTs = bySeq.get(s.lastEventSeq)?.ts ?? s.session.createdAt;
-      const label = statusLine(s, status, state);
-      return {
+  const plans = Object.values(state.plans);
+  return Object.values(state.sessions).flatMap((s) => {
+    const rawStatus = deriveStatus(s);
+    const isOrchestrator = s.session.role === 'orchestrator';
+    const orchPlan = isOrchestrator
+      ? plans.find((p) => p.orchestratorSessionId === s.session.id)
+      : undefined;
+    const planNeedsReview = orchPlan?.status === 'awaiting_approval';
+    const status: DisplayStatus = planNeedsReview ? 'needs_you' : rawStatus;
+
+    if (isOrchestrator) {
+      const needsAttention =
+        planNeedsReview ||
+        rawStatus === 'needs_you' ||
+        rawStatus === 'in_review' ||
+        rawStatus === 'ci_failed' ||
+        rawStatus === 'changes_requested' ||
+        rawStatus === 'ready_to_merge';
+      const activelyPlanning = !orchPlan && (rawStatus === 'working' || rawStatus === 'pending');
+      if (!needsAttention && !activelyPlanning) return [];
+    }
+
+    const lastTs = bySeq.get(s.lastEventSeq)?.ts ?? s.session.createdAt;
+    const label = planNeedsReview
+      ? `Approve plan · ${orchPlan.nodes.length} task${orchPlan.nodes.length === 1 ? '' : 's'}`
+      : statusLine(s, status, state);
+    const title = isOrchestrator ? `Plan: ${s.session.title}` : s.session.title;
+    return [
+      {
         id: s.session.id,
         column: boardColumn(status),
         status,
         card: {
-          title: s.session.title,
+          title,
           agent: s.session.agent,
           status,
           ...(label ? { statusLabel: label } : {}),
@@ -338,6 +376,7 @@ export function boardCards(
             : {}),
           updated: relativeTo(lastTs, nowIso),
         },
-      };
-    });
+      },
+    ];
+  });
 }

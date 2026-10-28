@@ -8,10 +8,13 @@ export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
 export interface HelixSource {
   mode: SourceMode;
   events: readonly HelixEvent[];
+  /** Connected projects (live mode; empty in demo/connecting). */
+  projects: readonly Project[];
   /** Live mode only. */
   client?: HelixClient;
   project?: Project;
   stream: EventStreamStatus | 'demo';
+  selectProject: (projectId: string) => void;
   addProject: (repoPath: string) => Promise<void>;
   error?: string;
 }
@@ -27,21 +30,41 @@ const forceDemo = new URLSearchParams(window.location.search).has('demo');
  */
 export function useHelixSource(): HelixSource {
   const [mode, setMode] = useState<SourceMode>(forceDemo ? 'demo' : 'connecting');
+  const [projects, setProjects] = useState<readonly Project[]>([]);
   const [project, setProject] = useState<Project>();
   const [liveEvents, setLiveEvents] = useState<HelixEvent[]>([]);
   const [stream, setStream] = useState<EventStreamStatus>('connecting');
   const [error, setError] = useState<string>();
   const demoEvents = useDemoStream();
 
-  const loadProjects = useCallback(async () => {
-    const projects = await client.projects();
-    if (projects.length === 0) {
+  const loadProjects = useCallback(async (preferredId?: string) => {
+    const list = await client.projects();
+    setProjects(list);
+    if (list.length === 0) {
       setMode('empty');
       return;
     }
-    setProject(projects[0]);
+    setProject((prev) => {
+      if (preferredId) {
+        const match = list.find((p) => p.id === preferredId);
+        if (match) return match;
+      }
+      if (prev) {
+        const current = list.find((p) => p.id === prev.id);
+        if (current) return current;
+      }
+      return list[0];
+    });
     setMode('live');
   }, []);
+
+  const selectProject = useCallback(
+    (projectId: string) => {
+      const next = projects.find((p) => p.id === projectId);
+      if (next) setProject(next);
+    },
+    [projects],
+  );
 
   useEffect(() => {
     if (forceDemo) return;
@@ -76,14 +99,14 @@ export function useHelixSource(): HelixSource {
     async (repoPath: string) => {
       setError(undefined);
       try {
-        await client.createProject({ repoPath });
-        await loadProjects();
+        const created = await client.createProject({ repoPath });
+        await loadProjects(created.id);
       } catch (e) {
         // The project may exist even if this request failed (a dropped response, a retry of an
         // earlier add). Move on to the board whenever the daemon has a project.
         const exists = await client
           .projects()
-          .then((projects) => projects.length > 0)
+          .then((list) => list.length > 0)
           .catch(() => false);
         if (exists) {
           await loadProjects();
@@ -98,15 +121,25 @@ export function useHelixSource(): HelixSource {
 
   return useMemo<HelixSource>(() => {
     if (mode === 'demo' || mode === 'connecting')
-      return { mode, events: demoEvents, stream: 'demo', addProject, ...(error ? { error } : {}) };
+      return {
+        mode,
+        events: demoEvents,
+        projects: [],
+        stream: 'demo',
+        selectProject,
+        addProject,
+        ...(error ? { error } : {}),
+      };
     return {
       mode,
       events: liveEvents,
+      projects,
       client,
       ...(project ? { project } : {}),
       stream,
+      selectProject,
       addProject,
       ...(error ? { error } : {}),
     };
-  }, [mode, demoEvents, liveEvents, project, stream, addProject, error]);
+  }, [mode, demoEvents, liveEvents, projects, project, stream, selectProject, addProject, error]);
 }

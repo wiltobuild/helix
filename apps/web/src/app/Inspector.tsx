@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { GitBranch, GitMerge, GitPullRequest, Send, Sparkles, Terminal, X } from 'lucide-react';
+import {
+  Check,
+  GitBranch,
+  GitMerge,
+  GitPullRequest,
+  Send,
+  Sparkles,
+  Terminal,
+  X,
+} from 'lucide-react';
 import type { HelixClient } from '@helix/api-client';
 import {
   deriveStatus,
@@ -49,15 +58,23 @@ export function Inspector({
   const [tab, setTab] = useState('summary');
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
-  const status = deriveStatus(session);
   const id = session.session.id;
+  const orchPlan = Object.values(state.plans).find((p) => p.orchestratorSessionId === id);
+  const planNeedsReview = orchPlan?.status === 'awaiting_approval';
+  const rawStatus = deriveStatus(session);
+  const status = planNeedsReview ? 'needs_you' : rawStatus;
   const plan = Object.values(state.plans).find((p) =>
     p.nodes.some((n) => n.id === session.session.planNodeId),
   );
   const node = plan?.nodes.find((n) => n.id === session.session.planNodeId);
   const canAct = Boolean(client && isLive);
   const turnLimit = turnLimitNote(session);
-  const label = statusLine(session, status, state);
+  const label = planNeedsReview
+    ? `Approve plan · ${orchPlan.nodes.length} task${orchPlan.nodes.length === 1 ? '' : 's'}`
+    : statusLine(session, status, state);
+  const pendingApprovals = session.pendingApprovalIds
+    .map((aid) => state.approvals[aid])
+    .filter((a): a is NonNullable<typeof a> => Boolean(a && !a.decision));
 
   const history = useMemo(
     () => events.filter((e) => e.seq <= upTo && e.sessionId === id).reverse(),
@@ -78,6 +95,9 @@ export function Inspector({
 
   const decide = (approvalId: ApprovalId, decision: ApprovalDecision) =>
     act(`approval:${approvalId}`, () => client!.decideApproval(approvalId, { decision }));
+
+  const decidePlan = (decision: 'approve' | 'reject') =>
+    act(`plan:${decision}`, () => client!.decidePlan(orchPlan!.id, { decision }));
 
   return (
     <aside className={s.inspector} aria-label={`Session: ${session.session.title}`}>
@@ -128,6 +148,83 @@ export function Inspector({
               <SourceTag source="helix" /> {turnLimit}
             </section>
           )}
+          {orchPlan && (
+            <section className={s.approval} data-decided={planNeedsReview ? 'no' : 'yes'}>
+              <span className={s.role}>
+                Orchestrator plan · {orchPlan.nodes.length}{' '}
+                {orchPlan.nodes.length === 1 ? 'task' : 'tasks'}
+              </span>
+              <p className={s.approvalSummary}>{orchPlan.goal}</p>
+              <ul className={s.acceptance}>
+                {orchPlan.nodes.map((n) => (
+                  <li key={n.id}>
+                    <strong>{n.title}</strong> ({n.agent}) — {n.rationale}
+                  </li>
+                ))}
+              </ul>
+              {planNeedsReview ? (
+                <div className={s.approvalActions}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!canAct || Boolean(busy)}
+                    loading={busy === 'plan:reject'}
+                    onClick={() => void decidePlan('reject')}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<Check size={14} />}
+                    disabled={!canAct || Boolean(busy)}
+                    loading={busy === 'plan:approve'}
+                    onClick={() => void decidePlan('approve')}
+                  >
+                    Approve plan
+                  </Button>
+                </div>
+              ) : (
+                <p className={s.decided}>Plan {orchPlan.status}.</p>
+              )}
+            </section>
+          )}
+          {pendingApprovals.map((a) => {
+            const pending = busy === `approval:${a.id}`;
+            return (
+              <section key={a.id} className={s.approval} data-decided="no">
+                <span className={s.role}>Approval · {a.kind}</span>
+                <p className={s.approvalSummary}>{a.summary}</p>
+                <p className={s.approvalDetail}>{a.detail}</p>
+                <div className={s.approvalActions}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!canAct || pending}
+                    onClick={() => void decide(a.id, 'rejected')}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!canAct || pending}
+                    onClick={() => void decide(a.id, 'changes_requested')}
+                  >
+                    Request change
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={!canAct}
+                    loading={pending}
+                    onClick={() => void decide(a.id, 'approved')}
+                  >
+                    Approve once
+                  </Button>
+                </div>
+              </section>
+            );
+          })}
           {node && (
             <section className={s.block}>
               <h3 className={s.blockTitle}>
