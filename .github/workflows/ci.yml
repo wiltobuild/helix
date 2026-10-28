@@ -26,3 +26,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        env:
+          HELIX_DEBUG_PROCESS: '1'
+      - name: Dump Windows processes on failure or timeout
+        if: (failure() || cancelled()) && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Process |
+            Select-Object ProcessId, ParentProcessId, Name, CommandLine |
+            Sort-Object ProcessId |
+            Format-Table -AutoSize -Wrap |
+            Out-String -Width 4096
+        continue-on-error: true
+      - name: Dump Linux processes on failure or timeout
+        if: (failure() || cancelled()) && runner.os == 'Linux'
+        shell: bash
+        run: ps -ef --forest
+        continue-on-error: true

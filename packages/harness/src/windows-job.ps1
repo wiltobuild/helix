@@ -4,7 +4,7 @@
 param([Parameter(Mandatory=$true)][string]$Launch)
 $ErrorActionPreference = 'Stop'
 try {
-  Add-Type -TypeDefinition @'
+  $source = @'
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -99,7 +99,33 @@ public static class HelixProcessJob {
   }
 }
 '@
-  [HelixProcessJob]::Stage('compiled')
+  # Compiling the C# with Add-Type costs about 0.5-1.5 s per launch, more under
+  # parallel load. Cache the compiled assembly keyed by a hash of the source so
+  # only the first launch pays. Any cache failure falls back to the in-memory
+  # compile, so caching can never prevent an agent from starting.
+  $loaded = $false
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $hash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($source))) -replace '-', '').Substring(0, 16).ToLowerInvariant()
+    $cacheDirectory = Join-Path ([IO.Path]::GetTempPath()) 'helix-windows-job'
+    [void][IO.Directory]::CreateDirectory($cacheDirectory)
+    $cachedAssembly = Join-Path $cacheDirectory ('HelixProcessJob-' + $hash + '.dll')
+    if (-not (Test-Path -LiteralPath $cachedAssembly)) {
+      # Compile to a unique .dll file, then publish atomically: concurrent launches
+      # never observe a partially written assembly, and csc.exe receives a .dll path.
+      $staging = Join-Path $cacheDirectory ('HelixProcessJob-' + $hash + '-' + [Guid]::NewGuid().ToString('N') + '.dll')
+      Add-Type -TypeDefinition $source -OutputAssembly $staging
+      try { [IO.File]::Move($staging, $cachedAssembly) }
+      catch { Remove-Item -LiteralPath $staging -Force -ErrorAction SilentlyContinue }
+    }
+    [void][Reflection.Assembly]::LoadFrom($cachedAssembly)
+    $loaded = $true
+    $cacheState = 'cache'
+  } catch {
+    $cacheState = 'fallback: ' + $_.Exception.Message
+  }
+  if (-not $loaded) { Add-Type -TypeDefinition $source }
+  [HelixProcessJob]::Stage('compiled (' + $cacheState + ')')
   [HelixProcessJob]::Enter()
   [HelixProcessJob]::Stage('job entered')
   $configuration = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Launch)) | ConvertFrom-Json

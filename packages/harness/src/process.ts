@@ -229,7 +229,8 @@ export async function probe(
     });
     child.once('close', (code) => {
       clearTimeout(timer);
-      resolve({ code, text: output.trim() });
+      const cleaned = output.replace(/\[Helix process [^\]]+\] [^\r\n]+\r?\n?/g, '');
+      resolve({ code, text: cleaned.trim() });
     });
     child.stdin.on('error', () => undefined);
     child.stdin.end();

@@ -29,7 +29,8 @@
     "PSModulePath",
     "NUMBER_OF_PROCESSORS",
     "PROCESSOR_ARCHITECTURE",
-    "OS"
+    "OS",
+    "HELIX_DEBUG_PROCESS"
   ],
   "tasks": {
     "typecheck": {
