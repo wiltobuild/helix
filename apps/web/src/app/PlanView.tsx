@@ -299,7 +299,11 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                   </span>
                   <span className={s.nodeTitle}>{node.title}</span>
                   {slotWait ? (
-                    <span className={s.slotWait}>Waiting for a worker slot</span>
+                    <span className={s.slotWait}>
+                      {state.schedulingPaused
+                        ? 'Paused: scheduling is stopped'
+                        : 'Waiting for a worker slot'}
+                    </span>
                   ) : (
                     <StatusPill status={st} variant="inline" />
                   )}

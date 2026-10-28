@@ -118,6 +118,11 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         </header>
 
         <div className={s.content}>
+          {view === 'board' && state.schedulingPaused && (
+            <div className={s.slotBanner} role="status">
+              Scheduling is paused after Stop all. Approve a plan or create a task to resume.
+            </div>
+          )}
           {view === 'board' && pendingPlan && (
             <div className={s.planBanner} role="status">
               <span>
@@ -129,7 +134,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               </Button>
             </div>
           )}
-          {view === 'board' && waitingForSlot.length > 0 && (
+          {view === 'board' && !state.schedulingPaused && waitingForSlot.length > 0 && (
             <div className={s.slotBanner} role="status">
               <span>
                 <strong>

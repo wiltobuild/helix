@@ -121,7 +121,7 @@ export function Inspector({
         className={s.tabs}
       >
         <TabPanel value="summary" className={s.panel}>
-          {turnLimit && (
+          {session.turnLimited && (
             <section className={s.pastNotice} role="status">
               <strong>Turn limit reached.</strong> Helix paused this task so it can’t run away with
               time or usage. Send a message in <em>Activity</em> to let it continue.

@@ -129,6 +129,15 @@ unchanged; the fixture's file declarations are disjoint for concurrent workers.
   `session.started: {}`, `session.archived: {}`, `session.exited: {code, signal?}`.
   A null exit code means no numeric exit code was available. Start changes activity
   to `starting`; a separate activity event reports `active`.
+- Guardrails are structured: optional `explain.note.code` is `turn_limit_reached`
+  or `turn_limit_extended`. `SessionState.turnLimited` defaults to false; reaching
+  the cap sets it, and extension, a user message, or active activity clears it.
+  Optional `plan.node_updated.waiting: 'worker_slot'` sets `PlanState.waitingNodes`;
+  an update without waiting or a session assignment clears that node's entry.
+  Legacy notes still parse but their text does not set projection flags.
+- `scheduling.changed: {paused: boolean}` is project-level (no session or plan
+  node). It sets `ProjectState.schedulingPaused`, initially false. Stop all has no
+  cause; resume events link to the new session creation or plan approval.
 - Chat tool calls use `inputSummary`, `outputSummary?`, and
   `status: pending | running | succeeded | failed`. `plan_update` carries
   `{planId, nodeId?, text}`. Questions carry string options. These are summaries,

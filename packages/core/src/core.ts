@@ -311,11 +311,23 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       states.set(p.id, recovered.state);
       // Invalid events stay in storage but must never be replayed as deliveries.
       history.set(p.id, recovered.events);
-      if (await deps.store.getMeta(SCHEDULING_SCOPE, p.id)) pausedProjects.add(p.id);
+      const scheduling = recovered.events.findLast((e) => e.type === 'scheduling.changed');
+      // Older logs have no scheduling event; keep recovering their persisted pause metadata.
+      const paused =
+        scheduling?.type === 'scheduling.changed'
+          ? scheduling.payload.paused
+          : await deps.store.getMeta(SCHEDULING_SCOPE, p.id);
+      if (paused) pausedProjects.add(p.id);
       const heads = new Map<SessionId, string>();
       for (const e of recovered.events) {
         if (e.type === 'explain.note' && e.sessionId) {
-          if (e.payload.text.startsWith('Turn limit reached (') && e.causedBy)
+          // Text fallback preserves recovery of logs written before structured guardrails.
+          if (
+            (e.payload.code === 'turn_limit_reached' ||
+              (e.payload.code === undefined &&
+                e.payload.text.startsWith('Turn limit reached ('))) &&
+            e.causedBy
+          )
             cappedDeliveries.add(e.causedBy);
         }
         if (
@@ -332,9 +344,17 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         }
         if (e.type === 'plan.node_updated') {
           const key = JSON.stringify([p.id, e.payload.nodeId]);
-          if (e.payload.note?.startsWith('Waiting: ')) waitingNodes.add(key);
+          // Text fallback preserves recovery of logs written before structured guardrails.
+          if (
+            !e.payload.sessionId &&
+            (e.payload.waiting === 'worker_slot' ||
+              (e.payload.waiting === undefined && e.payload.note?.startsWith('Waiting: ')))
+          )
+            waitingNodes.add(key);
           else waitingNodes.delete(key);
         }
+        if (e.type === 'session.created' && e.payload.session.planNodeId)
+          waitingNodes.delete(JSON.stringify([p.id, e.payload.session.planNodeId]));
         if (await deps.store.getMeta(TURN_SCOPE, String(e.seq))) turnReceipts.add(e.seq);
         if ((e.type === 'pr.opened' || e.type === 'pr.updated') && e.sessionId)
           heads.set(e.sessionId, e.payload.pr.headSha);
@@ -444,7 +464,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         turnLimits.set(id, limit);
         await emit(
           'explain.note',
-          { text: `${EXTENSION_PREFIX}${limit} turns by user message.` },
+          {
+            text: `${EXTENSION_PREFIX}${limit} turns by user message.`,
+            code: 'turn_limit_extended',
+          },
           context(s.session, delivery.cause),
         );
       }
@@ -456,6 +479,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           'explain.note',
           {
             text: `Turn limit reached (${turnLimit(id)} turns). Helix paused this task; send a message to continue for another ${maxTurnsPerTask}.`,
+            code: 'turn_limit_reached',
           },
           context(s.session, delivery.cause),
         );
@@ -1037,6 +1061,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
               {
                 nodeId: node.id,
                 note: `Waiting: ${occupied} of ${maxParallelWorkers} worker slots are in use.`,
+                waiting: 'worker_slot',
               },
               {
                 ...context(session(plan.orchestratorSessionId).session, cause),
@@ -1241,6 +1266,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         const created = await create(project(id).project, input, key);
         const creation = eventsFor(created).find((e) => e.type === 'session.created')!;
         if (pausedProjects.has(id) && creation.seq > before) {
+          await emit(
+            'scheduling.changed',
+            { paused: false },
+            { projectId: id, causedBy: creation.seq },
+          );
           await deps.store.setMeta(SCHEDULING_SCOPE, id, false);
           pausedProjects.delete(id);
           await schedule(id, creation.seq);
@@ -1268,6 +1298,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       command(async () => {
         const p = project(id);
         // Persist before stopping: exits and later SCM callbacks must not restart workers.
+        await emit('scheduling.changed', { paused: true }, { projectId: id });
         await deps.store.setMeta(SCHEDULING_SCOPE, id, true);
         pausedProjects.add(id);
         const stopped: SessionId[] = [];
@@ -1426,6 +1457,12 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         const ctx = context(session(plan.orchestratorSessionId).session, submitted?.seq);
         if (status === 'approved') {
           const approved = await emit('plan.approved', { planId, approvedBy: 'human' }, ctx);
+          if (pausedProjects.has(plan.projectId))
+            await emit(
+              'scheduling.changed',
+              { paused: false },
+              { projectId: plan.projectId, causedBy: approved.seq },
+            );
           await deps.store.setMeta(SCHEDULING_SCOPE, plan.projectId, false);
           pausedProjects.delete(plan.projectId);
           await schedule(plan.projectId, approved.seq);
