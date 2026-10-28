@@ -1,9 +1,77 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
-import { killLiveProcesses, killTree, spawnExecutable } from './process.js';
+import {
+  killLiveProcesses,
+  killTree,
+  prepareSupervisorAssembly,
+  spawnExecutable,
+} from './process.js';
+import type { HarnessOptions } from './options.js';
+
+/** Runs a tiny node child through the supervisor with stage markers on; returns its output. */
+async function supervise(options: HarnessOptions) {
+  const child = spawnExecutable(process.execPath, ['-e', "process.stdout.write('ok')"], {
+    ...options,
+    env: { ...options.env, HELIX_DEBUG_PROCESS: '1' },
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (c: Buffer) => (stdout += c.toString('utf8')));
+  child.stderr.on('data', (c: Buffer) => (stderr += c.toString('utf8')));
+  child.stdin.on('error', () => undefined);
+  child.stdin.end();
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', resolve);
+  });
+  return { stdout, stderr, code };
+}
+const windowsOnly = it.skipIf(process.platform !== 'win32');
+
+windowsOnly(
+  'loads the supervisor assembly only after verifying it against the in-memory hash (#36)',
+  async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'helix-supervisor-'));
+    const prepared = await prepareSupervisorAssembly(dataDir);
+    expect(prepared?.assembly.startsWith(join(dataDir, 'cache', 'windows-job'))).toBe(true);
+    expect(prepared?.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const run = await supervise({ dataDir });
+    expect(run).toMatchObject({ stdout: 'ok', code: 0 });
+    expect(run.stderr).toContain('compiled (verified cache)');
+  },
+  60_000,
+);
+
+windowsOnly(
+  'falls back to an in-memory compile when the cached assembly was tampered with (#36)',
+  async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'helix-supervisor-'));
+    const prepared = await prepareSupervisorAssembly(dataDir);
+    await appendFile(prepared!.assembly, Buffer.from([0]));
+    const run = await supervise({ dataDir });
+    expect(run).toMatchObject({ stdout: 'ok', code: 0 });
+    expect(run.stderr).toContain('compiled (fallback: hash mismatch)');
+    expect(run.stderr).not.toContain('compiled (verified cache)');
+  },
+  60_000,
+);
+
+windowsOnly(
+  'compiles in memory without a data dir and never writes a cache under %TEMP% (#36)',
+  async () => {
+    const legacy = join(tmpdir(), 'helix-windows-job');
+    const before = await stat(legacy).catch(() => undefined);
+    const run = await supervise({});
+    expect(run).toMatchObject({ stdout: 'ok', code: 0 });
+    expect(run.stderr).toContain('compiled (in-memory)');
+    const after = await stat(legacy).catch(() => undefined);
+    expect(after?.mtimeMs).toBe(before?.mtimeMs);
+  },
+  60_000,
+);
 
 const executable = fileURLToPath(new URL('./__fixtures__/pipe-cli.cjs', import.meta.url));
 
