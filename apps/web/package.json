@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
-    "test": "vitest run --config ../../vitest.config.ts --project @helix/web"
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/web",
+    "build:demo": "tsc --noEmit && vite build --mode demo --outDir dist-demo"
   },
   "dependencies": {
     "@helix/api-client": "workspace:*",

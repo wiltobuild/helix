@@ -19,6 +19,7 @@ import { useHelixSource, type HelixSource } from '../data/useHelixSource';
 import { useRun } from '../data/useRun';
 import { boardCards, slotWaiting, type BoardCard } from '../data/describe';
 import { StopAll, runningAgents } from './StopAll';
+import { RecordingControl } from './RecordingControl';
 import { Sidebar } from './Sidebar';
 import { Board } from './Board';
 import { TimelineBar } from './TimelineBar';
@@ -115,6 +116,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
             </span>
           </div>
           <div className={s.actions}>
+            {!live && <RecordingControl source={source} />}
             <Segmented
               label="View"
               value={view}
