@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 import { fixtures } from '@helix/contracts';
-import { launcherContents, sessionEnvironment } from './helix-launcher.js';
+import { GIT_BASH_SHIM, launcherContents, sessionEnvironment } from './helix-launcher.js';
 import { createRealCore } from './real-core.js';
 import { startDaemon } from './lifecycle.js';
 
@@ -92,6 +92,20 @@ test('startup writes an executable launcher that discovers the test daemon and r
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toEqual(expect.any(Object));
     expect(result.stdout).not.toContain('error');
+    if (process.platform === 'win32') {
+      // Claude Code's Bash tool is Git Bash: plain `helix` must resolve there too.
+      expect(await readFile(join(dataDir, 'bin', 'helix'), 'utf8')).toBe(GIT_BASH_SHIM);
+      const bash = await exec('bash', ['-c', 'helix --json status'], {
+        env: {
+          ...childEnv,
+          PATH: `${join(dataDir, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
+        },
+        cwd: dataDir,
+        windowsHide: true,
+        timeout: 20_000,
+      });
+      expect(JSON.parse(bash.stdout)).toEqual(expect.any(Object));
+    }
   } finally {
     if (daemon) await daemon.stop();
     else await core.shutdown();

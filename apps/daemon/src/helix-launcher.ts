@@ -28,16 +28,8 @@ export function launcherContents(root: string, platform = process.platform): str
   return '#!/bin/sh\nexec ' + quote(tsx) + ' ' + quote(cli) + ' "$@"\n';
 }
 
-export async function writeHelixLauncher(dataDir: string): Promise<void> {
-  const windows = process.platform === 'win32';
-  await access(join(workspace, 'node_modules', '.bin', windows ? 'tsx.cmd' : 'tsx'));
-  await access(join(workspace, 'apps', 'cli', 'src', 'main.ts'));
-  const bin = join(resolve(dataDir), 'bin');
-  await mkdir(bin, { recursive: true });
-  const launcher = join(bin, windows ? 'helix.cmd' : 'helix');
-  await writeFile(launcher, launcherContents(workspace), { mode: 0o755 });
-  if (!windows) await chmod(launcher, 0o755);
-}
+/** Extensionless launcher for POSIX shells on Windows (Git Bash, MSYS); forwards to helix.cmd. */
+export const GIT_BASH_SHIM = '#!/bin/sh\nexec "$(dirname "$0")/helix.cmd" "$@"\n';
 
 export function sessionEnvironment(dataDir: string, base: NodeJS.ProcessEnv) {
   const readPath = (env: NodeJS.ProcessEnv) =>
@@ -64,4 +56,17 @@ export function sessionEnvironment(dataDir: string, base: NodeJS.ProcessEnv) {
           PATH: join(resolve(dataDir), 'bin') + (basePath ? delimiter + basePath : ''),
         }
       : undefined;
+}
+
+export async function writeHelixLauncher(dataDir: string): Promise<void> {
+  const windows = process.platform === 'win32';
+  await access(join(workspace, 'node_modules', '.bin', windows ? 'tsx.cmd' : 'tsx'));
+  await access(join(workspace, 'apps', 'cli', 'src', 'main.ts'));
+  const bin = join(resolve(dataDir), 'bin');
+  await mkdir(bin, { recursive: true });
+  const launcher = join(bin, windows ? 'helix.cmd' : 'helix');
+  await writeFile(launcher, launcherContents(workspace), { mode: 0o755 });
+  if (!windows) await chmod(launcher, 0o755);
+  // Claude Code runs commands in Git Bash on Windows, which does not resolve `helix` to helix.cmd.
+  if (windows) await writeFile(join(bin, 'helix'), GIT_BASH_SHIM, { mode: 0o755 });
 }
