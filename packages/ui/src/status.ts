@@ -59,6 +59,7 @@ export interface AgentMeta {
 
 const knownAgents: Record<string, AgentMeta> = {
   'claude-code': { label: 'Claude Code', short: 'claude', colorVar: 'var(--strand-claude)' },
+  claude: { label: 'Claude Code', short: 'claude', colorVar: 'var(--strand-claude)' },
   codex: { label: 'Codex', short: 'codex', colorVar: 'var(--strand-codex)' },
 };
 
