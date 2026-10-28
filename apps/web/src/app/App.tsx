@@ -344,7 +344,7 @@ function SearchDialog({
               <StatusDot status={c.status} />
               <span className={s.searchItemTitle}>{c.card.title}</span>
               {c.card.branch && <span className={s.searchItemMeta}>{c.card.branch}</span>}
-              <AgentBadge agent={c.card.agent} />
+              <AgentBadge agent={c.card.agent} active={c.status === 'working'} />
             </button>
           ))}
           {matches.length === 0 && (

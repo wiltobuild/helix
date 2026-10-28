@@ -106,6 +106,7 @@ export function Inspector({
           <AgentBadge
             agent={session.session.agent}
             variant="full"
+            active={status === 'working'}
             {...(session.session.model ? { model: session.session.model } : {})}
           />
           <IconButton

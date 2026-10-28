@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { FolderGit2 } from 'lucide-react';
-import { Button, EmptyState, TextField } from '@helix/ui';
+import { Button, EmptyState, HelixLogo, TextField } from '@helix/ui';
 import s from './Onboarding.module.css';
 
 /** First run against a real daemon with no projects yet. */
@@ -29,7 +29,10 @@ export function Onboarding({
 
   return (
     <div className={s.wrap}>
-      <span className={s.wordmark}>helix</span>
+      <div className={s.brand}>
+        <HelixLogo size={38} active />
+        <span className={s.wordmark}>helix</span>
+      </div>
       <EmptyState
         icon={<FolderGit2 size={18} />}
         title="Add your first project"

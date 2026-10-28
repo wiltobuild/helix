@@ -7,6 +7,12 @@
   padding: var(--space-8) var(--space-4);
 }
 
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .wordmark {
   font: 700 40px / 1 var(--font-display);
   letter-spacing: -0.03em;

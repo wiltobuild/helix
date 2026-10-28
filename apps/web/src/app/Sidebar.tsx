@@ -1,5 +1,5 @@
 import { Bell, FolderGit2, Search, Settings } from 'lucide-react';
-import { Kbd, SectionLabel, StatusDot, cx } from '@helix/ui';
+import { HelixLogo, Kbd, SectionLabel, StatusDot, cx } from '@helix/ui';
 import type { Project } from '@helix/contracts';
 import type { BoardCard } from '../data/describe';
 import s from './Sidebar.module.css';
@@ -30,9 +30,11 @@ export function Sidebar({
 }: SidebarProps) {
   const active = cards.filter((c) => c.column !== 'archive');
   const done = cards.filter((c) => c.column === 'archive');
+  const hasWorking = active.some((c) => c.status === 'working');
   return (
     <nav className={s.sidebar} aria-label="Workspace">
       <div className={s.brand}>
+        <HelixLogo size={22} active={hasWorking} />
         <span className={s.wordmark}>helix</span>
         {demo && <span className={s.demo}>demo</span>}
         {stream && (

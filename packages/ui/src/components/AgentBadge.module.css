@@ -9,9 +9,9 @@
 
 .glyph {
   flex: none;
-  width: 12px;
-  height: 12px;
-  fill: var(--agent);
+  width: 14px;
+  height: 14px;
+  overflow: visible;
 }
 
 .short {
@@ -27,4 +27,132 @@
 .model {
   color: var(--text-3);
   font-weight: 400;
+}
+
+/* ---- Codex Hex-Knot Spin ---- */
+.codexRotor {
+  transform-origin: 16px 16px;
+}
+
+.codexHex {
+  stroke: var(--agent);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-dasharray: 8 4;
+}
+
+.codexLinks {
+  stroke: var(--agent);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+.codexCore {
+  fill: var(--agent);
+  transform-origin: 16px 16px;
+}
+
+@keyframes codexSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes codexCorePulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+.root[data-active='true'] .codexRotor {
+  animation: codexSpin 3.6s linear infinite;
+}
+
+.root[data-active='true'] .codexCore {
+  animation: codexCorePulse 1.8s var(--ease-in-out) infinite;
+}
+
+/* ---- Claude Sunburst Ray Ripple Wave ---- */
+.claudeRays {
+  stroke: var(--agent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.claudeRay {
+  transform-origin: 16px 16px;
+}
+
+.claudeCore {
+  fill: var(--agent);
+}
+
+@keyframes claudeRayRipple {
+  0%,
+  100% {
+    opacity: 0.42;
+    stroke-width: 2;
+  }
+  45% {
+    opacity: 1;
+    stroke-width: 3;
+  }
+  75% {
+    opacity: 0.68;
+    stroke-width: 2.3;
+  }
+}
+
+.root[data-active='true'] .ray0 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0s;
+}
+.root[data-active='true'] .ray1 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.13s;
+}
+.root[data-active='true'] .ray2 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.26s;
+}
+.root[data-active='true'] .ray3 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.39s;
+}
+.root[data-active='true'] .ray4 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.52s;
+}
+.root[data-active='true'] .ray5 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.65s;
+}
+.root[data-active='true'] .ray6 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.78s;
+}
+.root[data-active='true'] .ray7 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 0.91s;
+}
+.root[data-active='true'] .ray8 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 1.04s;
+}
+.root[data-active='true'] .ray9 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 1.17s;
+}
+.root[data-active='true'] .ray10 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 1.3s;
+}
+.root[data-active='true'] .ray11 {
+  animation: claudeRayRipple 1.56s var(--ease-in-out) infinite 1.43s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root[data-active='true'] .codexRotor,
+  .root[data-active='true'] .codexCore,
+  .root[data-active='true'] .claudeRay {
+    animation: none;
+  }
 }

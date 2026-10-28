@@ -18,6 +18,7 @@ import {
   Button,
   Dialog,
   EmptyState,
+  HelixLogo,
   IconButton,
   Kbd,
   Menu,
@@ -111,6 +112,7 @@ export function Showcase() {
     <div className={s.page}>
       <header className={s.top}>
         <div className={s.brand}>
+          <HelixLogo size={24} active />
           <span className={s.wordmark}>helix</span>
           <span className={s.tag}>design system · v0</span>
         </div>
@@ -201,12 +203,12 @@ export function Showcase() {
           note="Two strands. Claude orange is Claude Code, teal is Codex."
         >
           <div className={s.wrap}>
-            <AgentBadge agent="claude-code" variant="full" model="opus" />
-            <AgentBadge agent="codex" variant="full" model="gpt-6-astra" />
+            <AgentBadge agent="claude-code" variant="full" model="opus" active />
+            <AgentBadge agent="codex" variant="full" model="gpt-6-astra" active />
             <AgentBadge agent="claude-code" />
             <AgentBadge agent="codex" />
-            <AgentBadge agent="claude-code" variant="glyph" />
-            <AgentBadge agent="codex" variant="glyph" />
+            <AgentBadge agent="claude-code" variant="glyph" active />
+            <AgentBadge agent="codex" variant="glyph" active />
           </div>
         </Section>
 
