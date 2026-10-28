@@ -33,6 +33,41 @@
   border-color: color-mix(in srgb, var(--status-needs) 45%, var(--border));
 }
 
+/* Working cards breathe with the same subtle halo as PlanView so active models stand out. */
+.card[data-status='working'] {
+  border-color: color-mix(in srgb, var(--status-working) 45%, var(--border));
+}
+
+.card[data-status='working']::after,
+.card[data-status='needs_you']::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 0 var(--card-pulse-color, var(--status-working));
+  animation: cardBreathe 2.4s var(--ease-in-out) infinite;
+  pointer-events: none;
+}
+
+.card[data-status='needs_you']::after {
+  --card-pulse-color: var(--status-needs);
+}
+
+@keyframes cardBreathe {
+  50% {
+    box-shadow: 0 0 0 4px
+      color-mix(in srgb, var(--card-pulse-color, var(--status-working)) 18%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .card[data-status='working']::after,
+  .card[data-status='needs_you']::after {
+    animation: none;
+  }
+}
+
 .hit {
   position: absolute;
   inset: 0;

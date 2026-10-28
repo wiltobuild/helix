@@ -10,6 +10,8 @@ interface SidebarProps {
   needsYou: number;
   selected: string | null;
   onSelect: (id: string) => void;
+  onSearch?: () => void;
+  onSettings?: () => void;
   demo?: boolean;
   /** Live event stream status (live mode only). */
   stream?: 'connecting' | 'live' | 'reconnecting' | 'closed';
@@ -21,6 +23,8 @@ export function Sidebar({
   needsYou,
   selected,
   onSelect,
+  onSearch,
+  onSettings,
   demo,
   stream,
 }: SidebarProps) {
@@ -38,7 +42,7 @@ export function Sidebar({
         )}
       </div>
 
-      <button type="button" className={s.search}>
+      <button type="button" className={s.search} onClick={onSearch}>
         <Search size={14} aria-hidden />
         <span>Search</span>
         <Kbd>⌘K</Kbd>
@@ -82,7 +86,7 @@ export function Sidebar({
       </div>
 
       <div className={s.footer}>
-        <button type="button" className={s.item}>
+        <button type="button" className={s.item} onClick={onSettings}>
           <Settings size={15} aria-hidden />
           <span>Settings</span>
         </button>

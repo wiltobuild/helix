@@ -107,3 +107,43 @@ test.each([true, false])(
     expect(provenance(event, project)).toBe('helix');
   },
 );
+
+test('statusLine distinguishes starting, thinking, running tools, and idle states', () => {
+  const project = state();
+  const session = project.sessions[ids.api]!;
+
+  session.activity = 'starting';
+  session.chat = [];
+  expect(statusLine(session, 'working', project)).toBe('Starting up');
+
+  session.activity = 'active';
+  expect(statusLine(session, 'working', project)).toBe('Thinking');
+
+  session.chat.push({
+    kind: 'reasoning_summary',
+    text: 'Checking token expiration boundary conditions',
+  });
+  expect(statusLine(session, 'working', project)).toBe(
+    'Thinking · Checking token expiration bound…',
+  );
+
+  session.chat.push({
+    kind: 'tool_call',
+    tool: 'shell',
+    inputSummary: 'pnpm vitest run token.test.ts',
+    status: 'running',
+  });
+  expect(statusLine(session, 'working', project)).toBe('Running · pnpm vitest run token.test.ts');
+
+  session.chat.push({
+    kind: 'tool_call',
+    tool: 'shell',
+    inputSummary: 'pnpm vitest run token.test.ts',
+    status: 'succeeded',
+  });
+  expect(statusLine(session, 'working', project)).toBe('pnpm vitest run token.test.ts');
+
+  session.activity = 'idle';
+  delete session.session.planNodeId;
+  expect(statusLine(session, 'pending', project)).toBe('Idle · turn complete');
+});

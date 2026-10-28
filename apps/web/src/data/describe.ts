@@ -287,18 +287,34 @@ export function statusLine(
     return s.pr.draft ? 'Draft PR' : 'Awaiting review';
   }
   if (status === 'working') {
-    const last = [...s.chat].reverse().find((c) => c.kind === 'tool_call' || c.kind === 'message');
-    if (last?.kind === 'tool_call') return truncate(last.inputSummary, 40);
+    if (s.activity === 'starting') return 'Starting up';
+    const last = [...s.chat]
+      .reverse()
+      .find(
+        (c) => c.kind === 'tool_call' || c.kind === 'reasoning_summary' || c.kind === 'message',
+      );
+    if (last?.kind === 'tool_call') {
+      return last.status === 'running' || last.status === 'pending'
+        ? `Running · ${truncate(last.inputSummary, 32)}`
+        : truncate(last.inputSummary, 40);
+    }
+    if (last?.kind === 'reasoning_summary') {
+      return `Thinking · ${truncate(last.text, 32)}`;
+    }
     if (s.pr && s.pr.checks.failed > 0) return 'Fixing the CI failure';
-    return 'Working';
+    if (last?.kind === 'message') return 'Working';
+    return 'Thinking';
   }
-  if (status === 'pending' && s.session.planNodeId) {
-    const plan = Object.values(state.plans).find((p) =>
-      p.nodes.some((n) => n.id === s.session.planNodeId),
-    );
-    const node = plan?.nodes.find((n) => n.id === s.session.planNodeId);
-    const waiting = node?.dependsOn.filter((d) => plan?.nodeStatus[d] !== 'merged').length ?? 0;
-    if (waiting) return `Waiting on ${waiting} task${waiting > 1 ? 's' : ''}`;
+  if (status === 'pending') {
+    if (s.session.planNodeId) {
+      const plan = Object.values(state.plans).find((p) =>
+        p.nodes.some((n) => n.id === s.session.planNodeId),
+      );
+      const node = plan?.nodes.find((n) => n.id === s.session.planNodeId);
+      const waiting = node?.dependsOn.filter((d) => plan?.nodeStatus[d] !== 'merged').length ?? 0;
+      if (waiting) return `Waiting on ${waiting} task${waiting > 1 ? 's' : ''}`;
+    }
+    if (s.activity === 'idle') return 'Idle · turn complete';
   }
   return undefined;
 }
