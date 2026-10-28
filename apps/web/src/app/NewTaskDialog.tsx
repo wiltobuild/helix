@@ -4,6 +4,9 @@ import type { AgentKind, Project } from '@helix/contracts';
 import { AgentBadge, Button, Dialog, Segmented, Switch, TextArea, TextField } from '@helix/ui';
 import s from './NewTaskDialog.module.css';
 
+/** Claude Code plans every orchestrated goal; the plan assigns each task to Codex or Claude Code. */
+const ORCHESTRATOR_AGENT: AgentKind = 'claude-code';
+
 interface NewTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,7 +41,7 @@ export function NewTaskDialog({
         {
           title: title.trim(),
           prompt: prompt.trim(),
-          agent,
+          agent: plan ? ORCHESTRATOR_AGENT : agent,
           interface: 'chat',
           planWithOrchestrator: plan,
         },
@@ -105,25 +108,32 @@ export function NewTaskDialog({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <div className={s.row}>
-          <span className={s.label}>Agent</span>
-          <Segmented
-            label="Agent"
-            value={agent}
-            onValueChange={(v) => setAgent(v)}
-            items={[
-              { value: 'codex', label: <AgentBadge agent="codex" variant="full" /> },
-              { value: 'claude-code', label: <AgentBadge agent="claude-code" variant="full" /> },
-            ]}
-          />
-        </div>
         <Switch
           id="task-plan"
           checked={plan}
           onCheckedChange={setPlan}
           label="Let the orchestrator plan it"
-          description="Splits the goal into tasks with dependencies, shown as a live graph."
+          description="Claude Code splits the goal into tasks with dependencies and assigns each to Codex or Claude Code."
         />
+        {plan ? (
+          <div className={s.row}>
+            <span className={s.label}>Planner</span>
+            <AgentBadge agent={ORCHESTRATOR_AGENT} variant="full" />
+          </div>
+        ) : (
+          <div className={s.row}>
+            <span className={s.label}>Agent</span>
+            <Segmented
+              label="Agent"
+              value={agent}
+              onValueChange={(v) => setAgent(v)}
+              items={[
+                { value: 'codex', label: <AgentBadge agent="codex" variant="full" /> },
+                { value: 'claude-code', label: <AgentBadge agent="claude-code" variant="full" /> },
+              ]}
+            />
+          </div>
+        )}
         {error && (
           <p className={s.error} role="alert">
             {error}
