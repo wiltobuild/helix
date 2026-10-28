@@ -84,7 +84,26 @@ export function Sidebar({
             </li>
           ))}
         </ul>
-        {done.length > 0 && <p className={s.done}>{done.length} merged or archived</p>}
+        {done.length > 0 && (
+          <>
+            <p className={s.done}>{done.length} merged or archived</p>
+            <ul className={s.sessions}>
+              {done.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    className={cx(s.session, selected === c.id && s.selected)}
+                    onClick={() => onSelect(c.id)}
+                    aria-current={selected === c.id || undefined}
+                  >
+                    <StatusDot status={c.status} />
+                    <span>{c.card.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <div className={s.footer}>

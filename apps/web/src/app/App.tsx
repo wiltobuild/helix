@@ -44,19 +44,34 @@ export function App() {
 
 function Workspace({ events, source }: { events: readonly HelixEvent[]; source: HelixSource }) {
   const run = useRun(events);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [view, setView] = useState('board');
+  const [selected, setSelected] = useState<string | null | undefined>(undefined);
+  const [viewOverride, setView] = useState<string | null>(null);
   const [newTask, setNewTask] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addRepoOpen, setAddRepoOpen] = useState(false);
 
   const { state, bySeq, current } = run;
+  const hasPlan = Object.keys(state.plans).length > 0;
+  const view = viewOverride ?? (hasPlan ? 'plan' : 'board');
   const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
   const activeCount = cards.filter((c) => c.column !== 'archive').length;
   const needsYou = cards.filter((c) => c.column === 'needs_you');
-  const selectedSession = selected
-    ? state.sessions[selected as keyof typeof state.sessions]
+  const defaultSessionId =
+    cards.find((c) => c.status === 'working' || c.status === 'needs_you')?.id ??
+    cards[0]?.id ??
+    Object.keys(state.sessions)[0] ??
+    null;
+  const effectiveSelected =
+    selected === undefined
+      ? defaultSessionId
+      : selected && state.sessions[selected as keyof typeof state.sessions]
+        ? selected
+        : selected === null
+          ? null
+          : defaultSessionId;
+  const selectedSession = effectiveSelected
+    ? state.sessions[effectiveSelected as keyof typeof state.sessions]
     : undefined;
   const live = source.mode === 'live';
   const pendingPlan = Object.values(state.plans).find((p) => p.status === 'awaiting_approval');
@@ -96,7 +111,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         project={state.project}
         cards={cards}
         needsYou={needsYou.length}
-        selected={selected}
+        selected={effectiveSelected}
         onSelect={setSelected}
         onSearch={() => setSearchOpen(true)}
         onSettings={() => setSettingsOpen(true)}
@@ -122,8 +137,8 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               value={view}
               onValueChange={setView}
               items={[
-                { value: 'board', label: 'Board', icon: <LayoutGrid size={13} /> },
                 { value: 'plan', label: 'Plan', icon: <Network size={13} /> },
+                { value: 'board', label: 'Board', icon: <LayoutGrid size={13} /> },
               ]}
             />
             {live && source.client && (
@@ -207,11 +222,16 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
             </div>
           )}
           {view === 'board' ? (
-            <Board cards={cards} selected={selected} onSelect={setSelected} columns={COLUMNS} />
+            <Board
+              cards={cards}
+              selected={effectiveSelected}
+              onSelect={setSelected}
+              columns={COLUMNS}
+            />
           ) : (
             <PlanView
               state={state}
-              selected={selected}
+              selected={effectiveSelected}
               onSelect={setSelected}
               {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}
             />
