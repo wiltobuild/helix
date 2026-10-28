@@ -22,26 +22,26 @@ test('HelixLogo renders two-strand DNA crossover with 4 base-pair rungs and acti
   expect(activeBadgeHtml).toContain('<rect ');
 });
 
-test('AgentBadge renders Claude 12-ray ripple sunburst and Codex spinning hex-knot with active flag', () => {
+test('AgentBadge renders Claude 12-ray ripple sunburst + outward ripple rings (3B) and Codex rotational hex-knot (2A) with active flag', () => {
   const claudeActive = renderToStaticMarkup(
     <AgentBadge agent="claude-code" variant="full" active />,
   );
   expect(claudeActive).toContain('data-active="true"');
   expect(claudeActive).toContain('Claude Code');
   expect(claudeActive).toContain('--agent:var(--strand-claude)');
-  // 12 radial rays rotated 0..330deg around (16, 16)
+  // 2 outward concentric ripple rings (r="10.8") + 1 core circle (r="2.8") = 3 circles
+  expect(claudeActive.match(/<circle /g)?.length).toBe(3);
+  expect(claudeActive.match(/r="10.8"/g)?.length).toBe(2);
+  // 12 radial rays rotated around (12, 12)
   expect(claudeActive.match(/transform="rotate\(/g)?.length).toBe(12);
-  expect(claudeActive).toContain('transform="rotate(0 16 16)"');
-  expect(claudeActive).toContain('transform="rotate(330 16 16)"');
+  expect(claudeActive).toContain('transform="rotate(0 12 12)"');
+  expect(claudeActive).toContain('transform="rotate(330 12 12)"');
 
   const codexActive = renderToStaticMarkup(<AgentBadge agent="codex" active />);
   expect(codexActive).toContain('data-active="true"');
   expect(codexActive).toContain('codex');
-  // Hexagonal knot path + 6 internal rotor links + 1 core circle
-  expect(codexActive).toContain(
-    'd="M16 3.5 L26.8 9.75 L26.8 22.25 L16 28.5 L5.2 22.25 L5.2 9.75 Z"',
-  );
-  expect(codexActive.match(/<line /g)?.length).toBe(6);
+  // Authentic OpenAI / Codex 6-fold hexagonal knot path
+  expect(codexActive).toContain('d="M22.2819 9.8211');
 
   const codexIdle = renderToStaticMarkup(<AgentBadge agent="codex" />);
   expect(codexIdle).not.toContain('data-active="true"');
