@@ -23,8 +23,8 @@ function readable(message: string): string {
   return message;
 }
 
-/** Bundled recording `?demo` plays when no name is given. */
-export const DEFAULT_RECORDING = 'github-ci-repair';
+/** Bundled recording `?demo` plays when no name is given: the orchestrator plans, Codex and Claude Code build. */
+export const DEFAULT_RECORDING = 'discount-codes';
 
 /** Parses .helixlog text with the contracts validator; throws a readable error. */
 export function readRecording(name: string, text: string): Recording {
