@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   crossReviewerFor,
+  helixEventSchema,
   deriveStatus,
   fixtures,
   projectUpTo,
@@ -67,6 +68,44 @@ test('an abandoned review falls back to CI and GitHub status', () => {
   expect(state.sessions[ids.worker]!.agentReview).toBeUndefined();
   expect(deriveStatus(state.sessions[ids.worker]!)).toBe('ready_to_merge');
 });
+
+test('a finished review can be abandoned only after the PR head moves past it', () => {
+  const approved = run.find((e) => e.seq === at.approved)! as HelixEvent<'agent_review.submitted'>;
+  const upToApproval = run.filter((e) => e.seq <= at.approved);
+  const abandon = (seq: number): HelixEvent =>
+    helixEventSchema.parse({
+      ...approved,
+      seq,
+      type: 'agent_review.abandoned',
+      payload: {
+        workerSessionId: ids.worker,
+        prNumber: approved.payload.prNumber,
+        headSha: approved.payload.headSha,
+        reason: 'Codex is no longer available to review the new head.',
+      },
+    });
+  // Same head: the verdict stands and cannot be abandoned.
+  const early = [...upToApproval, abandon(at.approved + 1)];
+  expect(() => projectUpTo(early, at.approved + 1, { strict: true })).toThrow(/review in progress/);
+  // Head moved on with green CI and no reviewer: abandoning clears the gate.
+  const pushed = run.find((e): e is HelixEvent<'pr.updated'> => e.type === 'pr.updated')!;
+  const moved = helixEventSchema.parse({
+    ...pushed,
+    seq: at.approved + 1,
+    payload: { pr: { ...pushed.payload.pr, headSha: 'f'.repeat(40), checks: approvedChecks() } },
+  });
+  const events = [...upToApproval, moved, abandon(at.approved + 2)];
+  expect(
+    deriveStatus(projectUpTo(events, at.approved + 1, { strict: true }).sessions[ids.worker]!),
+  ).toBe('in_review');
+  const state = projectUpTo(events, at.approved + 2, { strict: true });
+  expect(state.sessions[ids.worker]!.agentReview).toBeUndefined();
+  expect(deriveStatus(state.sessions[ids.worker]!)).toBe('ready_to_merge');
+});
+
+function approvedChecks() {
+  return { total: 1, passed: 1, failed: 0, pending: 0, failingNames: [] };
+}
 
 test('submit-review requests carry a bounded, structured verdict', () => {
   const review = fixtures.crossReviewFindings;
