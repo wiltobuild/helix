@@ -25,7 +25,7 @@
 | **C — Bake-off** (stretch) | Same task → Claude and Codex in parallel worktrees → side-by-side compare (diff, tests, time, interventions) → merge winner | After demo |
 | Polish (post-demo) | Animations, a11y audit, onboarding, more harnesses, case-study README with GIFs | After demo |
 
-**Explicitly out:** 30+ harnesses, Cues, Automations, browser preview, mobile, cloud, Electron, TUI⇄Chat switching, cost tracking (spend is bounded by turn caps, a parallel-worker limit and stop-all instead), autonomous merging, reviewer agent (post-demo).
+**Explicitly out:** 30+ harnesses, Cues, Automations, browser preview, mobile, cloud, Electron, TUI⇄Chat switching, cost tracking (spend is bounded by turn caps, a parallel-worker limit and stop-all instead), autonomous merging.
 
 **P0 = the demo loop, nothing else:** add a project · approve a plan · start and watch tasks · answer an approval · see the diff · CI failure routed back and fixed · merge with a click · plan graph · timeline replay · Why panel · hosted replay. Everything else is P1 or below (see the PRD). Building is fast; **verifying** that these behaviors hold up together is the bottleneck, so test infrastructure is the top new priority.
 
@@ -75,7 +75,7 @@ Browser (React app) ──HTTP/SSE──► helixd (Node daemon, 127.0.0.1:4317)
 | Tests | Vitest; fake harness + fake GitHub; Playwright for UI incl. replay-determinism test |
 
 ### Core events (frozen in Wave 0)
-`project.added` · `session.created/started/exited/archived` · `activity.changed` (active/idle/waiting/blocked) · `chat.message` · `chat.tool_call` · `chat.approval_requested/decided` · `reasoning.summary` · `plan.submitted` · `plan.node_updated` · `explain.note` · `worktree.created/diff_updated` · `pr.opened/updated` · `ci.updated` · `review.updated` · `feedback.routed` · `pr.merged`
+`project.added` · `session.created/started/exited/archived` · `activity.changed` (active/idle/waiting/blocked) · `chat.message` · `chat.tool_call` · `chat.approval_requested/decided` · `reasoning.summary` · `plan.submitted` · `plan.node_updated` · `explain.note` · `worktree.created/diff_updated` · `pr.opened/updated` · `ci.updated` · `review.updated` · `agent_review.requested/submitted/abandoned` · `feedback.routed` · `pr.merged`
 **Wave 2 contract additions (Claude, before briefs go out):** `plan.approved` (or a plan-specific approval type), per-node `files` in the plan schema, a plan-validation error for overlapping claims, a small key-value seam on `HelixStore`, recording ids + lookup.
 Every event: `{seq, ts, projectId, sessionId?, planNodeId?, causedBy?: seq, type, payload}` — **`causedBy`** is what powers the Why panel ("this fix was caused by event #412 CI failure"). **`variantOf`** on sessions is reserved now so bake-off needs no migration later.
 
@@ -114,6 +114,8 @@ Every event: `{seq, ts, projectId, sessionId?, planNodeId?, causedBy?: seq, type
 
 **Claude:** plan graph (React Flow + ELK, nodes animate with live status) with an **Approve plan** step, timeline scrubber (replays board + graph + chat together; Files tab labeled "current changes" or disabled while in the past), Why panel (three labeled sources → causal chain via `causedBy`), stop-all control, New-task dialog with "let the orchestrator plan it". Needs-you inbox drops to P1 (the board's Needs-you column covers the demo).
 **Day 10 (Oct 29) milestone:** full demo script runs live and as a replay; **hosting decided** (done: static replay build on Vercel, https://helix-demo-theta.vercel.app).
+
+**Shipped ahead of plan (Oct 29):** cross-agent reviewer (#49–#51): when a worker's PR passes CI, the other agent reviews it (Claude Code reviews Codex, Codex reviews Claude Code, never self-review); findings route back as feedback and a PR is ready to merge only after the review approves its latest head. `HELIX_REVIEWER=off` disables it. Also: Claude Code always orchestrates (#47); routine approvals are answered by Helix (`HELIX_AUTO_APPROVE`, #48, #52); every task starts from the fetched `origin/<default>` (#52).
 
 ### Days 11–14 — Demo prep
 - Record 2–3 clean runs on the demo repo (you + teammate), each including a real CI failure fixed on GitHub; deploy hosted demo-mode link.
