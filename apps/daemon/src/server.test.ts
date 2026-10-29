@@ -1,14 +1,9 @@
+import type { SetupCore } from './setup.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  routes,
-  HelixError,
-  errorCodeSchema,
-  apiErrorSchema,
-  type HelixCore,
-} from '@helix/contracts';
+import { routes, HelixError, errorCodeSchema, apiErrorSchema } from '@helix/contracts';
 import { createHelixClient, HelixApiError } from '@helix/api-client';
 import { createServer, parsePort } from './server.js';
 import { startDaemon } from './lifecycle.js';
@@ -41,6 +36,7 @@ const planBody = {
   nodes: plan.nodes,
 };
 const cases = [
+  { name: 'setup', method: 'setup' },
   { name: 'health', method: 'health' },
   { name: 'harnesses', method: 'harnesses' },
   { name: 'projects', method: 'listProjects' },
@@ -80,7 +76,7 @@ const cases = [
   },
 ] as const satisfies readonly {
   name: keyof typeof routes;
-  method: keyof HelixCore;
+  method: keyof SetupCore;
   payload?: unknown;
   headers?: Record<string, string>;
   query?: string;
@@ -302,12 +298,19 @@ it('serves static assets and SPA routes while keeping API misses as JSON 404s', 
   const directory = await mkdtemp(join(tmpdir(), 'helix-web-'));
   cleanup.push(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, 'index.html'), '<html>Helix UI</html>');
-  await writeFile(join(directory, 'asset.js'), 'const helix = true;');
+  await mkdir(join(directory, 'assets'));
+  await writeFile(join(directory, 'assets', 'index-a1B2c3D4.js'), 'const helix = true;');
   const app = await createServer({ core: createFakeCore().core, webDist: directory });
   cleanup.push(() => app.close());
-  for (const url of ['/', '/projects/example'])
-    expect((await app.inject(url)).body).toContain('Helix UI');
-  expect((await app.inject('/asset.js')).body).toContain('const helix');
+  for (const url of ['/', '/index.html', '/projects/example']) {
+    const response = await app.inject(url);
+    expect(response.body).toContain('Helix UI');
+    expect(response.headers['cache-control']).toBe('no-cache');
+    expect((await app.inject({ method: 'HEAD', url })).headers['cache-control']).toBe('no-cache');
+  }
+  const asset = await app.inject('/assets/index-a1B2c3D4.js');
+  expect(asset.body).toContain('const helix');
+  expect(asset.headers['cache-control']).toBe('public, max-age=31536000, immutable');
   for (const url of ['/api', '/api/missing', '/mux'])
     expect((await app.inject(url)).statusCode).not.toBe(200);
 });
@@ -334,6 +337,7 @@ it('round trips typed client commands, raw recordings and typed errors', async (
   const { app, core } = await setup();
   const baseUrl = await listenFetchSafe(app);
   const client = createHelixClient({ baseUrl });
+  expect(await client.setup()).toEqual(await core.setup());
   expect(await client.health()).toEqual({ status: 'ok', version: 'test' });
   expect(
     await client.createSession(project.id, sessionBody, { idempotencyKey: 'client-key' }),

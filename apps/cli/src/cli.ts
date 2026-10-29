@@ -19,6 +19,7 @@ import { parseReviewInput } from './review-input.js';
 
 const usage = `helix [--json] <command>
   status
+  setup
   project add <path>
   task <title> --agent codex|claude-code --prompt <text> [--project <id>]
   send <sessionId> <text> [--interrupt]
@@ -129,6 +130,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
           throw new UsageError(`Unexpected --${key} for ${command}`);
     };
     switch (command) {
+      case 'setup':
       case 'status':
         check(0);
         break;
@@ -188,6 +190,30 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     contacting = true;
     const print = (value: unknown, human: string) => out(json ? JSON.stringify(value) : human);
     switch (command) {
+      case 'setup': {
+        const result = await client.setup();
+        const checks = [
+          ...Object.entries(result.agents),
+          ['GitHub', result.github] as const,
+          ...Object.entries(result.tools),
+          ['Config', result.config] as const,
+        ];
+        const human = checks
+          .map(
+            ([name, check]) =>
+              `${check.ok ? '✓' : '✗'} ${name}: ${check.detail}${'version' in check && check.version && check.version !== check.detail ? ` (${check.version})` : ''}${'login' in check && check.login ? ` (${check.login})` : ''}${!check.ok ? `\n  Fix: ${check.fix ?? 'Check configuration and retry'}` : ''}`,
+          )
+          .join('\n');
+        const config = result.config;
+        print(
+          result,
+          human +
+            (config.ok
+              ? `\n  reviewer=${config.reviewer ? 'on' : 'off'} autoApprove=${config.autoApprove ? 'on' : 'off'} maxWorkers=${config.maxWorkers} maxTurns=${config.maxTurns} codexModel=${config.codexModel ?? '(Codex default)'} codexEffort=${config.codexEffort ?? '(Codex default)'}`
+              : ''),
+        );
+        return checks.every(([, check]) => check.ok) ? 0 : 1;
+      }
       case 'status': {
         const projects = await client.projects();
         const result = await Promise.all(
