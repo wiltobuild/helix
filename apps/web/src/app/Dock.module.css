@@ -767,3 +767,80 @@ a.artifact:hover {
     display: none;
   }
 }
+
+/* A real scrubber uses the same time scale as the chart and remains easy to grab. */
+.axis {
+  height: 40px;
+}
+.range {
+  top: 16px;
+  bottom: auto;
+  height: 24px;
+  opacity: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.range:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.now {
+  top: 0;
+}
+.clock {
+  min-width: 110px;
+  white-space: nowrap;
+}
+.milestones {
+  width: calc(100% - 12px);
+  height: 28px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+}
+.replay:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.mark {
+  width: 14px;
+  height: 14px;
+  top: 4px;
+  margin-left: -7px;
+}
+@media (max-width: 1440px), (max-height: 900px) {
+  .dock:not([data-expanded]) .strip {
+    height: 26px;
+    padding: 0 12px;
+    flex-shrink: 0;
+  }
+  .dock:not([data-expanded]) .whyButton {
+    height: 22px;
+  }
+  .dock:not([data-expanded]) .tab {
+    height: 32px;
+  }
+  .dock:not([data-expanded]) .gantt {
+    padding: 2px 12px;
+  }
+  .dock:not([data-expanded]) .axis {
+    height: 28px;
+  }
+  .dock:not([data-expanded]) .range {
+    top: 10px;
+    height: 18px;
+  }
+  .dock:not([data-expanded]) .milestones {
+    margin-top: 0;
+    height: 24px;
+  }
+  .clock {
+    font-size: var(--text-2xs);
+  }
+}

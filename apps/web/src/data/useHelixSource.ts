@@ -8,8 +8,8 @@ import {
   type BuiltInPreset,
   type DemoPreset,
 } from './demoScenarios';
-import { useDemoStream, type ReplaySpeed } from './useDemoStream';
-import { fetchRecording, openRecordingFile, replayStart, type Recording } from './recordings';
+import type { ReplaySpeed } from './useDemoStream';
+import { fetchRecording, openRecordingFile, type Recording } from './recordings';
 
 export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
 export type { DemoPreset } from './demoScenarios';
@@ -77,12 +77,6 @@ export function useHelixSource(): HelixSource {
   const [recordingError, setRecordingError] = useState<string>();
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
   const demoRun = recording?.events ?? builtInRun(demoPreset);
-  const demoEvents = useDemoStream(
-    demoRun,
-    recording || demoPreset === 'cross-review'
-      ? { startAt: replayStart(demoRun), speed }
-      : { speed },
-  );
 
   // Demo mode loads the scenario's recording; a missing one leaves the built-in example playing.
   useEffect(() => {
@@ -204,7 +198,7 @@ export function useHelixSource(): HelixSource {
     if (mode === 'demo' || mode === 'connecting')
       return {
         mode,
-        events: demoEvents,
+        events: demoRun,
         projects: [],
         stream: 'demo',
         selectProject,
@@ -236,7 +230,7 @@ export function useHelixSource(): HelixSource {
     };
   }, [
     mode,
-    demoEvents,
+    demoRun,
     liveEvents,
     projects,
     project,

@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createProjector, type HelixEvent, type ProjectState } from '@helix/contracts';
+import { replayDelays, replayPause } from './useDemoStream';
 
 export interface RunView {
-  /** All events received so far (live tail grows over time). */
   events: readonly HelixEvent[];
-  /** Projected state at the cursor. */
   state: ProjectState;
-  /** The event the cursor sits on. */
+  latestState: ProjectState;
   current: HelixEvent;
-  /** Index into `events` of the cursor. */
   index: number;
-  /** True when following the newest event. */
   isLive: boolean;
   seek: (index: number) => void;
   step: (delta: number) => void;
@@ -20,68 +17,79 @@ export interface RunView {
   bySeq: ReadonlyMap<number, HelixEvent>;
 }
 
-/**
- * Holds a run's event log and a cursor into it. `cursor === null` means live (follow the tail).
- * The projector is rebuilt when new events arrive; scrubbing uses its checkpoints, so dragging
- * the timeline never refolds the whole history.
- */
-export function useRun(events: readonly HelixEvent[]): RunView {
-  const [cursor, setCursor] = useState<number | null>(null);
-  const [playing, setPlaying] = useState(false);
-
+/** One playback clock. Live logs follow the tail; recordings expose their entire history. */
+export function useRun(
+  events: readonly HelixEvent[],
+  {
+    recorded = false,
+    speed = 1,
+    startAt = 0,
+  }: { recorded?: boolean; speed?: number; startAt?: number } = {},
+): RunView {
+  const last = events.length - 1;
+  const initial = {
+    head: events[0],
+    cursor: recorded ? Math.min(startAt, last) : null,
+    playing: recorded && last > startAt,
+  };
+  const [stored, setControl] = useState(initial);
+  // Switching recordings resets immediately; appending live events preserves the cursor.
+  const control = stored.head === events[0] ? stored : initial;
+  if (control !== stored) setControl(control);
+  const index = control.cursor === null ? last : Math.max(0, Math.min(control.cursor, last));
+  const current = events[index]!;
   const projector = useMemo(() => createProjector(events), [events]);
   const bySeq = useMemo(() => new Map(events.map((e) => [e.seq, e])), [events]);
-
-  const last = events.length - 1;
-  const index = cursor === null ? last : Math.min(cursor, last);
-  const current = events[index]!;
   const state = useMemo(() => projector.at(current.seq), [projector, current.seq]);
+  const latestState = useMemo(() => projector.at(events[last]!.seq), [projector, events, last]);
+  const delays = useMemo(() => (recorded ? replayDelays(events) : []), [events, recorded]);
+  const delay = (recorded ? (delays[index] ?? 650) : replayPause(current)) / speed;
+  const lastRef = useRef(last);
+  lastRef.current = last;
 
   const seek = useCallback(
     (i: number) => {
-      const clamped = Math.max(0, Math.min(i, last));
-      setCursor(clamped >= last ? null : clamped);
+      const cursor = Math.max(0, Math.min(i, last));
+      setControl((c) => (c.cursor === cursor && !c.playing ? c : { ...c, cursor, playing: false }));
     },
     [last],
   );
   const step = useCallback((delta: number) => seek(index + delta), [seek, index]);
   const goLive = useCallback(() => {
-    setPlaying(false);
-    setCursor(null);
+    setControl((c) => ({ ...c, cursor: null, playing: false }));
   }, []);
 
-  // Replay: advance one event at a time from the cursor; stops at the tail.
-  const indexRef = useRef(index);
-  indexRef.current = index;
   useEffect(() => {
-    if (!playing) return;
-    const id = window.setInterval(() => {
-      const next = indexRef.current + 1;
-      if (next >= last) {
-        setCursor(null);
-        setPlaying(false);
-      } else setCursor(next);
-    }, 650);
-    return () => window.clearInterval(id);
-  }, [playing, last]);
+    if (!control.playing) return;
+    const timer = window.setTimeout(() => {
+      setControl((c) => {
+        if (!c.playing || c.head !== control.head) return c;
+        const next = Math.min(index + 1, lastRef.current);
+        return { ...c, cursor: next, playing: next < lastRef.current };
+      });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [control.playing, control.head, index, delay]);
 
   const togglePlay = useCallback(() => {
-    setPlaying((p) => {
-      if (!p && cursor === null) setCursor(0);
-      return !p;
-    });
-  }, [cursor]);
+    setControl((c) =>
+      c.playing
+        ? { ...c, cursor: index, playing: false }
+        : { ...c, cursor: index >= last ? 0 : index, playing: last > 0 },
+    );
+  }, [index, last]);
 
   return {
     events,
     state,
+    latestState,
     current,
     index,
-    isLive: cursor === null,
+    isLive: control.cursor === null,
     seek,
     step,
     goLive,
-    playing,
+    playing: control.playing,
     togglePlay,
     bySeq,
   };

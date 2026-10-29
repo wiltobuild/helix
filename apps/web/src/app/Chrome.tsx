@@ -264,7 +264,7 @@ export function SessionHeader({
   source: HelixSource;
   title: string;
   goal?: string;
-  mode: 'live' | 'replaying' | 'recording';
+  mode: 'live' | 'replaying' | 'recording' | 'paused';
   elapsedMs: number;
   tab: SessionTab;
   onTab: (t: SessionTab) => void;
@@ -308,7 +308,13 @@ export function SessionHeader({
             <span className={s.titleText}>{title}</span>
             <span className={s.modeBadge} data-mode={mode}>
               <span className={s.liveDot} aria-hidden />
-              {mode === 'live' ? 'Live' : mode === 'replaying' ? 'Replaying' : 'Recorded run'}
+              {mode === 'live'
+                ? 'Live'
+                : mode === 'replaying'
+                  ? 'Replaying'
+                  : mode === 'paused'
+                    ? 'Paused'
+                    : 'Recorded run'}
             </span>
           </h1>
           {goal && <p className={s.goal}>{goal}</p>}

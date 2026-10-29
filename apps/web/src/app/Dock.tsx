@@ -26,9 +26,11 @@ import {
   activityFeed,
   agentLabel,
   ganttLanes,
+  planTree,
   narratedEvent,
   type PlanTree,
 } from '../data/observatory';
+import { eventIndexAtTime, timelineMilestones } from '../data/timeline';
 import type { RunView } from '../data/useRun';
 import type { HelixSource } from '../data/useHelixSource';
 import { REPLAY_SPEEDS, type ReplaySpeed } from '../data/useDemoStream';
@@ -149,6 +151,7 @@ export function Dock({
             shortcut="["
             size="sm"
             icon={<StepBack size={14} />}
+            disabled={index === 0}
             onClick={() => run.step(-1)}
           />
           <IconButton
@@ -156,41 +159,52 @@ export function Dock({
             shortcut="]"
             size="sm"
             icon={<StepForward size={14} />}
+            disabled={index === events.length - 1}
             onClick={() => run.step(1)}
           />
-          <span className={s.clock}>{clock(elapsed)}</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isLive}
-            className={s.liveSwitch}
-            onClick={() => (isLive ? run.seek(Math.max(0, index - 1)) : run.goLive())}
-            title={
-              isLive ? 'Following the newest event. Click to hold this moment.' : 'Back to live (L)'
-            }
-          >
-            <span className={s.switchTrack} data-on={isLive || undefined}>
-              <span className={s.switchThumb} />
-            </span>
-            {live ? 'Live' : 'Follow'}
-          </button>
-          {!live && (
-            <select
-              className={s.speed}
-              aria-label="Replay speed"
-              value={String(source.speed)}
-              onChange={(e) => source.setSpeed(Number(e.target.value) as ReplaySpeed)}
+          <span className={s.clock} title={`Event ${index + 1} of ${events.length}`}>
+            {clock(elapsed)} / {clock(Date.parse(events.at(-1)!.ts) - Date.parse(events[0]!.ts))}
+          </span>
+          {live ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isLive}
+              className={s.liveSwitch}
+              onClick={() => (isLive ? run.seek(index) : run.goLive())}
+              title="Follow new live events"
             >
-              {REPLAY_SPEEDS.map((x) => (
-                <option key={x} value={x}>
-                  {x}x
-                </option>
-              ))}
-            </select>
+              <span className={s.switchTrack} data-on={isLive || undefined}>
+                <span className={s.switchThumb} />
+              </span>
+              {isLive ? 'Live' : 'Go live'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={s.replay}
+              onClick={() => run.seek(events.length - 1)}
+              disabled={index === events.length - 1}
+              aria-label="Jump to end"
+            >
+              End
+            </button>
           )}
+          <select
+            className={s.speed}
+            aria-label="Replay speed"
+            value={String(source.speed)}
+            onChange={(e) => source.setSpeed(Number(e.target.value) as ReplaySpeed)}
+          >
+            {REPLAY_SPEEDS.map((x) => (
+              <option key={x} value={x}>
+                {x}x
+              </option>
+            ))}
+          </select>
           <button type="button" className={s.replay} onClick={run.togglePlay}>
             {run.playing ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />}
-            {run.playing ? 'Pause' : 'Replay'}
+            {run.playing ? 'Pause' : index === events.length - 1 ? 'Replay' : 'Play'}
           </button>
           <IconButton
             label={expanded ? 'Shrink timeline' : 'Expand timeline'}
@@ -202,7 +216,7 @@ export function Dock({
       </div>
 
       <div className={s.body}>
-        {tab === 'timeline' && <Gantt run={run} tree={tree} onSelectSession={onSelectSession} />}
+        {tab === 'timeline' && <Gantt run={run} onSelectSession={onSelectSession} />}
         {tab === 'activity' && (
           <ol className={s.feed}>
             {activityFeed(events, index, state).map((f) => {
@@ -249,24 +263,22 @@ export function Dock({
 
 /* ---------------------------------------------------------------- Gantt */
 
-function Gantt({
-  run,
-  tree,
-  onSelectSession,
-}: {
-  run: RunView;
-  tree: PlanTree | undefined;
-  onSelectSession: (id: string) => void;
-}) {
-  const { events, index, state } = run;
-  const { lanes, startTs, endTs, cursorAt } = useMemo(
-    () => ganttLanes(events, index, state, tree),
-    [events, index, state, tree],
+function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: string) => void }) {
+  const { events, index, state, latestState } = run;
+  // History remains visible when scrubbing; only the playhead follows the cursor.
+  const { lanes, startTs, endTs } = useMemo(() => {
+    const last = events.length - 1;
+    const fullTree = planTree(latestState, events, last, events[last]!.ts);
+    return ganttLanes(events, last, latestState, fullTree);
+  }, [events, latestState]);
+  const cursorAt = Math.max(
+    0,
+    Math.min(1, (Date.parse(run.current.ts) - startTs) / (endTs - startTs)),
   );
+  const milestones = useMemo(() => timelineMilestones(events), [events]);
   const chart = useRef<HTMLDivElement>(null);
   const span = endTs - startTs;
   const ticks = [0, 0.2, 0.4, 0.6, 0.8, 1];
-  const times = useMemo(() => events.map((e) => Date.parse(e.ts)), [events]);
 
   const seekToX = (clientX: number) => {
     const el = chart.current;
@@ -274,14 +286,14 @@ function Gantt({
     const r = el.getBoundingClientRect();
     const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
     const t = startTs + frac * span;
-    let best = 0;
-    for (let i = 0; i < times.length; i++) if (times[i]! <= t) best = i;
-    run.seek(best);
+    run.seek(eventIndexAtTime(events, t));
   };
   const onDown = (e: PointerEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+    if (e.button !== 0) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    seekToX(e.clientX);
+    const mark = (e.target as HTMLElement).closest<HTMLElement>('[data-event-index]');
+    if (mark) run.seek(Number(mark.dataset.eventIndex));
+    else seekToX(e.clientX);
   };
   const onMove = (e: PointerEvent) => {
     if (e.buttons === 1 && (e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId))
@@ -291,7 +303,26 @@ function Gantt({
   return (
     <div className={s.gantt}>
       <div className={s.axisRow}>
-        <span className={s.laneHead} />
+        <div className={s.laneHead}>
+          <select
+            className={s.milestones}
+            aria-label="Jump to milestone"
+            value={milestones.includes(index) ? String(index) : ''}
+            onChange={(e) => {
+              if (e.target.value) run.seek(Number(e.target.value));
+            }}
+          >
+            <option value="" disabled>
+              Jump to milestone…
+            </option>
+            {milestones.map((i) => (
+              <option key={events[i]!.seq} value={i}>
+                {clock(Date.parse(events[i]!.ts) - startTs)} ·{' '}
+                {describeEvent(events[i]!, latestState)}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className={s.axis}>
           {ticks.map((f) => (
             <span key={f} style={{ left: `${f * 100}%` }}>
@@ -301,10 +332,20 @@ function Gantt({
           <input
             type="range"
             className={s.range}
-            min={0}
-            max={events.length - 1}
-            value={index}
-            onChange={(e) => run.seek(Number(e.target.value))}
+            min={startTs}
+            max={endTs}
+            value={Date.parse(run.current.ts)}
+            onChange={(e) => run.seek(eventIndexAtTime(events, Number(e.target.value)))}
+            onKeyDown={(e) => {
+              if (
+                ['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End'].includes(e.key)
+              ) {
+                e.preventDefault();
+                if (e.key === 'Home') run.seek(0);
+                else if (e.key === 'End') run.seek(events.length - 1);
+                else run.step(e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 1);
+              }
+            }}
             aria-label="Timeline position"
             aria-valuetext={`Event ${run.current.seq}: ${describeEvent(run.current, state)}`}
           />
@@ -319,7 +360,16 @@ function Gantt({
               className={s.laneLabel}
               data-kind={l.kind}
               disabled={!l.sessionId}
-              onClick={() => l.sessionId && onSelectSession(l.sessionId)}
+              onClick={() => {
+                if (!l.sessionId) return;
+                if (!state.sessions[l.sessionId as keyof typeof state.sessions]) {
+                  const created = events.findIndex(
+                    (e) => e.sessionId === l.sessionId && e.type === 'session.created',
+                  );
+                  if (created >= 0) run.seek(created);
+                }
+                onSelectSession(l.sessionId);
+              }}
             >
               {l.kind === 'orchestrator' ? (
                 <Workflow size={14} className={s.orchIcon} aria-hidden />
@@ -344,6 +394,10 @@ function Gantt({
           ref={chart}
           onPointerDown={onDown}
           onPointerMove={onMove}
+          onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
           role="presentation"
         >
           {ticks.map((f) => (
@@ -383,7 +437,10 @@ function Gantt({
                       title={`#${m.seq} · ${m.text}`}
                       aria-label={`Event ${m.seq}: ${m.text}`}
                       data-current={m.index === index || undefined}
-                      onClick={() => run.seek(m.index)}
+                      data-event-index={m.index}
+                      onClick={(e) => {
+                        if (e.detail === 0) run.seek(m.index);
+                      }}
                     />
                   ))
                 : null}
