@@ -326,3 +326,53 @@ test('Claude reviewers read the worktree under review without a prompt, but noth
       }
     }
 });
+
+test('an orchestrator writes its plan in its scratch folder and submits it without prompts', () => {
+  const start = {
+    session: { ...template, role: 'orchestrator' as const },
+    cwd: worktree,
+    env: { HELIX_SCRATCH_DIR: scratch },
+  };
+  const plan = path.join(scratch, 'plan.json');
+  const cases = [
+    { tool: 'Write', input: { file_path: plan, content: '{}' }, allowed: true },
+    { tool: 'Read', input: { file_path: plan }, allowed: true },
+    {
+      tool: 'Bash',
+      input: { command: `helix plan submit "${plan.split(path.sep).join('/')}"` },
+      allowed: true,
+    },
+    {
+      tool: 'Bash',
+      input: {
+        command: `cd "${scratch.split(path.sep).join('/')}" && helix plan submit plan.json`,
+      },
+      allowed: true,
+    },
+    {
+      tool: 'Write',
+      input: { file_path: path.join(root, 'elsewhere.json'), content: '{}' },
+      allowed: false,
+    },
+    {
+      tool: 'Bash',
+      input: { command: `cd "${scratch.split(path.sep).join('/')}" && rm plan.json` },
+      allowed: false,
+    },
+  ];
+  for (const { tool, input, allowed } of cases) {
+    const probe = new ClaudeProbe({ autoApproveSafeCommands: true }, start);
+    const events: HarnessEmission[] = [];
+    probe.onEvent((e) => events.push(e));
+    probe.inject({
+      type: 'control_request',
+      request_id: 'r',
+      request: { subtype: 'can_use_tool', tool_name: tool, input },
+    });
+    const label = `${tool} ${JSON.stringify(input)}`;
+    expect(
+      events.some((e) => e.type === 'approval.requested'),
+      label,
+    ).toBe(!allowed);
+  }
+});

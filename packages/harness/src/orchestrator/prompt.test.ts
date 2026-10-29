@@ -29,7 +29,7 @@ test('public prompt export loads the Markdown and includes planning rules', asyn
     'contract task',
     'HELIX_PROJECT_ID',
     'HELIX_SESSION_ID',
-    'helix plan submit plan.json',
+    'helix plan submit <scratch folder>/plan.json',
     'fix the plan',
     'resubmit',
     'waiting for their approval',

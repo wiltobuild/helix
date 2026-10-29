@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { access, chmod, mkdir, writeFile } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,8 +55,21 @@ export function sessionEnvironment(dataDir: string, base: NodeJS.ProcessEnv) {
           HELIX_SESSION_ID: session.id,
           HELIX_PROJECT_ID: project.id,
           PATH: join(resolve(dataDir), 'bin') + (basePath ? delimiter + basePath : ''),
+          ...(session.role === 'orchestrator'
+            ? { HELIX_SCRATCH_DIR: orchestratorScratch(dataDir, session) }
+            : {}),
         }
       : undefined;
+}
+
+/**
+ * The folder an orchestrator writes its plan artifact to, created on demand. A real native path:
+ * on Windows, Claude Code's Write tool and its Git Bash shell disagree about where `/tmp` is.
+ */
+export function orchestratorScratch(dataDir: string, session: Pick<Session, 'id'>): string {
+  const dir = join(resolve(dataDir), 'scratch', session.id);
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 export async function writeHelixLauncher(dataDir: string): Promise<void> {

@@ -208,6 +208,18 @@ export class ClaudeSession extends ProcessSession {
           return;
         }
       }
+      // Orchestrators write and read their plan artifact in their scratch folder, outside the
+      // worktree where acceptEdits would apply.
+      const scratch = this.scratchDir();
+      if (
+        scratch &&
+        this.options.autoApproveSafeCommands &&
+        /^(?:Write|Edit|MultiEdit|Read)$/.test(tool) &&
+        insideWorktree(scratch, [string(input.file_path)])
+      ) {
+        void respond('approved').catch(() => this.fail('Could not answer scratch write'));
+        return;
+      }
       this.askApproval(
         id,
         {
