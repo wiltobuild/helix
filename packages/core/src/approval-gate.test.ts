@@ -131,7 +131,8 @@ test.each([false, true])('restart starts merged dependents (legacy=%s)', async (
   if (legacy) expect(recovered.nodes.map((n) => n.files)).toEqual([[], []]);
   const dependent = recovered.nodes[1]!.sessionId!;
   expect(dependent).toBeDefined();
-  expect(f.git.fetchBase).toHaveBeenCalledOnce();
+  // Every new task fetches its base, including the dependent started after the restart.
+  expect(f.git.fetchBase).toHaveBeenLastCalledWith(f.p.repoPath, f.p.defaultBranch);
   const created = f.store.events.find(
     (e) => e.type === 'session.created' && e.sessionId === dependent,
   )!;

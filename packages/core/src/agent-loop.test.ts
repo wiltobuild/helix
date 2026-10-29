@@ -369,7 +369,8 @@ test.each([false, true])(
     const dependent = Object.values((await f.state(p.id)).sessions).find(
       (s) => s.session.planNodeId === 'client',
     )!;
-    expect(f.git.fetchBase).toHaveBeenCalledExactlyOnceWith(p.repoPath, p.defaultBranch);
+    // Every new task fetches its base; the dependent's own start fetched it last.
+    expect(f.git.fetchBase).toHaveBeenLastCalledWith(p.repoPath, p.defaultBranch);
     const note = events.find(
       (e) => e.type === 'explain.note' && e.sessionId === dependent.session.id,
     )!;

@@ -21,8 +21,9 @@ export function isSafeCommand(
     .replace(/\s+2>&1\b/g, '')
     .replace(/\s*\|\s*(?:head|tail)(?:\s+-n)?(?:\s+-?\d+)?\s*$/, '')
     .trim();
-  if (!body || /[\n\r;`$<>|]|(?<!&)&(?!&)/.test(body)) return false;
-  const segments = body.split('&&').map((part) => tokenize(part.trim()));
+  const parts = body ? splitScript(body) : undefined;
+  if (!parts) return false;
+  const segments = parts.map((part) => tokenize(part.trim()));
   if (segments.some((tokens) => tokens === undefined || tokens.length === 0)) return false;
   let cwd = path.resolve(worktree, executionCwd);
   const roots = [worktree, ...readRoots];
@@ -84,7 +85,7 @@ function safeReadSegment(
     )
   )
     return false;
-  return args.every((arg) => arg.startsWith('-') || inside(arg));
+  return pathArgs(name, args).every(inside);
 }
 
 const SHELL = /^(?:.*[/\\])?(?:ba?sh|sh|zsh|powershell|pwsh)(?:\.exe)?$/i;
@@ -106,6 +107,130 @@ function unwrapShell(command: unknown): string | undefined {
   if (flag === -1 || flag !== argv.length - 2 || rest.some((part) => !/^-noprofile$/i.test(part)))
     return undefined;
   return argv[flag + 1];
+}
+
+/**
+ * Splits a script into commands at `;` and `&&` outside quotes (each command is then checked on
+ * its own). Single-quoted text is literal in both shells. Anything that redirects, pipes, runs in
+ * the background or expands (`$` and backticks, even inside double quotes) makes it unsafe, as do
+ * parentheses and braces, which run code in PowerShell (`Get-Content (Remove-Item x)`) and bash.
+ */
+function splitScript(script: string): string[] | undefined {
+  const parts: string[] = [];
+  let current = '';
+  let quote: "'" | '"' | undefined;
+  for (let i = 0; i < script.length; i++) {
+    const c = script[i]!;
+    if (quote) {
+      if (c === quote) quote = undefined;
+      else if (quote === '"' && (c === '$' || c === '`')) return undefined;
+      current += c;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      current += c;
+    } else if (c === ';' || (c === '&' && script[i + 1] === '&')) {
+      parts.push(current);
+      current = '';
+      if (c === '&') i++;
+    } else if (/[\n\r`$<>|&(){}]/.test(c)) return undefined;
+    else current += c;
+  }
+  if (quote) return undefined;
+  parts.push(current);
+  return parts.some((part) => !part.trim()) ? undefined : parts;
+}
+
+/**
+ * Which arguments of a read-only command name files. Option values and search patterns are not
+ * paths (`rg -n 'a|b' src` reads src, not a file called a|b). PowerShell parameter names are
+ * case-insensitive.
+ */
+type ArgRules = {
+  values?: readonly string[];
+  paths?: readonly string[];
+  patterns?: readonly string[];
+  positionalPattern?: boolean;
+  noPaths?: boolean;
+};
+const SEARCH_VALUES = ['-A', '-B', '-C', '-m', '--max-count', '--context', '--color'];
+const GET_CONTENT: ArgRules = {
+  values: ['-totalcount', '-tail', '-head', '-first', '-last', '-readcount', '-encoding'],
+  paths: ['-path', '-literalpath'],
+};
+const GET_CHILD_ITEM: ArgRules = {
+  values: ['-filter', '-include', '-exclude', '-depth', '-attributes'],
+  paths: ['-path', '-literalpath'],
+};
+const ARG_RULES: Record<string, ArgRules> = {
+  rg: {
+    values: [
+      ...SEARCH_VALUES,
+      '-g',
+      '--glob',
+      '--iglob',
+      '-t',
+      '--type',
+      '-T',
+      '--type-not',
+      '--after-context',
+      '--before-context',
+      '-M',
+      '--max-columns',
+      '-j',
+      '--threads',
+      '--sort',
+      '--sortr',
+      '-E',
+      '--encoding',
+    ],
+    paths: ['-f', '--file'],
+    patterns: ['-e', '--regexp'],
+    positionalPattern: true,
+  },
+  grep: {
+    values: [...SEARCH_VALUES, '--include', '--exclude', '--exclude-dir'],
+    paths: ['-f', '--file'],
+    patterns: ['-e', '--regexp'],
+    positionalPattern: true,
+  },
+  'select-string': {
+    values: ['-context', '-encoding', '-culture'],
+    paths: ['-path', '-literalpath'],
+    patterns: ['-pattern'],
+    positionalPattern: true,
+  },
+  'get-content': GET_CONTENT,
+  gc: GET_CONTENT,
+  'get-childitem': GET_CHILD_ITEM,
+  gci: GET_CHILD_ITEM,
+  head: { values: ['-n', '-c'] },
+  tail: { values: ['-n', '-c'] },
+  echo: { noPaths: true },
+  which: { noPaths: true },
+  where: { noPaths: true },
+};
+
+/** The path arguments of a read-only command, under ARG_RULES. */
+function pathArgs(name: string, args: readonly string[]): string[] {
+  const rules = ARG_RULES[name];
+  if (!rules) return args.filter((arg) => !arg.startsWith('-'));
+  if (rules.noPaths) return [];
+  // Long option names are case-sensitive; single-dash PowerShell parameters are not.
+  const has = (list: readonly string[] | undefined, flag: string) =>
+    list?.some((x) => x === flag || (/^-[a-z]{2,}$/.test(x) && x === flag.toLowerCase())) ?? false;
+  const paths: string[] = [];
+  let pattern =
+    rules.positionalPattern === true &&
+    !args.some((arg) => has(rules.patterns, arg) || arg === '--files');
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg.startsWith('-')) {
+      if (has(rules.paths, arg) && i + 1 < args.length) paths.push(args[++i]!);
+      else if (has(rules.values, arg) || has(rules.patterns, arg)) i++;
+    } else if (pattern) pattern = false;
+    else paths.push(arg);
+  }
+  return paths;
 }
 
 /** Whitespace split that honors single and double quotes; undefined on unbalanced quotes. */
@@ -161,7 +286,7 @@ function safeSegment(tokens: string[], worktree: string): boolean {
     .replace(/^.*[/\\]/, '')
     .replace(/\.(?:exe|cmd)$/i, '')
     .toLowerCase();
-  const paths = () => args.every((arg) => arg.startsWith('-') || insidePath(arg, worktree));
+  const paths = () => pathArgs(name, args).every((arg) => insidePath(arg, worktree));
   if (name === 'cd') return args.length === 1 && insidePath(args[0]!, worktree);
   if (READ_ONLY.has(name)) {
     if (
