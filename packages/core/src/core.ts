@@ -1469,6 +1469,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         } else await emit('plan.rejected', { planId, reason }, ctx);
         return { planId, status };
       }),
+    // Reviewer lifecycle lands with the reviewer work package; until then verdicts are refused.
+    submitReview: () =>
+      Promise.reject(
+        new HelixError('INVALID_REQUEST', 'Cross-agent review is not available in this build'),
+      ),
     explain: (request) =>
       command(async () => {
         const input = validate(explainRequestSchema, request);

@@ -98,6 +98,31 @@ export const repoRelativeGlobSchema = z
       !path.split('/').some((part) => part === '' || part === '.' || part === '..'),
     'Expected a positive repository-relative glob using forward slashes without traversal',
   );
+/**
+ * Cross-agent review (#reviewer). A reviewer session (role 'reviewer') is always the other agent
+ * kind from the worker it reviews: Claude Code reviews Codex and Codex reviews Claude Code.
+ */
+export const reviewFindingSchema = z.strictObject({
+  severity: z.enum(['blocker', 'major', 'minor', 'nit']),
+  title: z.string().trim().min(1).max(200),
+  detail: z.string().max(4000),
+  /** Repository-relative path the finding is about, when it has one. */
+  file: repoRelativeGlobSchema.optional(),
+  line: z.int().positive().optional(),
+});
+export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
+export const agentReviewVerdictSchema = z.enum(['approve', 'request_changes']);
+export type AgentReviewVerdict = z.infer<typeof agentReviewVerdictSchema>;
+export const agentReviewSchema = z.strictObject({
+  verdict: agentReviewVerdictSchema,
+  summary: z.string().trim().min(1).max(2000),
+  findings: z.array(reviewFindingSchema).max(50),
+});
+export type AgentReview = z.infer<typeof agentReviewSchema>;
+/** The agent kind that must review work by `agent`; undefined when there is no cross reviewer. */
+export function crossReviewerFor(agent: AgentKind): AgentKind | undefined {
+  return agent === 'codex' ? 'claude-code' : agent === 'claude-code' ? 'codex' : undefined;
+}
 export const planStatusSchema = z.enum(['awaiting_approval', 'approved', 'rejected']);
 export type PlanStatus = z.infer<typeof planStatusSchema>;
 export const metaValueSchema = z.json();

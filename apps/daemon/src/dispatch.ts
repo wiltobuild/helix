@@ -48,6 +48,7 @@ export function createDispatch(core: HelixCore) {
     submitPlan: ({ body }) => core.submitPlan(body),
     decidePlan: ({ params, body }) => core.decidePlan(params.id, body),
     explain: ({ body }) => core.explain(body),
+    submitReview: ({ body }) => core.submitReview(body),
     exportRecording: ({ params }) => core.exportRecording(params.projectId),
     importRecording: ({ body }) => core.importRecording(body),
   };

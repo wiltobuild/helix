@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   agentKindSchema,
+  agentReviewSchema,
   approvalDecisionSchema,
   approvalSchema,
   countSchema,
@@ -83,6 +84,13 @@ export const explainRequestSchema = z.strictObject({
   causedBy: eventSeqSchema.optional(),
 });
 export type ExplainRequest = z.infer<typeof explainRequestSchema>;
+/** `helix review submit`: a reviewer session's verdict on the PR head it was asked to review. */
+export const submitReviewRequestSchema = z.strictObject({
+  reviewerSessionId: sessionIdSchema,
+  headSha: z.string().min(1),
+  review: agentReviewSchema,
+});
+export type SubmitReviewRequest = z.infer<typeof submitReviewRequestSchema>;
 export const acceptedResponseSchema = z.strictObject({ accepted: z.literal(true) });
 export type AcceptedResponse = z.infer<typeof acceptedResponseSchema>;
 export const stopProjectAgentsResponseSchema = z.strictObject({
@@ -348,6 +356,13 @@ export const routes = {
     path: '/api/explain',
     request: explainRequestSchema,
     response: eventSchemas['explain.note'],
+    status: 201,
+  },
+  submitReview: {
+    method: 'POST',
+    path: '/api/reviews',
+    request: submitReviewRequestSchema,
+    response: eventSchemas['agent_review.submitted'],
     status: 201,
   },
   exportRecording: {

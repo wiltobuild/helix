@@ -16,6 +16,7 @@ export const plan = fixtures.passwordResetPlan;
 const created = fixtures.passwordResetRun.find(isEventOf('session.created'));
 const requested = fixtures.passwordResetRun.find(isEventOf('approval.requested'));
 const note = fixtures.passwordResetRun.find(isEventOf('explain.note'));
+const verdict = fixtures.crossReviewRun.find(isEventOf('agent_review.submitted'))!;
 if (!created || !requested || !note) throw new Error('Missing test fixtures');
 export const session = created.payload.session;
 export const approval = requested.payload.approval;
@@ -140,6 +141,7 @@ export function createFakeCore() {
       .mockResolvedValue({ planId: plan.id, status: 'approved' }),
     explain: vi.fn<HelixCore['explain']>().mockResolvedValue(explanation),
     recordNote: vi.fn<HelixCore['recordNote']>().mockResolvedValue(explanation),
+    submitReview: vi.fn<HelixCore['submitReview']>().mockResolvedValue(verdict),
     exportRecording: vi
       .fn<HelixCore['exportRecording']>()
       .mockResolvedValue('{"recording":true}\n'),

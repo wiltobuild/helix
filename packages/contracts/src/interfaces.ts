@@ -15,6 +15,7 @@ import type {
   RecordingImportResponse,
   SendMessageRequest,
   SubmitPlanRequest,
+  SubmitReviewRequest,
   TerminalOutput,
 } from './api.js';
 import type {
@@ -43,6 +44,12 @@ export type HarnessStartOptions = {
   resumeToken?: string;
   /** Per-session additions merged over the adapter's base environment. */
   env?: Record<string, string>;
+  /**
+   * Reviewer sessions only. `cwd` is then a scratch directory the reviewer may write (its verdict
+   * file); `worktreePath` is the worker's checkout under review, readable but never writable.
+   * Adapters decline file writes outside `cwd` and treat `worktreePath` as an extra read root.
+   */
+  review?: { worktreePath: string };
 };
 export interface AgentHarness {
   readonly kind: AgentKind;
@@ -197,7 +204,7 @@ export interface ApprovingHarnessSession extends HarnessSession {
 
 /** Builds the concise message routed back to a worker after CI/review/conflict feedback. */
 export type FeedbackMessageBuilder = (input: {
-  reason: 'ci_failed' | 'changes_requested' | 'merge_conflict';
+  reason: 'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings';
   pr: PullRequestFacts;
   details?: string;
 }) => string;
@@ -232,6 +239,8 @@ export interface HelixCore {
   decidePlan(planId: PlanId, request: PlanDecisionRequest): Promise<PlanDecisionResponse>;
   /** An agent's or orchestrator's note; the source comes from the calling session's role. */
   explain(request: ExplainRequest): Promise<HelixEvent<'explain.note'>>;
+  /** A reviewer session's verdict for the PR head it was asked to review (`helix review submit`). */
+  submitReview(request: SubmitReviewRequest): Promise<HelixEvent<'agent_review.submitted'>>;
   /** Helix's own note about a session (source "helix"), e.g. from a harness adapter.
    * Composition-only: deliberately not an HTTP route, so agents cannot claim Helix's voice. */
   recordNote(sessionId: SessionId, text: string): Promise<HelixEvent<'explain.note'>>;

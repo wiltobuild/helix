@@ -13,6 +13,7 @@ export const buildFeedbackMessage: FeedbackMessageBuilder = ({ reason, pr, detai
     ci_failed: 'Fix the failing checks',
     changes_requested: 'Address the requested review changes',
     merge_conflict: 'Resolve the merge conflicts',
+    review_findings: 'Address the cross-agent review findings',
   }[reason];
   const parts = [`PR #${pr.number}: ${action}.`];
   if (pr.checks.failingNames.length)

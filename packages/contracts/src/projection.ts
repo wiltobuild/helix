@@ -1,12 +1,14 @@
-import type {
-  AgentActivity,
-  Approval,
-  ChatItem,
-  Plan,
-  PlanStatus,
-  Project,
-  PullRequestFacts,
-  Session,
+import {
+  crossReviewerFor,
+  type AgentActivity,
+  type AgentReview,
+  type Approval,
+  type ChatItem,
+  type Plan,
+  type PlanStatus,
+  type Project,
+  type PullRequestFacts,
+  type Session,
 } from './entities.js';
 import type { ApprovalId, PlanId, PlanNodeId, SessionId } from './ids.js';
 import { parseEvent, type EventType, type HelixEvent, type PayloadFor } from './events.js';
@@ -23,6 +25,17 @@ export type SessionState = {
   chat: ChatItem[];
   lastEventSeq: number;
   pendingApprovalIds: ApprovalId[];
+  /**
+   * Workers only: the latest cross-agent review of this worker's PR. It describes `headSha`; once
+   * the PR head moves on, the review is stale and the PR waits for a new one.
+   */
+  agentReview?: AgentReviewState;
+};
+export type AgentReviewState = {
+  reviewerSessionId: SessionId;
+  headSha: string;
+  status: 'reviewing' | 'approved' | 'changes_requested';
+  review?: AgentReview;
 };
 export type PlanState = Plan & {
   status: PlanStatus;
@@ -148,6 +161,34 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
     case 'feedback.routed':
       sessionFor(state, e.payload.toSessionId);
       break;
+    case 'agent_review.requested': {
+      const reviewer = sessionFor(state, e.sessionId).session;
+      const worker = sessionFor(state, e.payload.workerSessionId);
+      if (reviewer.role !== 'reviewer' || worker.session.role !== 'worker')
+        throw new Error('Review requires a reviewer session and a worker session');
+      if (crossReviewerFor(worker.session.agent) !== reviewer.agent)
+        throw new Error('Reviewer must be the other agent kind (no self-review)');
+      if (!worker.pr || worker.pr.number !== e.payload.prNumber || worker.pr.state !== 'open')
+        throw new Error('Review requires the worker’s open PR');
+      break;
+    }
+    case 'agent_review.submitted':
+    case 'agent_review.abandoned': {
+      const worker = sessionFor(state, e.payload.workerSessionId);
+      const pending = worker.agentReview;
+      if (
+        !pending ||
+        pending.reviewerSessionId !== e.sessionId ||
+        pending.headSha !== e.payload.headSha
+      )
+        throw new Error('Review verdict requires a matching review in progress');
+      // A finished review can also be abandoned once the PR head has moved past it and no new
+      // review can start (no cross reviewer available, or cross review turned off).
+      const stale = pending.status !== 'reviewing' && worker.pr?.headSha !== pending.headSha;
+      if (pending.status !== 'reviewing' && !(e.type === 'agent_review.abandoned' && stale))
+        throw new Error('Review verdict requires a matching review in progress');
+      break;
+    }
     case 'explain.note':
       if (!e.sessionId && e.planNodeId)
         sessionFor(state, planForNode(state, e.planNodeId).orchestratorSessionId);
@@ -388,6 +429,31 @@ function reduceInto(
       pr.updatedAt = e.ts;
       break;
     }
+    case 'agent_review.requested': {
+      const worker = sessionFor(next, e.payload.workerSessionId);
+      worker.agentReview = {
+        reviewerSessionId: e.sessionId!,
+        headSha: e.payload.headSha,
+        status: 'reviewing',
+      };
+      getSession().lastEventSeq = e.seq;
+      break;
+    }
+    case 'agent_review.submitted': {
+      const worker = sessionFor(next, e.payload.workerSessionId);
+      worker.agentReview = {
+        reviewerSessionId: e.sessionId!,
+        headSha: e.payload.headSha,
+        status: e.payload.review.verdict === 'approve' ? 'approved' : 'changes_requested',
+        review: structuredClone(e.payload.review),
+      };
+      getSession().lastEventSeq = e.seq;
+      break;
+    }
+    case 'agent_review.abandoned':
+      delete sessionFor(next, e.payload.workerSessionId).agentReview;
+      getSession().lastEventSeq = e.seq;
+      break;
     case 'feedback.routed': {
       const s = sessionFor(next, e.payload.toSessionId);
       s.chat.push({ kind: 'message', role: 'system', text: e.payload.summary });
