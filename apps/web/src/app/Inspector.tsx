@@ -134,6 +134,15 @@ export function Inspector({
   const decidePlan = (decision: 'approve' | 'reject', reason?: string) =>
     act(`plan:${decision}`, async () => {
       await client!.decidePlan(orchPlan!.id, { decision, ...(reason ? { reason } : {}) });
+      // Rejecting only records the decision; the orchestrator has to hear what to change, or it
+      // stays idle. Send the request so it revises and submits a new plan for approval.
+      if (decision === 'reject')
+        await client!.sendMessage(id, {
+          text: reason
+            ? `I sent your plan back. Please revise it and submit a new plan for my approval. Requested changes: ${reason}`
+            : 'I sent your plan back. Please revise it and submit a new plan for my approval.',
+          mode: 'queue',
+        });
       setChanges(undefined);
     });
 
@@ -966,7 +975,7 @@ function PlanPanel({
                   disabled={!canAct}
                   loading={busy === 'plan:reject'}
                 >
-                  Send back to the orchestrator
+                  Send back for a new plan
                 </Button>
               </div>
             </form>

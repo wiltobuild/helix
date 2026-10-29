@@ -264,3 +264,20 @@
   color: var(--status-failed);
   font-size: var(--text-sm);
 }
+
+/* Narrow windows: the inspector slides over the content instead of squeezing it. */
+@media (max-width: 1200px) {
+  .shell[data-inspector='open'] {
+    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-areas:
+      'top top'
+      'nav main';
+  }
+}
+
+@media (max-width: 900px) {
+  .shell,
+  .shell[data-inspector='open'] {
+    grid-template-columns: 196px minmax(0, 1fr);
+  }
+}

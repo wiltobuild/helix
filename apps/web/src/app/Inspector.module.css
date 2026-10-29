@@ -784,3 +784,15 @@
 .lineHunk {
   color: var(--status-review);
 }
+
+@media (max-width: 1200px) {
+  .inspector {
+    position: fixed;
+    top: 56px;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-popover);
+    width: min(400px, 92vw);
+    box-shadow: var(--shadow-pop);
+  }
+}
