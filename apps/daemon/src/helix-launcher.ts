@@ -48,7 +48,7 @@ export function sessionEnvironment(dataDir: string, base: NodeJS.ProcessEnv) {
     session: Session;
     project: Project;
   }): Record<string, string> | undefined =>
-    session.role === 'orchestrator'
+    session.role === 'orchestrator' || session.role === 'reviewer'
       ? {
           HELIX_DATA_DIR: resolve(dataDir),
           HELIX_SESSION_ID: session.id,

@@ -63,9 +63,15 @@ class CliHarness implements AgentHarness {
       const sessionOptions = {
         ...this.options,
         env: Object.fromEntries(
-          Object.entries(environment(this.options, options.env)).filter(
-            (entry): entry is [string, string] => entry[1] !== undefined,
-          ),
+          Object.entries(
+            environment(this.options, {
+              ...options.env,
+              // CLI launchers (tsx IPC/cache) and other helpers must keep temporary writes in scratch.
+              ...(options.review
+                ? { TMPDIR: options.cwd, TEMP: options.cwd, TMP: options.cwd }
+                : {}),
+            }),
+          ).filter((entry): entry is [string, string] => entry[1] !== undefined),
         ),
       };
       const bin = await this.executable(sessionOptions);

@@ -1,10 +1,13 @@
 import path from 'node:path';
-import { resolveExecutable } from '@helix/harness';
+import { mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolveExecutable, reviewerPrompt as defaultReviewerPrompt } from '@helix/harness';
 import {
   HelixError,
   isHelixError,
   applyEvent,
   deriveStatus,
+  crossReviewerFor,
   approvalDecisionRequestSchema,
   createProjectRequestSchema,
   createSessionRequestSchema,
@@ -17,6 +20,7 @@ import {
   sessionIdSchema,
   sessionSchema,
   submitPlanRequestSchema,
+  submitReviewRequestSchema,
   type AgentHarness,
   type AgentKind,
   type ApprovingHarnessSession,
@@ -39,6 +43,7 @@ import {
   type Project,
   type ProjectId,
   type ProjectState,
+  type PullRequestFacts,
   type ScmEmission,
   type ScmObserver,
   type Session,
@@ -77,6 +82,17 @@ export type CoreDeps = {
   detectHarnesses?: () => Promise<HarnessInfo[]>;
   /** Prepended to the first delivery only; the stored user prompt is unchanged. */
   orchestratorPrompt?: (ctx: { project: Project; session: Session }) => string;
+  /** Cross reviews are opt-in outside the daemon composition. */
+  crossReview?: boolean;
+  /** Scratch directories live at <dataDir or tmpdir>/reviews/<sessionId>. */
+  dataDir?: string;
+  reviewerPrompt?: (ctx: {
+    project: Project;
+    worker: Session;
+    reviewer: Session;
+    pr: PullRequestFacts;
+    node?: PlanNode;
+  }) => string;
   /** Process environment additions evaluated for each launch, including resumes. */
   sessionEnv?: (ctx: { project: Project; session: Session }) => Record<string, string> | undefined;
   limits?: { maxTurnsPerTask?: number; maxParallelWorkers?: number };
@@ -112,6 +128,7 @@ const EXTENSION_SCOPE = 'helix:core:turn-extension:v1';
 const SCHEDULING_SCOPE = 'helix:core:scheduling-paused:v1';
 const EXTENSION_PREFIX = 'Turn allowance extended to ';
 const META_HASH = 'v1';
+const REVIEW_REMINDER = 'Submit your verdict with `helix review submit`';
 
 /** A single writer owns domain commands and adapter callbacks. State is only a replay cache. */
 export function createHelixCore(deps: CoreDeps): HelixCore {
@@ -429,6 +446,16 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   async function deliver(id: SessionId, delivery: Delivery): Promise<void> {
     const s = session(id);
     const runtime = runtimes.get(id);
+    if (s.session.role === 'reviewer') {
+      const trigger = eventsFor(s.session).find((e) => e.seq === delivery.cause);
+      if (
+        trigger?.type === 'agent_review.requested' ||
+        (trigger?.type === 'explain.note' && trigger.payload.text.startsWith(REVIEW_REMINDER))
+      ) {
+        const pending = pendingReview(s.session);
+        if (!pending || delivery.cause < pending.request.seq) return;
+      }
+    }
     if (delivery.automatic && s.pr?.state !== 'open') return;
     if (s.session.archivedAt || s.activity === 'exited' || runtime?.stopped) return;
     if (blocked(s) || !runtime?.handle) {
@@ -577,6 +604,166 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       ? `${deps.orchestratorPrompt({ project: project(s.projectId).project, session: s })}\n\n${s.prompt}`
       : s.prompt;
   }
+  function pendingReview(reviewer: Session) {
+    const worker = reviewer.parentSessionId ? findSession(reviewer.parentSessionId) : undefined;
+    const review = worker?.agentReview;
+    if (review?.status !== 'reviewing' || review.reviewerSessionId !== reviewer.id) return;
+    const request = eventsFor(reviewer).findLast(
+      (e): e is HelixEvent<'agent_review.requested'> =>
+        e.type === 'agent_review.requested' && e.payload.headSha === review.headSha,
+    );
+    return request && worker ? { worker, review, request } : undefined;
+  }
+  function reviewMessage(reviewer: Session, request: HelixEvent<'agent_review.requested'>): string {
+    const worker = session(request.payload.workerSessionId);
+    const p = project(worker.session.projectId);
+    const node = Object.values(p.plans)
+      .flatMap((plan) => plan.nodes)
+      .find((n) => n.id === worker.session.planNodeId);
+    const previous = eventsFor(reviewer).findLast(
+      (e) => e.type === 'agent_review.submitted' && e.seq < request.seq,
+    );
+    const instructions = (deps.reviewerPrompt ?? defaultReviewerPrompt)({
+      project: p.project,
+      worker: worker.session,
+      reviewer,
+      pr: worker.pr!,
+      ...(node ? { node } : {}),
+    });
+    return `${instructions}\n\nRequested head: ${request.payload.headSha}. One verdict for this request.${previous?.type === 'agent_review.submitted' ? `\nRe-review: the worker pushed changes since ${previous.payload.headSha}. Inspect git diff ${previous.payload.headSha}...${request.payload.headSha} and verify the previous findings are resolved:\n${JSON.stringify(previous.payload.review)}` : ''}`;
+  }
+  async function abandonReview(reviewer: Session, reason: string, cause?: EventSeq): Promise<void> {
+    const pending = pendingReview(reviewer);
+    if (!pending) return;
+    const e = await emit(
+      'agent_review.abandoned',
+      { ...pending.request.payload, reason },
+      context(reviewer, cause ?? pending.request.seq),
+    );
+    held.delete(reviewer.id);
+    await emit(
+      'explain.note',
+      {
+        text: `${reason} This PR now relies on CI and GitHub review.`,
+      },
+      context(pending.worker.session, e.seq),
+    );
+  }
+  async function stopReviewers(worker: Session, reason: string, cause?: EventSeq): Promise<void> {
+    for (const s of Object.values(project(worker.projectId).sessions)) {
+      if (s.session.role !== 'reviewer' || s.session.parentSessionId !== worker.id) continue;
+      await abandonReview(s.session, reason, cause);
+      if (
+        s.activity !== 'exited' &&
+        runtimes.get(s.session.id)?.handle &&
+        !runtimes.get(s.session.id)?.stopped
+      )
+        await stop(s.session.id);
+    }
+  }
+  async function requestReview(id: SessionId, cause: EventSeq): Promise<void> {
+    const worker = session(id);
+    const pr = worker.pr;
+    if (
+      !deps.crossReview ||
+      closing ||
+      shutdownRequested ||
+      pausedProjects.has(worker.session.projectId) ||
+      worker.session.role !== 'worker' ||
+      worker.session.archivedAt ||
+      worker.activity === 'exited' ||
+      runtimes.get(id)?.stopped ||
+      !worker.worktree ||
+      pr?.state !== 'open' ||
+      !pr.checks.total ||
+      pr.checks.failed ||
+      pr.checks.pending
+    )
+      return;
+    const p = project(worker.session.projectId);
+    // Includes abandoned requests: fallback must not become an endless retry loop on this head.
+    if (
+      (history.get(p.project.id) ?? []).some(
+        (e) =>
+          e.type === 'agent_review.requested' &&
+          e.payload.workerSessionId === id &&
+          e.payload.headSha === pr.headSha,
+      )
+    )
+      return;
+    const agent = crossReviewerFor(worker.session.agent);
+    let available = false;
+    try {
+      available =
+        !!agent &&
+        !!deps.harnesses[agent] &&
+        (await detectHarnesses()).some(
+          (h) => h.agent === agent && h.installed && h.signedIn !== false,
+        );
+    } catch {
+      /* Detection failure is also unavailability; never substitute the worker's agent. */
+    }
+    if (!agent || !available) {
+      const text = `No cross-agent reviewer is available (${agent ?? worker.session.agent} is not configured, installed or signed in); Helix never lets an agent review its own work, so this PR relies on CI and human review.`;
+      if (
+        !eventsFor(worker.session).some((e) => e.type === 'explain.note' && e.payload.text === text)
+      )
+        await emit('explain.note', { text }, context(worker.session, cause));
+      return;
+    }
+    let reviewer = Object.values(p.sessions).findLast(
+      (s) =>
+        s.session.role === 'reviewer' &&
+        s.session.parentSessionId === id &&
+        s.session.agent === agent &&
+        !s.session.archivedAt &&
+        s.activity !== 'exited' &&
+        !runtimes.get(s.session.id)?.stopped,
+    )?.session;
+    if (reviewer) await abandonReview(reviewer, 'The PR moved on to a new head.', cause);
+    if (!reviewer) {
+      const reviewerId = validate(sessionIdSchema, deps.ids('session'));
+      reviewer = {
+        id: reviewerId,
+        projectId: p.project.id,
+        role: 'reviewer',
+        agent,
+        parentSessionId: id,
+        title: `Review: ${worker.session.title}`,
+        interface: 'chat',
+        prompt: `Review PR #${pr.number} against the worker task and acceptance criteria.`,
+        worktreePath: path.resolve(deps.dataDir ?? tmpdir(), 'reviews', reviewerId),
+        createdAt: deps.clock(),
+      };
+      await mkdir(reviewer.worktreePath!, { recursive: true });
+      const created = await emit(
+        'session.created',
+        { session: reviewer },
+        context(reviewer, cause),
+      );
+      await emit('session.started', {}, context(reviewer, created.seq));
+    }
+    const requested = await emit(
+      'agent_review.requested',
+      {
+        workerSessionId: id,
+        prNumber: pr.number,
+        headSha: pr.headSha,
+      },
+      context(reviewer, cause),
+    );
+    try {
+      if (!runtimes.get(reviewer.id)?.handle) await launch(reviewer, requested.seq, false, false);
+      await deliver(reviewer.id, {
+        text: reviewMessage(reviewer, requested),
+        mode: 'queue',
+        cause: requested.seq,
+      });
+    } catch (error) {
+      deps.log.error('Could not start cross-agent review', error);
+      await abandonReview(reviewer, 'The reviewer could not start.', requested.seq);
+    }
+  }
   async function launch(
     s: Session,
     cause: EventSeq,
@@ -648,11 +835,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }
       const token = resumes.get(s.id);
       const env = sessionEnv(s);
+      const reviewedWorker =
+        s.role === 'reviewer' && s.parentSessionId ? session(s.parentSessionId) : undefined;
+      if (s.role === 'reviewer') {
+        if (!reviewedWorker?.worktree)
+          throw new HelixError('INVALID_REQUEST', 'Reviewer has no worker worktree');
+        await mkdir(s.worktreePath!, { recursive: true });
+      }
       runtime.handle = await harnessFor(s.agent).start({
         session: s,
         cwd: s.worktreePath!,
         ...(env ? { env } : {}),
         ...(token ? { resumeToken: token } : {}),
+        ...(reviewedWorker?.worktree
+          ? { review: { worktreePath: reviewedWorker.worktree.path } }
+          : {}),
       });
       let subscribing = true;
       runtime.off = runtime.handle.onEvent((event) => {
@@ -699,6 +896,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             deps.log.error('Failed to stop incomplete harness launch', stopError),
           );
       await emit('activity.changed', { activity: 'unknown' }, context(s, cause));
+      if (s.role === 'reviewer')
+        await abandonReview(s, 'The reviewer failed to start or resume.', cause);
       if (resume) {
         deps.log.error(`Could not resume ${s.id}`, error);
         return;
@@ -744,6 +943,15 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     await saveResume(id);
     if (emission.type === 'activity.changed') {
       if (
+        before.session.role === 'reviewer' &&
+        ['unknown', 'exited'].includes(emission.payload.activity)
+      )
+        await abandonReview(
+          before.session,
+          'The reviewer failed or exited without a verdict.',
+          e.seq,
+        );
+      if (
         emission.payload.activity === 'idle' &&
         turnWasOpen &&
         rt.turnOpen &&
@@ -762,6 +970,25 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   }
   async function endTurn(id: SessionId, cause: EventSeq): Promise<void> {
     let s = session(id);
+    if (s.session.role === 'reviewer') {
+      const pending = pendingReview(s.session);
+      if (!pending) return;
+      if (runtimes.get(id)!.cause < pending.request.seq) return;
+      const reminder = eventsFor(s.session).find(
+        (e) =>
+          e.type === 'explain.note' &&
+          e.causedBy === pending.request.seq &&
+          e.payload.text.startsWith(REVIEW_REMINDER),
+      );
+      if (reminder)
+        await abandonReview(s.session, 'The reviewer ended two turns without a verdict.', cause);
+      else {
+        const text = `${REVIEW_REMINDER} <file> --head ${pending.review.headSha}.`;
+        const e = await emit('explain.note', { text }, context(s.session, pending.request.seq));
+        hold(id, { text, mode: 'queue', cause: e.seq });
+      }
+      return;
+    }
     if (!s.worktree) return;
     if ((await deps.worktrees.status(s.worktree.path)).dirty) {
       const rt = runtimes.get(id)!;
@@ -870,6 +1097,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (number !== s.pr.number)
       throw new HelixError('INVALID_REQUEST', 'SCM update has the wrong PR');
     const e = await emit(emission.type, emission.payload, context(s.session, cause));
+    if (session(id).pr?.state !== 'open')
+      await stopReviewers(s.session, 'The worker PR was closed or merged.', e.seq);
     if (emission.type === 'pr.merged') {
       watchers.get(id)?.();
       watchers.delete(id);
@@ -887,6 +1116,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     } else if (emission.type === 'pr.updated' && emission.payload.pr.mergeable === 'conflicting') {
       await feedback(id, 'merge_conflict', e.seq);
     }
+    if (emission.type === 'ci.updated') await requestReview(id, e.seq);
   }
   async function feedback(
     id: SessionId,
@@ -920,7 +1150,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }
       return;
     }
-    const summary = deps.buildFeedbackMessage({ reason, pr, ...(details ? { details } : {}) });
+    const summary =
+      reason === 'review_findings'
+        ? details!
+        : deps.buildFeedbackMessage({ reason, pr, ...(details ? { details } : {}) });
     const routed = await emit(
       'feedback.routed',
       { prNumber: pr.number, reason, summary, toSessionId: id },
@@ -1110,6 +1343,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   }
   async function stop(id: SessionId): Promise<void> {
     const s = session(id);
+    if (!closing) {
+      if (s.session.role === 'reviewer')
+        await abandonReview(s.session, 'The reviewer was stopped.');
+      else await stopReviewers(s.session, 'The worker was stopped.');
+    }
     if (s.activity === 'exited') return;
     const rt = runtimes.get(id);
     if (s.session.interface === 'terminal') await deps.terminals.kill(id);
@@ -1126,6 +1364,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       rt.attachment?.detach();
     }
     held.delete(id);
+    // Daemon shutdown preserves the review request for conversation recovery at next startup.
+    if (closing && s.session.role === 'reviewer') return;
     const exited = await emit('session.exited', { code: null }, context(s.session, rt?.cause));
     await schedule(s.session.projectId, exited.seq);
   }
@@ -1142,7 +1382,37 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             if (s.session.archivedAt) continue;
             if (s.activity !== 'exited' && !runtimes.has(s.session.id)) {
               const last = eventsFor(s.session).at(-1)!;
-              if (!s.worktree)
+              if (s.session.role === 'reviewer') {
+                const pending = pendingReview(s.session);
+                if (
+                  pending &&
+                  (pausedProjects.has(p.project.id) ||
+                    pending.worker.session.archivedAt ||
+                    pending.worker.pr?.state !== 'open')
+                ) {
+                  await abandonReview(
+                    s.session,
+                    'Review cannot resume because the worker is no longer scheduled.',
+                    last.seq,
+                  );
+                  continue;
+                }
+                if (pending) {
+                  const reminder = eventsFor(s.session).findLast(
+                    (e) =>
+                      e.type === 'explain.note' &&
+                      e.causedBy === pending.request.seq &&
+                      e.payload.text.startsWith(REVIEW_REMINDER),
+                  );
+                  // Resume the interrupted request, never append a second requested event.
+                  hold(s.session.id, {
+                    text: reviewMessage(s.session, pending.request),
+                    mode: 'queue',
+                    cause: reminder?.seq ?? pending.request.seq,
+                  });
+                }
+                await launch(s.session, last.seq, true, false);
+              } else if (!s.worktree)
                 await emit(
                   'activity.changed',
                   { activity: 'unknown' },
@@ -1303,9 +1573,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         pausedProjects.add(id);
         const stopped: SessionId[] = [];
         const failures: unknown[] = [];
-        for (const s of Object.values(p.sessions)) {
+        const running = Object.values(p.sessions).filter((s) => {
           const rt = runtimes.get(s.session.id);
-          if (!rt || rt.stopped || s.activity === 'exited' || s.session.archivedAt) continue;
+          return rt && !rt.stopped && s.activity !== 'exited' && !s.session.archivedAt;
+        });
+        for (const s of running) {
           try {
             await stop(s.session.id);
             stopped.push(s.session.id);
@@ -1469,11 +1741,50 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         } else await emit('plan.rejected', { planId, reason }, ctx);
         return { planId, status };
       }),
-    // Reviewer lifecycle lands with the reviewer work package; until then verdicts are refused.
-    submitReview: () =>
-      Promise.reject(
-        new HelixError('INVALID_REQUEST', 'Cross-agent review is not available in this build'),
-      ),
+    submitReview: (request) =>
+      command(async () => {
+        const input = validate(submitReviewRequestSchema, request);
+        const reviewer = findSession(input.reviewerSessionId);
+        if (
+          !reviewer ||
+          reviewer.session.role !== 'reviewer' ||
+          reviewer.session.archivedAt ||
+          reviewer.activity === 'exited'
+        )
+          throw new HelixError('INVALID_REQUEST', 'A live reviewer session is required');
+        const pending = pendingReview(reviewer.session);
+        if (
+          !pending ||
+          pending.review.headSha !== input.headSha ||
+          pending.worker.pr?.headSha !== input.headSha ||
+          pending.worker.pr.state !== 'open'
+        )
+          throw new HelixError('INVALID_REQUEST', 'The PR moved on; review the new head');
+        const e = await emit(
+          'agent_review.submitted',
+          {
+            ...pending.request.payload,
+            review: input.review,
+          },
+          context(reviewer.session, pending.request.seq),
+        );
+        held.delete(reviewer.session.id);
+        if (input.review.verdict === 'request_changes') {
+          const name = reviewer.session.agent === 'claude-code' ? 'Claude Code' : 'Codex';
+          const oneLine = (text: string) => text.trim().replace(/\s+/g, ' ');
+          const summary = [
+            `${name} reviewed PR #${pending.worker.pr.number} and requested changes:`,
+            ...input.review.findings.map(
+              (f) =>
+                `[${f.severity}] ${oneLine(f.title)}${f.file ? ` (${f.file}${f.line ? `:${f.line}` : ''})` : ''}: ${oneLine(f.detail)}`,
+            ),
+          ]
+            .join('\n')
+            .slice(0, 2500);
+          await feedback(pending.worker.session.id, 'review_findings', e.seq, summary);
+        }
+        return e;
+      }),
     explain: (request) =>
       command(async () => {
         const input = validate(explainRequestSchema, request);

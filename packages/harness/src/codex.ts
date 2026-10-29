@@ -16,9 +16,10 @@ import {
   record,
   string,
 } from './protocol.js';
-import { ProcessSession } from './session.js';
+import { ProcessSession, REVIEW_WRITE_DENIAL } from './session.js';
 import { insideWorktree } from './worktree-paths.js';
 import { HELIX_GIT_INSTRUCTIONS, isGitWriteCommand } from './git-policy.js';
+import { isSafeCommand } from './safe-commands.js';
 
 /** Completed items are canonical; deltas are not emitted a second time as duplicate chat. */
 export function codexItem(value: unknown, completed: boolean): HarnessEmission[] {
@@ -97,7 +98,18 @@ export class CodexSession extends ProcessSession {
       const params = {
         cwd: start.cwd,
         approvalPolicy: options.codexApprovalPolicy ?? 'on-request',
-        sandbox: options.codexSandbox ?? 'workspace-write',
+        sandbox: start.review ? 'workspace-write' : (options.codexSandbox ?? 'workspace-write'),
+        // The CLI reads HELIX_DATA_DIR/run.json and posts to the loopback daemon.
+        ...(start.review
+          ? {
+              config: {
+                'sandbox_workspace_write.network_access': true,
+                'sandbox_workspace_write.writable_roots': [],
+                'sandbox_workspace_write.exclude_tmpdir_env_var': true,
+                'sandbox_workspace_write.exclude_slash_tmp': true,
+              },
+            }
+          : {}),
         developerInstructions: HELIX_GIT_INSTRUCTIONS,
         ...(start.session.model ? { model: start.session.model } : {}),
         ...(start.resumeToken ? { threadId: start.resumeToken } : {}),
@@ -125,6 +137,17 @@ export class CodexSession extends ProcessSession {
         threadId: this.resumeToken,
         input: [{ type: 'text', text, text_elements: [] }],
         summary: 'concise',
+        ...(this.startOptions.review
+          ? {
+              sandboxPolicy: {
+                type: 'workspaceWrite',
+                writableRoots: [this.startOptions.cwd],
+                networkAccess: true,
+                excludeTmpdirEnvVar: true,
+                excludeSlashTmp: true,
+              },
+            }
+          : {}),
       }),
     );
     const turn = record(response.turn);
@@ -327,10 +350,37 @@ export class CodexSession extends ProcessSession {
         );
         return;
       }
+      const commandCwd = string(params.cwd) || this.startOptions.cwd;
+      if (
+        this.startOptions.review &&
+        (file ||
+          permissions ||
+          (command &&
+            !isSafeCommand(
+              params.command,
+              this.startOptions.cwd,
+              [this.startOptions.review.worktreePath],
+              commandCwd,
+            )))
+      ) {
+        this.note(REVIEW_WRITE_DENIAL);
+        await this.write({
+          id,
+          result: permissions
+            ? { permissions: {}, scope: 'turn' }
+            : {
+                decision: legacy ? { denied: { rejection: REVIEW_WRITE_DENIAL } } : 'decline',
+              },
+        });
+        return;
+      }
       if (
         command &&
-        (!string(params.cwd) || insideWorktree(this.startOptions.cwd, [string(params.cwd)])) &&
-        this.autoApprove(params.command, respond)
+        (!string(params.cwd) ||
+          insideWorktree(this.startOptions.cwd, [string(params.cwd)]) ||
+          (this.startOptions.review &&
+            insideWorktree(this.startOptions.review.worktreePath, [commandCwd]))) &&
+        this.autoApprove(params.command, respond, commandCwd)
       )
         return;
       this.askApproval(

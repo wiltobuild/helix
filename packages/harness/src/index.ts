@@ -3,3 +3,4 @@ export { createHarness, detectAll } from './harness.js';
 export type { HarnessOptions } from './options.js';
 export { resolveExecutable } from './process.js';
 export { ORCHESTRATOR_PROMPT, orchestratorPrompt } from './orchestrator/index.js';
+export { REVIEWER_PROMPT, reviewerPrompt } from './reviewer/index.js';

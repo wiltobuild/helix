@@ -6,10 +6,11 @@ import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { openStore } from '@helix/storage';
 import { createHelixCore } from '@helix/core';
-import { orchestratorPrompt } from '@helix/harness';
+import { orchestratorPrompt, reviewerPrompt } from '@helix/harness';
 import { HelixError } from '@helix/contracts';
 import {
   approvalPolicyFromEnv,
+  crossReviewFromEnv,
   codexOverrides,
   consoleLog,
   createRealCore,
@@ -88,6 +89,9 @@ test('real composition runs without SCM and closes its store exactly once', asyn
     const daemon = await startDaemon({ core, dataDir, port: 0, version: 'test' });
     const deps = vi.mocked(createHelixCore).mock.calls.at(-1)![0];
     expect(deps.orchestratorPrompt).toBe(orchestratorPrompt);
+    expect(deps.reviewerPrompt).toBe(reviewerPrompt);
+    expect(deps.crossReview).toBe(true);
+    expect(deps.dataDir).toBe(dataDir);
     expect(deps.sessionEnv).toBeTypeOf('function');
     expect(await core.health()).toEqual({ status: 'ok', version: '0.0.0' });
     expect(info).toHaveBeenCalledOnce();
@@ -137,13 +141,23 @@ test('HELIX_GITHUB=off never looks up a GitHub token', async () => {
   vi.mocked(spawn).mockClear();
   const core = await createRealCore({
     dataDir,
-    env: { HELIX_GITHUB: 'off', GH_TOKEN: 'should-not-be-used' },
+    env: { HELIX_GITHUB: 'off', HELIX_REVIEWER: 'off', GH_TOKEN: 'should-not-be-used' },
   });
   try {
+    expect(vi.mocked(createHelixCore).mock.calls.at(-1)![0].crossReview).toBe(false);
     expect(vi.mocked(spawn).mock.calls.some(([cmd]) => cmd === 'gh')).toBe(false);
     expect(info.mock.calls.map((c) => String(c[0])).join('\n')).toContain('HELIX_GITHUB=off');
   } finally {
     await core.shutdown();
     await rm(dataDir, { recursive: true, force: true });
   }
+});
+
+test('cross-agent review defaults on with validated on/off overrides', () => {
+  expect(crossReviewFromEnv({})).toBe(true);
+  expect(crossReviewFromEnv({ HELIX_REVIEWER: ' ON ' })).toBe(true);
+  expect(crossReviewFromEnv({ HELIX_REVIEWER: 'OFF' })).toBe(false);
+  expect(() => crossReviewFromEnv({ HELIX_REVIEWER: 'maybe' })).toThrow(
+    'HELIX_REVIEWER must be on or off',
+  );
 });
