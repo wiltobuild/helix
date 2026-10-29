@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
 import { fixtures, projectUpTo } from '@helix/contracts';
-import { AgentBadge, HelixLogo, SessionCard, TooltipProvider } from '@helix/ui';
+import { AgentBadge, AgentEmblem, HelixLogo, SessionCard, TooltipProvider } from '@helix/ui';
 import { PlanView } from './PlanView';
 
 const { passwordResetRun: run } = fixtures;
@@ -71,7 +71,7 @@ test('SessionCard activates AgentBadge emblem animation only when status is work
   expect(reviewCard).not.toContain('data-active="true"');
 });
 
-test('PlanView renders Concept 3 Flow Observatory bar and strand-colored dependency edges', () => {
+test('PlanView renders the Concept 3 tree: orchestrator, one node per agent, then task cards', () => {
   // At seq 15, workers are actively running in Wave 1
   const workingState = projectUpTo(run, 15);
   const html = renderToStaticMarkup(
@@ -80,12 +80,40 @@ test('PlanView renders Concept 3 Flow Observatory bar and strand-colored depende
     </TooltipProvider>,
   );
 
-  // Flow Observatory telemetry bar
-  expect(html).toContain('aria-label="Plan strand summary"');
-  expect(html).toContain('2 tasks');
-  expect(html).toContain('1 task');
-
-  // Strand-colored dependency edges
+  expect(html).toContain('Orchestrator');
+  expect(html).toContain('Plan and coordinate all tasks');
+  // One node per agent, with the large animated logo while that agent works
+  expect(html).toMatch(/aria-label="Codex: [A-Za-z ]+"/);
+  expect(html).toMatch(/aria-label="Claude Code: [A-Za-z ]+"/);
+  expect(html).toContain('role="img" aria-label="Codex (working)"');
+  // Every planned task is a card
+  expect(html).toContain('Task 1');
+  expect(html).toContain('Task 3');
+  // Edges carry each agent's strand color
   expect(html).toContain('--edge-strand:var(--strand-claude)');
   expect(html).toContain('--edge-strand:var(--strand-codex)');
+});
+
+test('PlanView asks for review before anything runs', () => {
+  const planSeq = run.find((e) => e.type === 'plan.submitted')!.seq;
+  const pending = projectUpTo(run, planSeq);
+  const html = renderToStaticMarkup(
+    <TooltipProvider>
+      <PlanView state={pending} selected={null} onSelect={() => {}} onReviewPlan={() => {}} />
+    </TooltipProvider>,
+  );
+  expect(html).toContain('Needs review');
+  expect(html).toContain('plan ready');
+  expect(html).toContain('Review plan');
+  expect(html).not.toContain('In progress');
+});
+
+test('AgentEmblem is the big animated logo tile', () => {
+  const idle = renderToStaticMarkup(<AgentEmblem agent="claude-code" />);
+  expect(idle).toContain('aria-label="Claude Code"');
+  expect(idle).not.toContain('data-active="true"');
+  const active = renderToStaticMarkup(<AgentEmblem agent="codex" active size={64} />);
+  expect(active).toContain('data-active="true"');
+  expect(active).toContain('--glyph-size:40px');
+  expect(active).toContain('d="M22.2819 9.8211');
 });

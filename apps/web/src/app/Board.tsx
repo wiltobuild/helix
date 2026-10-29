@@ -25,7 +25,7 @@ export function Board({ cards, columns, selected, onSelect, onReview }: BoardPro
     <div className={s.wrap}>
       <div
         className={s.board}
-        style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(232px, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
       >
         {columns.map((col) => {
           const inCol = cards.filter((c) => c.column === col);

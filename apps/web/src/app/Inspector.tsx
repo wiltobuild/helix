@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
+  CircleAlert,
+  Clock,
+  FileText,
   GitBranch,
   GitMerge,
   GitPullRequest,
+  ListChecks,
+  MessageSquare,
   Send,
   Sparkles,
   Terminal,
+  Users,
+  Workflow,
   X,
 } from 'lucide-react';
 import type { HelixClient } from '@helix/api-client';
@@ -21,7 +28,17 @@ import {
   type ProjectState,
   type SessionState,
 } from '@helix/contracts';
-import { AgentBadge, Button, IconButton, Segmented, StatusPill, TabPanel, Tabs } from '@helix/ui';
+import {
+  AgentBadge,
+  AgentEmblem,
+  Button,
+  IconButton,
+  Kbd,
+  Segmented,
+  StatusPill,
+  TabPanel,
+  Tabs,
+} from '@helix/ui';
 import {
   describeEvent,
   eventTone,
@@ -35,6 +52,13 @@ import s from './Inspector.module.css';
 import { crossReview, reviewerTarget, sessionHistory } from '../data/crossReview';
 import { ReviewSection } from './ReviewSection';
 import { ReviewChip } from './ReviewChip';
+import {
+  agentLabel,
+  formatDuration,
+  planBlockers,
+  planSummary,
+  type PlanTree,
+} from '../data/observatory';
 
 interface InspectorProps {
   session: SessionState;
@@ -49,6 +73,8 @@ interface InspectorProps {
   /** Present in live mode. Actions are enabled only while viewing the live moment. */
   client?: HelixClient;
   isLive?: boolean;
+  /** The plan tree, for the orchestrator's plan summary. */
+  tree?: PlanTree;
 }
 
 export function Inspector({
@@ -63,8 +89,10 @@ export function Inspector({
   onSelect,
   client,
   isLive,
+  tree,
 }: InspectorProps) {
   const [busy, setBusy] = useState<string>();
+  const [changes, setChanges] = useState<string>();
   const [error, setError] = useState<string>();
   const id = session.session.id;
   const review = crossReview(session, state);
@@ -103,19 +131,66 @@ export function Inspector({
   const decide = (approvalId: ApprovalId, decision: ApprovalDecision) =>
     act(`approval:${approvalId}`, () => client!.decideApproval(approvalId, { decision }));
 
-  const decidePlan = (decision: 'approve' | 'reject') =>
-    act(`plan:${decision}`, () => client!.decidePlan(orchPlan!.id, { decision }));
+  const decidePlan = (decision: 'approve' | 'reject', reason?: string) =>
+    act(`plan:${decision}`, async () => {
+      await client!.decidePlan(orchPlan!.id, { decision, ...(reason ? { reason } : {}) });
+      setChanges(undefined);
+    });
+
+  const isOrchestrator = session.session.role === 'orchestrator';
+  const planTreeHere = isOrchestrator && tree && tree.plan.id === orchPlan?.id ? tree : undefined;
+  const orchTasks = planTreeHere?.tasks ?? [];
+  const filesCount = isOrchestrator
+    ? new Set(orchTasks.flatMap((t) => t.node.files)).size || undefined
+    : (session.worktree?.diff?.filesChanged ?? (node?.files.length || undefined));
+  const prCount = isOrchestrator
+    ? orchTasks.filter((t) => t.pr).length || undefined
+    : session.pr
+      ? 1
+      : undefined;
+
+  // ⌘↵ approves the plan, ⌘R opens "Request changes", only while the plan waits and you can act.
+  useEffect(() => {
+    if (!planNeedsReview || !canAct) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === 'Enter' && changes === undefined) {
+        e.preventDefault();
+        void decidePlan('approve');
+      } else if (e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        setChanges((c) => c ?? '');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   return (
     <aside className={s.inspector} aria-label={`Session: ${session.session.title}`}>
       <header className={s.header}>
         <div className={s.headTop}>
-          <AgentBadge
-            agent={session.session.agent}
-            variant="full"
-            active={status === 'working'}
-            {...(session.session.model ? { model: session.session.model } : {})}
-          />
+          {isOrchestrator ? (
+            <span className={s.orchTile} data-active={status === 'working' || undefined}>
+              <Workflow size={22} aria-hidden />
+            </span>
+          ) : (
+            <AgentEmblem agent={session.session.agent} active={status === 'working'} size={40} />
+          )}
+          <div className={s.headText}>
+            <span className={s.headName}>
+              {isOrchestrator ? 'Orchestrator' : agentLabel(session.session.agent)}
+              {session.session.model && <span className={s.model}> · {session.session.model}</span>}
+            </span>
+            <span className={s.headSub}>
+              {isOrchestrator
+                ? 'Plan and coordinate all tasks'
+                : node
+                  ? `Task in the plan`
+                  : 'Standalone task'}
+            </span>
+          </div>
+          <StatusPill status={status} {...(planNeedsReview ? { label: 'Needs review' } : {})} />
           <IconButton
             label="Close"
             shortcut="Esc"
@@ -138,7 +213,7 @@ export function Inspector({
             Back to {target.worker.session.title}
           </Button>
         )}
-        <StatusPill status={status} {...(label ? { label } : {})} />
+        {label && !planNeedsReview && <p className={s.statusLine}>{label}</p>}
         {client && !isLive && (
           <p className={s.rewound}>Viewing the past. Go back to live to take actions.</p>
         )}
@@ -154,10 +229,15 @@ export function Inspector({
         onValueChange={onTabChange}
         items={[
           { value: 'summary', label: 'Summary' },
+          // The diff endpoint only knows the present; never imply it shows the moment being viewed.
+          {
+            value: 'files',
+            label: client && !isLive ? 'Current changes' : 'Files',
+            count: filesCount,
+          },
+          { value: 'pr', label: 'PR & CI', count: prCount },
           { value: 'activity', label: 'Activity', count: session.chat.length },
           ...(session.session.role === 'worker' ? [{ value: 'review', label: 'Review' }] : []),
-          // The diff endpoint only knows the present; never imply it shows the moment being viewed.
-          ...(client ? [{ value: 'files', label: isLive ? 'Files' : 'Current changes' }] : []),
           { value: 'why', label: 'Why' },
         ]}
         className={s.tabs}
@@ -170,46 +250,18 @@ export function Inspector({
               <SourceTag source="helix" /> {turnLimit}
             </section>
           )}
-          {orchPlan && (
-            <section className={s.approval} data-decided={planNeedsReview ? 'no' : 'yes'}>
-              <span className={s.role}>
-                Orchestrator plan · {orchPlan.nodes.length}{' '}
-                {orchPlan.nodes.length === 1 ? 'task' : 'tasks'}
-              </span>
-              <p className={s.approvalSummary}>{orchPlan.goal}</p>
-              <ul className={s.acceptance}>
-                {orchPlan.nodes.map((n) => (
-                  <li key={n.id}>
-                    <strong>{n.title}</strong> ({n.agent}) — {n.rationale}
-                  </li>
-                ))}
-              </ul>
-              {planNeedsReview ? (
-                <div className={s.approvalActions}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={!canAct || Boolean(busy)}
-                    loading={busy === 'plan:reject'}
-                    onClick={() => void decidePlan('reject')}
-                  >
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    icon={<Check size={14} />}
-                    disabled={!canAct || Boolean(busy)}
-                    loading={busy === 'plan:approve'}
-                    onClick={() => void decidePlan('approve')}
-                  >
-                    Approve plan
-                  </Button>
-                </div>
-              ) : (
-                <p className={s.decided}>Plan {orchPlan.status}.</p>
-              )}
-            </section>
+          {orchPlan && planTreeHere && (
+            <PlanPanel
+              tree={planTreeHere}
+              state={state}
+              canAct={canAct}
+              live={Boolean(client)}
+              busy={busy}
+              changes={changes}
+              onChanges={setChanges}
+              onDecide={(d, reason) => void decidePlan(d, reason)}
+              onSelect={(sid) => onSelect(sid, 'summary')}
+            />
           )}
           {pendingApprovals.map((a) => {
             const pending = busy === `approval:${a.id}`;
@@ -272,52 +324,41 @@ export function Inspector({
             </section>
           )}
 
-          <dl className={s.facts}>
-            <dt>Branch</dt>
-            <dd className={s.mono}>
-              {session.session.branch ? (
+          {!isOrchestrator && (
+            <dl className={s.facts}>
+              <dt>Branch</dt>
+              <dd className={s.mono}>
+                {session.session.branch ? (
+                  <>
+                    <GitBranch size={12} aria-hidden /> {session.session.branch}
+                  </>
+                ) : (
+                  'Not created yet'
+                )}
+              </dd>
+              {session.worktree?.diff && (
                 <>
-                  <GitBranch size={12} aria-hidden /> {session.session.branch}
+                  <dt>Changes</dt>
+                  <dd className={s.mono}>
+                    {plural(session.worktree.diff.filesChanged, 'file')}{' '}
+                    <span className={s.add}>+{session.worktree.diff.insertions}</span>{' '}
+                    <span className={s.del}>−{session.worktree.diff.deletions}</span>
+                  </dd>
                 </>
-              ) : (
-                'Not created yet'
               )}
-            </dd>
-            {session.worktree?.diff && (
-              <>
-                <dt>Changes</dt>
-                <dd className={s.mono}>
-                  {plural(session.worktree.diff.filesChanged, 'file')}{' '}
-                  <span className={s.add}>+{session.worktree.diff.insertions}</span>{' '}
-                  <span className={s.del}>−{session.worktree.diff.deletions}</span>
-                </dd>
-              </>
-            )}
-            <dt>Pull request</dt>
-            <dd>
-              {session.pr ? (
-                <a href={session.pr.url} target="_blank" rel="noreferrer" className={s.prLink}>
-                  <GitPullRequest size={13} aria-hidden /> #{session.pr.number}
-                  {session.pr.draft ? ' · draft' : ''}
-                </a>
-              ) : (
-                <span className={s.muted}>Opens when the agent finishes</span>
-              )}
-            </dd>
-            {session.pr && (
-              <>
-                <dt>Checks</dt>
-                <dd className={s.mono}>
-                  {session.pr.checks.passed}/{session.pr.checks.total} passed
-                  {session.pr.checks.failed > 0 && (
-                    <span className={s.del}> · {session.pr.checks.failingNames.join(', ')}</span>
-                  )}
-                </dd>
-                <dt>GitHub review</dt>
-                <dd>{reviewLabel(session.pr.review.decision)}</dd>
-              </>
-            )}
-          </dl>
+              <dt>Pull request</dt>
+              <dd>
+                {session.pr ? (
+                  <button type="button" className={s.linkBtn} onClick={() => onTabChange('pr')}>
+                    <GitPullRequest size={13} aria-hidden /> #{session.pr.number} ·{' '}
+                    {session.pr.checks.passed}/{session.pr.checks.total} checks
+                  </button>
+                ) : (
+                  <span className={s.muted}>Opens when the agent finishes</span>
+                )}
+              </dd>
+            </dl>
+          )}
 
           {review && <ReviewChip review={review} onOpen={() => onTabChange('review')} />}
           {session.pr?.state === 'open' && review?.status === 'reviewing' && (
@@ -328,8 +369,9 @@ export function Inspector({
 
           {status === 'ready_to_merge' && (
             <Button
-              variant="primary"
-              icon={<GitMerge size={14} />}
+              variant="go"
+              size="lg"
+              icon={<GitMerge size={16} />}
               className={s.cta}
               disabled={!canAct}
               loading={busy === 'merge'}
@@ -381,21 +423,124 @@ export function Inspector({
           )}
         </TabPanel>
 
-        {client && (
-          <TabPanel value="files" className={s.panel}>
-            {!isLive && (
-              <p className={s.pastNotice}>
-                You’re viewing the past, but this shows the task’s changes as they are now.
-              </p>
-            )}
+        <TabPanel value="files" className={s.panel}>
+          {client && !isLive && (
+            <p className={s.pastNotice}>
+              You’re viewing the past, but this shows the task’s changes as they are now.
+            </p>
+          )}
+          {isOrchestrator ? (
+            <ClaimedFiles
+              tasks={orchTasks.map((t) => ({
+                title: t.node.title,
+                agent: t.node.agent,
+                files: t.node.files,
+                insertions: t.insertions,
+                deletions: t.deletions,
+              }))}
+            />
+          ) : client ? (
             <FilesPanel
               client={client}
               sessionId={id}
               hasPr={Boolean(session.pr)}
               refreshKey={upTo}
             />
-          </TabPanel>
-        )}
+          ) : (
+            <ClaimedFiles
+              tasks={[
+                {
+                  title: session.session.title,
+                  agent: session.session.agent,
+                  files: node?.files ?? [],
+                  insertions: session.worktree?.diff?.insertions,
+                  deletions: session.worktree?.diff?.deletions,
+                  changed: session.worktree?.diff?.filesChanged,
+                },
+              ]}
+              note="This recording keeps file counts, not file contents. In a live run this tab shows the full diff."
+            />
+          )}
+        </TabPanel>
+
+        <TabPanel value="pr" className={s.panel}>
+          {isOrchestrator ? (
+            orchTasks.length === 0 ? (
+              <p className={s.muted}>No tasks yet.</p>
+            ) : (
+              <ul className={s.prList}>
+                {orchTasks.map((t) => (
+                  <li key={t.node.id}>
+                    <button
+                      type="button"
+                      disabled={!t.session}
+                      onClick={() => t.session && onSelect(t.session.session.id, 'pr')}
+                    >
+                      <AgentBadge agent={t.node.agent} variant="glyph" />
+                      <span className={s.prTitle}>
+                        Task {t.number} · {t.node.title}
+                      </span>
+                      <span className={s.mono}>{t.pr ? `#${t.pr}` : '—'}</span>
+                      <span className={s.mono}>
+                        {t.checks ? `${t.checks.passed}/${t.checks.total} CI` : 'no CI'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : session.pr ? (
+            <>
+              <dl className={s.facts}>
+                <dt>Pull request</dt>
+                <dd>
+                  <a href={session.pr.url} target="_blank" rel="noreferrer" className={s.prLink}>
+                    <GitPullRequest size={13} aria-hidden /> #{session.pr.number}
+                    {session.pr.draft ? ' · draft' : ''} · {session.pr.state}
+                  </a>
+                </dd>
+                <dt>Checks</dt>
+                <dd className={s.mono}>
+                  {session.pr.checks.passed}/{session.pr.checks.total} passed
+                  {session.pr.checks.pending > 0 && ` · ${session.pr.checks.pending} running`}
+                  {session.pr.checks.failed > 0 && (
+                    <span className={s.del}> · {session.pr.checks.failingNames.join(', ')}</span>
+                  )}
+                </dd>
+                <dt>GitHub review</dt>
+                <dd>{reviewLabel(session.pr.review.decision)}</dd>
+                {review && (
+                  <>
+                    <dt>Agent review</dt>
+                    <dd>
+                      <ReviewChip review={review} onOpen={() => onTabChange('review')} />
+                    </dd>
+                  </>
+                )}
+              </dl>
+              <CiHistory events={events} sessionId={id} upTo={upTo} onJump={onJump} />
+              {status === 'ready_to_merge' && (
+                <Button
+                  variant="go"
+                  size="lg"
+                  icon={<GitMerge size={16} />}
+                  className={s.cta}
+                  disabled={!canAct}
+                  loading={busy === 'merge'}
+                  title={canAct ? undefined : 'Available in live mode'}
+                  onClick={() => void act('merge', () => client!.mergeSession(id))}
+                >
+                  Merge pull request
+                </Button>
+              )}
+            </>
+          ) : (
+            <p className={s.muted}>
+              No pull request yet. The agent opens one when it finishes; Helix then watches CI and
+              routes any failure back to it.
+            </p>
+          )}
+        </TabPanel>
 
         <TabPanel value="why" className={s.panel}>
           <p className={s.muted}>
@@ -692,4 +837,296 @@ function ChatRow({
         </li>
       );
   }
+}
+
+function PlanPanel({
+  tree,
+  state,
+  canAct,
+  live,
+  busy,
+  changes,
+  onChanges,
+  onDecide,
+  onSelect,
+}: {
+  tree: PlanTree;
+  state: ProjectState;
+  canAct: boolean;
+  live: boolean;
+  busy: string | undefined;
+  changes: string | undefined;
+  onChanges: (v: string | undefined) => void;
+  onDecide: (d: 'approve' | 'reject', reason?: string) => void;
+  onSelect: (sessionId: string) => void;
+}) {
+  const sum = planSummary(tree);
+  const blockers = planBlockers(tree, state);
+  const awaiting = tree.plan.status === 'awaiting_approval';
+  return (
+    <>
+      <section className={s.planSummary}>
+        <h3 className={s.planHeading}>Plan summary</h3>
+        <p className={s.planGoal}>{tree.plan.goal}</p>
+        <ul className={s.planStats}>
+          <li>
+            <ListChecks size={15} aria-hidden /> {plural(sum.tasks, 'task')} planned
+          </li>
+          <li>
+            <FileText size={15} aria-hidden />{' '}
+            {sum.files ? `${plural(sum.files, 'file path')} claimed` : 'No file claims recorded'}
+          </li>
+          <li>
+            <GitPullRequest size={15} aria-hidden /> {sum.prsMerged} merged · {sum.prsOpen} open of{' '}
+            {plural(sum.tasks, 'pull request')}
+          </li>
+          <li>
+            <Users size={15} aria-hidden />{' '}
+            {tree.agents.map((a) => agentLabel(a.agent)).join(' + ')}
+          </li>
+          <li>
+            <Clock size={15} aria-hidden /> {formatDuration(sum.elapsedMs)} so far
+          </li>
+        </ul>
+      </section>
+
+      {blockers && (
+        <section
+          className={s.blocked}
+          data-kind={awaiting ? 'approval' : 'attention'}
+          role="status"
+        >
+          <h3>
+            <CircleAlert size={15} aria-hidden />
+            {awaiting ? 'Why this plan is blocked' : 'What needs attention'}
+          </h3>
+          {blockers.map((b) => (
+            <p key={b}>{b}</p>
+          ))}
+        </section>
+      )}
+
+      {awaiting && (
+        <section className={s.decide}>
+          {changes === undefined ? (
+            <>
+              <Button
+                variant="go"
+                size="lg"
+                className={s.bigAction}
+                icon={<Check size={18} />}
+                disabled={!canAct || Boolean(busy)}
+                loading={busy === 'plan:approve'}
+                onClick={() => onDecide('approve')}
+              >
+                <span className={s.bigLabel}>Approve plan</span>
+                <Kbd>⌘↵</Kbd>
+              </Button>
+              <p className={s.bigHint}>Start all tasks and let agents proceed</p>
+              <Button
+                variant="secondary"
+                size="lg"
+                className={s.bigAction}
+                icon={<MessageSquare size={17} />}
+                disabled={!canAct || Boolean(busy)}
+                onClick={() => onChanges('')}
+              >
+                <span className={s.bigLabel}>Request changes</span>
+                <Kbd>⌘R</Kbd>
+              </Button>
+              <p className={s.bigHint}>Ask for modifications to the plan</p>
+            </>
+          ) : (
+            <form
+              className={s.changesForm}
+              onSubmit={(e) => {
+                e.preventDefault();
+                onDecide('reject', changes.trim() || undefined);
+              }}
+            >
+              <label htmlFor="plan-changes" className={s.changesLabel}>
+                What should the orchestrator change?
+              </label>
+              <textarea
+                id="plan-changes"
+                className={s.composerInput}
+                rows={3}
+                autoFocus
+                value={changes}
+                onChange={(e) => onChanges(e.target.value)}
+                placeholder="e.g. Split the receipt work into its own task and give it to Codex."
+              />
+              <div className={s.approvalActions}>
+                <Button type="button" variant="ghost" onClick={() => onChanges(undefined)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={!canAct}
+                  loading={busy === 'plan:reject'}
+                >
+                  Send back to the orchestrator
+                </Button>
+              </div>
+            </form>
+          )}
+          {!live && (
+            <p className={s.muted}>
+              This is a recorded run, so the buttons are inactive. In a live run nothing starts
+              until you approve here.
+            </p>
+          )}
+        </section>
+      )}
+
+      {!awaiting && (
+        <p className={s.decided}>
+          <Check size={14} aria-hidden />{' '}
+          {tree.plan.status === 'approved'
+            ? `You approved this plan${tree.plan.decidedAt ? ` at ${new Date(tree.plan.decidedAt).toLocaleTimeString()}` : ''}. Agents started from it.`
+            : `You sent this plan back${tree.plan.rejectionReason ? `: ${tree.plan.rejectionReason}` : '.'}`}
+        </p>
+      )}
+
+      <section className={s.block}>
+        <h3 className={s.blockTitle}>
+          <Sparkles size={13} aria-hidden /> Tasks in this plan
+        </h3>
+        <SourceTag source="plan" />
+        <ol className={s.taskList}>
+          {tree.tasks.map((t) => (
+            <li key={t.node.id}>
+              <button
+                type="button"
+                disabled={!t.session}
+                onClick={() => t.session && onSelect(t.session.session.id)}
+              >
+                <span className={s.taskTop}>
+                  <AgentBadge
+                    agent={t.node.agent}
+                    variant="glyph"
+                    active={t.status === 'working'}
+                  />
+                  <strong>
+                    {t.number}. {t.node.title}
+                  </strong>
+                  <span className={s.taskChip} data-tone={t.tone}>
+                    {t.label}
+                  </span>
+                </span>
+                <span className={s.taskWhy}>{t.node.rationale}</span>
+                {t.node.files.length > 0 && (
+                  <span className={s.taskFiles}>{t.node.files.join('  ·  ')}</span>
+                )}
+                {t.node.dependsOn.length > 0 && (
+                  <span className={s.taskDeps}>
+                    After{' '}
+                    {t.node.dependsOn
+                      .map((d) => tree.tasks.find((x) => x.node.id === d)?.number)
+                      .filter(Boolean)
+                      .map((n) => `task ${n}`)
+                      .join(', ')}
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </section>
+    </>
+  );
+}
+
+function ClaimedFiles({
+  tasks,
+  note,
+}: {
+  tasks: {
+    title: string;
+    agent: string;
+    files: readonly string[];
+    insertions?: number | undefined;
+    deletions?: number | undefined;
+    changed?: number | undefined;
+  }[];
+  note?: string;
+}) {
+  return (
+    <div className={s.files}>
+      {note && <p className={s.muted}>{note}</p>}
+      {tasks.map((t) => (
+        <section key={t.title} className={s.claim}>
+          <span className={s.claimHead}>
+            <AgentBadge agent={t.agent} variant="glyph" />
+            <strong>{t.title}</strong>
+            {t.insertions !== undefined && (
+              <span className={s.mono}>
+                {t.changed !== undefined && `${plural(t.changed, 'file')} `}
+                <span className={s.add}>+{t.insertions}</span>{' '}
+                <span className={s.del}>−{t.deletions}</span>
+              </span>
+            )}
+          </span>
+          {t.files.length ? (
+            <ul className={s.fileList}>
+              {t.files.map((f) => (
+                <li key={f}>
+                  <FileText size={12} aria-hidden />
+                  <span className={s.filePath}>{f}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={s.muted}>No file claims recorded for this task.</p>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function CiHistory({
+  events,
+  sessionId,
+  upTo,
+  onJump,
+}: {
+  events: readonly HelixEvent[];
+  sessionId: string;
+  upTo: number;
+  onJump: (seq: number) => void;
+}) {
+  const runs = events.filter(
+    (e) =>
+      e.seq <= upTo &&
+      e.sessionId === sessionId &&
+      (e.type === 'ci.updated' || e.type === 'feedback.routed' || e.type === 'pr.merged'),
+  );
+  if (runs.length === 0) return null;
+  return (
+    <section className={s.block}>
+      <h3 className={s.blockTitle}>CI history</h3>
+      <ol className={s.history}>
+        {runs.map((e) => (
+          <li key={e.seq}>
+            <button type="button" onClick={() => onJump(e.seq)} data-tone={eventTone(e)}>
+              <span className={s.histSeq}>#{e.seq}</span>
+              <span className={s.histText}>
+                {e.type === 'ci.updated'
+                  ? e.payload.checks.failed > 0
+                    ? `Failed: ${e.payload.checks.failingNames.join(', ')}`
+                    : e.payload.checks.pending > 0
+                      ? `Running ${e.payload.checks.passed}/${e.payload.checks.total}`
+                      : `Passed ${e.payload.checks.passed}/${e.payload.checks.total}`
+                  : e.type === 'feedback.routed'
+                    ? 'Helix sent the failure back to the agent'
+                    : 'Merged'}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }

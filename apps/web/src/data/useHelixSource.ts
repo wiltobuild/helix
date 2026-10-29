@@ -51,7 +51,7 @@ const staticBuild = import.meta.env.MODE === 'demo';
 const forceDemo = staticBuild || params.has('demo');
 /**
  * `?demo` (or the static build) replays the real multi-agent run; the GitHub CI loop is one click
- * away in RecordingControl. `?demo=<name>` plays another bundled recording, and `?demo=example`
+ * away in the top bar's scenario switch. `?demo=<name>` plays another bundled recording, and `?demo=example`
  * the built-in example run.
  */
 const {

@@ -89,6 +89,41 @@
   background: color-mix(in srgb, var(--status-failed) 22%, transparent);
 }
 
+.go {
+  background: var(--go);
+  color: #fff;
+}
+
+.go:hover:not(:disabled) {
+  background: var(--go-hover);
+}
+
+.stop {
+  background: var(--stop);
+  color: #fff;
+}
+
+.stop:hover:not(:disabled) {
+  background: var(--stop-hover);
+}
+
+.outline {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--accent-hover);
+}
+
+.outline:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.lg {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-md);
+  border-radius: var(--radius-lg);
+}
+
 .label {
   overflow: hidden;
   text-overflow: ellipsis;

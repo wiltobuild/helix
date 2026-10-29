@@ -1,4 +1,7 @@
 .inspector {
+  grid-area: side;
+  min-width: 0;
+  overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
@@ -17,8 +20,316 @@
 .headTop {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-3);
   width: 100%;
+}
+
+.orchTile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--strand-orchestrator) 14%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--strand-orchestrator) 40%, var(--border));
+  color: var(--strand-orchestrator);
+}
+
+.orchTile[data-active] svg {
+  animation: spin 6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.headText {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.headName {
+  font: 600 var(--text-lg) / 1.25 var(--font-sans);
+}
+
+.model {
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: var(--text-sm);
+}
+
+.headSub {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.statusLine {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.linkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-hover);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---- orchestrator plan panel ---- */
+.planSummary {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.planHeading {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.planGoal {
+  color: var(--text-2);
+  font-size: var(--text-md);
+  line-height: var(--leading-read);
+}
+
+.planStats {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+.planStats li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.planStats svg {
+  flex: none;
+  color: var(--text-2);
+}
+
+.blocked {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--status-failed) 55%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--status-failed-soft);
+  color: var(--text);
+  line-height: var(--leading-read);
+}
+
+.blocked[data-kind='attention'] {
+  border-color: color-mix(in srgb, var(--status-needs) 55%, transparent);
+  background: var(--status-needs-soft);
+}
+
+.blocked h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--status-failed);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.blocked[data-kind='attention'] h3 {
+  color: var(--status-needs);
+}
+
+.decide {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.bigAction {
+  justify-content: flex-start;
+  width: 100%;
+  height: 50px !important;
+  font-size: var(--text-md) !important;
+}
+
+.bigLabel {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+}
+
+.bigHint {
+  margin-bottom: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.changesForm {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.changesLabel {
+  font-weight: 600;
+}
+
+.taskList {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskList button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskList button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.taskList button:disabled {
+  cursor: default;
+}
+
+.taskTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.taskTop strong {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.taskChip {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
+
+.taskChip[data-tone='progress'] {
+  background: var(--status-working-soft);
+  color: var(--status-working);
+}
+
+.taskChip[data-tone='needs'] {
+  background: var(--status-needs-soft);
+  color: var(--status-needs);
+}
+
+.taskChip[data-tone='blocked'] {
+  background: var(--status-failed-soft);
+  color: var(--status-failed);
+}
+
+.taskChip[data-tone='review'] {
+  background: var(--status-review-soft);
+  color: var(--status-review);
+}
+
+.taskChip[data-tone='ready'],
+.taskChip[data-tone='done'] {
+  background: var(--status-ready-soft);
+  color: var(--status-ready);
+}
+
+.taskWhy {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-ui);
+}
+
+.taskFiles {
+  color: var(--text-3);
+  font: 400 var(--text-2xs) / 1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.taskDeps {
+  color: var(--text-3);
+  font-size: var(--text-2xs);
+}
+
+.prList {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prList button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prList button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.prTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.claimHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.claimHead strong {
+  flex: 1;
+  min-width: 0;
 }
 
 .title {
@@ -29,6 +340,11 @@
 
 .tabs {
   min-height: 0;
+  min-width: 0;
+}
+
+.tabs > * {
+  min-width: 0;
 }
 
 .panel {
@@ -85,12 +401,13 @@
 }
 
 .facts dd {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
   min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.facts dd svg {
+  vertical-align: -2px;
 }
 
 .mono {

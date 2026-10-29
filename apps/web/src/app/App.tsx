@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ChevronDown, FolderGit2, FolderPlus, LayoutGrid, Network, Plus } from 'lucide-react';
-import type { HarnessInfo, HelixEvent, Project } from '@helix/contracts';
+import { FolderPlus, LayoutGrid, Network, Plus } from 'lucide-react';
+import { deriveStatus, type HarnessInfo, type HelixEvent, type Project } from '@helix/contracts';
 import {
   AgentBadge,
   Button,
   Dialog,
-  Menu,
-  MenuItem,
-  MenuLabel,
-  MenuSeparator,
-  Segmented,
+  Kbd,
   Spinner,
   StatusDot,
   TextField,
@@ -17,14 +13,24 @@ import {
 } from '@helix/ui';
 import { useHelixSource, type HelixSource } from '../data/useHelixSource';
 import { useRun } from '../data/useRun';
-import { boardCards, slotWaiting, type BoardCard } from '../data/describe';
+import { boardCards, relativeTo, type BoardCard } from '../data/describe';
+import { formatDuration, planTree } from '../data/observatory';
 import { StopAll, runningAgents } from './StopAll';
-import { RecordingControl } from './RecordingControl';
-import { Sidebar } from './Sidebar';
+import {
+  DemoStopAll,
+  NavRail,
+  SessionHeader,
+  TopBar,
+  type Page,
+  type SessionSummary,
+  type SessionTab,
+} from './Chrome';
 import { Board } from './Board';
-import { TimelineBar } from './TimelineBar';
+import { Dock } from './Dock';
 import { Inspector } from './Inspector';
 import { PlanView } from './PlanView';
+import { NavPage } from './Pages';
+import { CommitsView, FilesView } from './SessionViews';
 import { NewTaskDialog } from './NewTaskDialog';
 import { Onboarding } from './Onboarding';
 import s from './App.module.css';
@@ -44,29 +50,47 @@ export function App() {
 
 function Workspace({ events, source }: { events: readonly HelixEvent[]; source: HelixSource }) {
   const run = useRun(events);
+  const { state, bySeq, current } = run;
   const [selected, setSelected] = useState<string | null | undefined>(undefined);
   const [inspectorTab, setInspectorTab] = useState('summary');
+  const [tabOverride, setTab] = useState<SessionTab | null>(null);
+  const [page, setPage] = useState<Page>('sessions');
+  const [dockExpanded, setDockExpanded] = useState(false);
+  const [newTask, setNewTask] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [addRepoOpen, setAddRepoOpen] = useState(false);
+
   const selectSession = (id: string, tab = 'summary') => {
     setSelected(id);
     setInspectorTab(tab);
   };
-  const [viewOverride, setView] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [addRepoOpen, setAddRepoOpen] = useState(false);
+  const openFromPage = (id: string, tab = 'summary') => {
+    setPage('sessions');
+    selectSession(id, tab);
+  };
 
-  const { state, bySeq, current } = run;
-  const hasPlan = Object.keys(state.plans).length > 0;
-  const view = viewOverride ?? (hasPlan ? 'plan' : 'board');
+  const tree = useMemo(
+    () => planTree(state, run.events, run.index, current.ts),
+    [state, run.events, run.index, current.ts],
+  );
+  // Concept 3: the plan graph is the main view whenever the run has a plan.
+  const tab: SessionTab = tabOverride ?? (tree ? 'plan' : 'board');
   const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
   const activeCount = cards.filter((c) => c.column !== 'archive').length;
-  const needsYou = cards.filter((c) => c.column === 'needs_you');
+  const working = Object.values(state.sessions).filter(
+    (x) => x.session.role !== 'orchestrator' && deriveStatus(x) === 'working',
+  ).length;
+
   const defaultSessionId =
-    cards.find((c) => c.status === 'working' || c.status === 'needs_you')?.id ??
-    cards[0]?.id ??
-    Object.keys(state.sessions)[0] ??
-    null;
+    tree?.plan.status === 'awaiting_approval'
+      ? tree.orchestrator.sessionId
+      : (cards.find((c) => c.status === 'needs_you' || c.status === 'working')?.id ??
+        tree?.orchestrator.sessionId ??
+        cards[0]?.id ??
+        Object.keys(state.sessions)[0] ??
+        null);
   const effectiveSelected =
     selected === undefined
       ? defaultSessionId
@@ -79,12 +103,58 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     ? state.sessions[effectiveSelected as keyof typeof state.sessions]
     : undefined;
   const live = source.mode === 'live';
-  const pendingPlan = Object.values(state.plans).find((p) => p.status === 'awaiting_approval');
-  const waitingForSlot = slotWaiting(state);
   const repoList: readonly Project[] =
     source.projects.length > 0 ? source.projects : [state.project];
+  const mode = live && run.isLive ? 'live' : run.isLive ? 'recording' : 'replaying';
 
-  // Keyboard: [ ] step the timeline, L back to live, ⌘/Ctrl+N new task, ⌘/Ctrl+K search, Esc closes inspector.
+  const orch = tree
+    ? state.sessions[tree.orchestrator.sessionId as keyof typeof state.sessions]
+    : undefined;
+  const sessionTitle = orch?.session.title ?? cards[0]?.card.title ?? state.project.name;
+  const elapsedMs = Date.parse(current.ts) - Date.parse(run.events[0]!.ts);
+
+  const active: SessionSummary | undefined = tree
+    ? {
+        id: tree.orchestrator.sessionId,
+        title: sessionTitle,
+        status:
+          tree.orchestrator.tone === 'needs'
+            ? 'needs_you'
+            : tree.orchestrator.tone === 'done'
+              ? 'merged'
+              : 'working',
+        meta: `${tree.tasks.length} tasks · ${tree.agents.length} agents · ${formatDuration(elapsedMs)}`,
+        live: mode === 'live',
+      }
+    : cards[0]
+      ? {
+          id: cards[0].id,
+          title: cards[0].card.title,
+          status: cards[0].status,
+          meta: cards[0].card.updated ?? '',
+          live: mode === 'live',
+        }
+      : undefined;
+  const recent: SessionSummary[] = Object.values(state.sessions)
+    .filter(
+      (x) =>
+        x.session.role !== 'reviewer' &&
+        x.session.id !== active?.id &&
+        (x.session.role === 'orchestrator' || !x.session.planNodeId),
+    )
+    .slice(-6)
+    .reverse()
+    .map((x) => ({
+      id: x.session.id,
+      title: x.session.title,
+      status: deriveStatus(x),
+      meta: relativeTo(bySeq.get(x.lastEventSeq)?.ts ?? x.session.createdAt, current.ts),
+      live: false,
+    }));
+
+  const prCount = Object.values(state.sessions).filter((x) => x.pr).length;
+
+  // Keyboard: [ ] step, L live, ⌘N new task, ⌘K search, ? shortcuts, Esc closes the inspector.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
@@ -98,10 +168,13 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         return;
       }
       const target = e.target as HTMLElement | null;
-      if (target?.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) return;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]'))
+        return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === '[') run.step(-1);
       else if (e.key === ']') run.step(1);
       else if (e.key === 'l' || e.key === 'L') run.goLive();
+      else if (e.key === '?') setShortcutsOpen(true);
       else if (e.key === 'Escape') setSelected(null);
       else return;
       e.preventDefault();
@@ -110,141 +183,142 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     return () => window.removeEventListener('keydown', onKey);
   }, [run]);
 
+  const stopAll =
+    live && source.client ? (
+      <StopAll
+        client={source.client}
+        projectId={state.project.id}
+        running={runningAgents(state)}
+        canAct={run.isLive}
+      />
+    ) : (
+      <DemoStopAll />
+    );
+
   return (
     <div className={s.shell} data-inspector={selectedSession ? 'open' : 'closed'}>
-      <Sidebar
-        project={state.project}
-        cards={cards}
-        needsYou={needsYou.length}
-        selected={effectiveSelected}
-        onSelect={selectSession}
+      <TopBar
+        source={source}
+        working={working}
         onSearch={() => setSearchOpen(true)}
         onSettings={() => setSettingsOpen(true)}
-        demo={!live}
-        {...(live && source.stream !== 'demo' ? { stream: source.stream } : {})}
+        onShortcuts={() => setShortcutsOpen(true)}
+      />
+      <NavRail
+        project={state.project}
+        page={page}
+        onPage={setPage}
+        counts={{
+          tasks: tree?.tasks.length ?? cards.length,
+          agents: tree?.agents.length,
+          prs: prCount,
+        }}
+        {...(active ? { active } : {})}
+        recent={recent}
+        onOpenSession={(id) => selectSession(id)}
+        onSettings={() => setSettingsOpen(true)}
       />
 
       <main className={s.main}>
-        <header className={s.header}>
-          <div className={s.titleBlock}>
-            <h1>{state.project.name}</h1>
-            <span className={s.meta}>
-              {state.project.github
-                ? `${state.project.github.owner}/${state.project.github.repo}`
-                : state.project.repoPath}{' '}
-              · {state.project.defaultBranch}
-            </span>
-          </div>
-          <div className={s.actions}>
-            {!live && <RecordingControl source={source} />}
-            <Segmented
-              label="View"
-              value={view}
-              onValueChange={setView}
-              items={[
-                { value: 'plan', label: 'Plan', icon: <Network size={13} /> },
-                { value: 'board', label: 'Board', icon: <LayoutGrid size={13} /> },
-              ]}
-            />
-            {live && source.client && (
-              <StopAll
-                client={source.client}
-                projectId={state.project.id}
-                running={runningAgents(state)}
-                canAct={run.isLive}
-              />
-            )}
-            <Menu
-              align="end"
-              trigger={
-                <Button variant="primary" icon={<Plus size={14} />} shortcut="⌘N">
-                  Tasks
-                  <ChevronDown size={13} aria-hidden />
-                </Button>
-              }
-            >
-              <MenuItem icon={<Plus size={14} />} shortcut="⌘N" onSelect={() => setNewTask(true)}>
-                New task
-              </MenuItem>
-              <MenuSeparator />
-              <MenuLabel>Repositories</MenuLabel>
-              {repoList.map((repo) => {
-                const isCurrent = repo.id === state.project.id;
-                const badge = isCurrent ? `${activeCount} active` : repo.defaultBranch;
-                return (
-                  <MenuItem
-                    key={repo.id}
-                    icon={<FolderGit2 size={14} />}
-                    shortcut={badge}
-                    onSelect={() => {
-                      if (!isCurrent) {
-                        setSelected(null);
-                        source.selectProject(repo.id);
-                      }
-                    }}
-                  >
-                    {repo.name}
-                  </MenuItem>
-                );
-              })}
-              <MenuSeparator />
-              <MenuItem icon={<FolderPlus size={14} />} onSelect={() => setAddRepoOpen(true)}>
-                Add repository…
-              </MenuItem>
-            </Menu>
-          </div>
-        </header>
-
-        <div className={s.content}>
-          {view === 'board' && state.schedulingPaused && (
-            <div className={s.slotBanner} role="status">
-              Scheduling is paused after Stop all. Approve a plan or create a task to resume.
-            </div>
-          )}
-          {view === 'board' && pendingPlan && (
-            <div className={s.planBanner} role="status">
-              <span>
-                <strong>A plan is waiting for your approval.</strong> “{pendingPlan.goal}” ·{' '}
-                {pendingPlan.nodes.length} {pendingPlan.nodes.length === 1 ? 'task' : 'tasks'}
-              </span>
-              <Button size="sm" variant="primary" onClick={() => setView('plan')}>
-                Review plan
-              </Button>
-            </div>
-          )}
-          {view === 'board' && !state.schedulingPaused && waitingForSlot.length > 0 && (
-            <div className={s.slotBanner} role="status">
-              <span>
-                <strong>
-                  {waitingForSlot.length} {waitingForSlot.length === 1 ? 'task is' : 'tasks are'}{' '}
-                  waiting for a worker slot.
-                </strong>{' '}
-                {waitingForSlot[0]!.note} The next one starts when a running task merges or stops.
-              </span>
-              <Button size="sm" onClick={() => setView('plan')}>
-                Show in plan
-              </Button>
-            </div>
-          )}
-          {view === 'board' ? (
-            <Board
-              cards={cards}
-              selected={effectiveSelected}
-              onSelect={selectSession}
-              onReview={(id) => selectSession(id, 'review')}
-              columns={COLUMNS}
-            />
-          ) : (
-            <PlanView
+        {page === 'sessions' ? (
+          <>
+            <SessionHeader
               state={state}
-              selected={effectiveSelected}
-              onSelect={selectSession}
-              {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}
+              source={source}
+              title={sessionTitle}
+              {...(tree ? { goal: tree.plan.goal } : {})}
+              mode={mode}
+              elapsedMs={elapsedMs}
+              tab={tab}
+              onTab={setTab}
+              counts={{ board: activeCount, files: undefined, commits: undefined }}
+              onNewTask={() => setNewTask(true)}
+              onAddRepo={() => setAddRepoOpen(true)}
+              onSelectRepo={(id) => {
+                setSelected(null);
+                source.selectProject(id);
+              }}
+              stopAll={stopAll}
+              repos={repoList}
+              activeCount={activeCount}
             />
-          )}
-        </div>
-
-        <TimelineBar run={run} />
+            <div className={s.content}>
+              {tab === 'board' && (
+                <>
+                  {tree?.plan.status === 'awaiting_approval' && (
+                    <div className={s.planBanner} role="status">
+                      <span>
+                        <strong>The orchestrator’s plan is waiting for your approval.</strong>{' '}
+                        Nothing runs until you approve it.
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => setTab('plan')}>
+                        Review plan
+                      </Button>
+                    </div>
+                  )}
+                  <div className={s.boardPad}>
+                    <Board
+                      cards={cards}
+                      selected={effectiveSelected}
+                      onSelect={selectSession}
+                      onReview={(id) => selectSession(id, 'review')}
+                      columns={COLUMNS}
+                    />
+                  </div>
+                </>
+              )}
+              {tab === 'plan' && (
+                <PlanView
+                  state={state}
+                  selected={effectiveSelected}
+                  onSelect={selectSession}
+                  {...(tree
+                    ? { onReviewPlan: () => selectSession(tree.orchestrator.sessionId) }
+                    : {})}
+                  events={run.events}
+                  index={run.index}
+                  {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}
+                />
+              )}
+              {tab === 'files' && (
+                <FilesView state={state} tree={tree} onOpen={(id) => selectSession(id, 'files')} />
+              )}
+              {tab === 'commits' && (
+                <CommitsView
+                  state={state}
+                  events={run.events}
+                  index={run.index}
+                  onOpen={(id) => selectSession(id)}
+                  onSeek={run.seek}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <div className={s.content}>
+            <NavPage
+              page={page}
+              state={state}
+              events={run.events}
+              index={run.index}
+              tree={tree}
+              onOpen={openFromPage}
+              onSeek={run.seek}
+              onPage={setPage}
+            />
+          </div>
+        )}
+        <Dock
+          run={run}
+          source={source}
+          tree={tree}
+          expanded={dockExpanded}
+          onExpand={setDockExpanded}
+          onSelectSession={(id) => {
+            setPage('sessions');
+            selectSession(id);
+          }}
+        />
       </main>
 
       {selectedSession && (
@@ -259,6 +333,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
           upTo={current.seq}
           onClose={() => setSelected(null)}
           onJump={(seq) => run.seek(run.events.findIndex((e) => e.seq === seq))}
+          {...(tree ? { tree } : {})}
           {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}
         />
       )}
@@ -271,6 +346,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
           : {})}
         onCreated={(id) => {
           run.goLive();
+          setPage('sessions');
           setSelected(id);
         }}
       />
@@ -280,6 +356,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         onOpenChange={setSearchOpen}
         cards={cards}
         onSelectSession={(id) => {
+          setPage('sessions');
           setSelected(id);
           setSearchOpen(false);
         }}
@@ -288,10 +365,13 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
           setNewTask(true);
         }}
         onSwitchView={(nextView) => {
-          setView(nextView);
+          setPage('sessions');
+          setTab(nextView);
           setSearchOpen(false);
         }}
       />
+
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       <SettingsDialog
         open={settingsOpen}
@@ -312,6 +392,42 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         onAdd={source.addProject}
       />
     </div>
+  );
+}
+
+const SHORTCUTS: [string, string][] = [
+  ['⌘K', 'Search tasks and commands'],
+  ['⌘N', 'New task'],
+  ['⌘↵', 'Approve the plan (when it is waiting)'],
+  ['⌘R', 'Request changes to the plan (when it is waiting)'],
+  ['[  ]', 'Step back / forward one event'],
+  ['L', 'Back to live'],
+  ['Esc', 'Close the inspector'],
+  ['?', 'This list'],
+];
+
+function ShortcutsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Keyboard shortcuts">
+      <dl className={s.shortcuts}>
+        {SHORTCUTS.map(([k, label]) => (
+          <div key={k} className={s.shortcutRow}>
+            <dt>
+              {k.split('  ').map((part) => (
+                <Kbd key={part}>{part}</Kbd>
+              ))}
+            </dt>
+            <dd>{label}</dd>
+          </div>
+        ))}
+      </dl>
+    </Dialog>
   );
 }
 
