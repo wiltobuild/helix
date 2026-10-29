@@ -97,11 +97,11 @@ export function Inspector({
   const id = session.session.id;
   const review = crossReview(session, state);
   const target = reviewerTarget(session, state, events, upTo);
-  const orchPlan = Object.values(state.plans).find((p) => p.orchestratorSessionId === id);
+  const orchPlan = Object.values(state.plans).findLast((p) => p.orchestratorSessionId === id);
   const planNeedsReview = orchPlan?.status === 'awaiting_approval';
   const rawStatus = deriveStatus(session);
   const status = planNeedsReview ? 'needs_you' : rawStatus;
-  const plan = Object.values(state.plans).find((p) =>
+  const plan = Object.values(state.plans).findLast((p) =>
     p.nodes.some((n) => n.id === session.session.planNodeId),
   );
   const node = plan?.nodes.find((n) => n.id === session.session.planNodeId);
@@ -134,6 +134,15 @@ export function Inspector({
   const decidePlan = (decision: 'approve' | 'reject', reason?: string) =>
     act(`plan:${decision}`, async () => {
       await client!.decidePlan(orchPlan!.id, { decision, ...(reason ? { reason } : {}) });
+      // Rejecting only records the decision; the orchestrator has to hear what to change, or it
+      // stays idle. Send the request so it revises and submits a new plan for approval.
+      if (decision === 'reject')
+        await client!.sendMessage(id, {
+          text: reason
+            ? `I sent your plan back. Please revise it and submit a new plan for my approval. Requested changes: ${reason}`
+            : 'I sent your plan back. Please revise it and submit a new plan for my approval.',
+          mode: 'queue',
+        });
       setChanges(undefined);
     });
 
@@ -966,7 +975,7 @@ function PlanPanel({
                   disabled={!canAct}
                   loading={busy === 'plan:reject'}
                 >
-                  Send back to the orchestrator
+                  Send back for a new plan
                 </Button>
               </div>
             </form>
