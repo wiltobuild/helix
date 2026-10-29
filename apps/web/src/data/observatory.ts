@@ -115,6 +115,11 @@ export interface AgentView {
   role: string;
 }
 
+export interface WorkerView extends AgentView {
+  id: string;
+  title: string;
+}
+
 export interface OrchestratorView {
   sessionId: string;
   agent: AgentKind;
@@ -131,6 +136,7 @@ export interface PlanTree {
   plan: PlanState;
   orchestrator: OrchestratorView;
   agents: AgentView[];
+  workers: WorkerView[];
   tasks: TaskView[];
 }
 
@@ -183,8 +189,7 @@ export function planTree(
   const agentKinds = [...new Set(plan.nodes.map((n) => n.agent))].sort(
     (a, b) => (AGENT_ORDER[a] ?? 9) - (AGENT_ORDER[b] ?? 9),
   );
-  const agents: AgentView[] = agentKinds.map((agent) => {
-    const mine = tasks.filter((t) => t.node.agent === agent);
+  const summarize = (agent: AgentKind, mine: TaskView[]): AgentView => {
     const active = mine.some((t) => t.status === 'working');
     const done = mine.every((t) => t.status === 'merged' || t.status === 'archived');
     const needs = mine.some((t) => t.status === 'needs_you');
@@ -222,7 +227,27 @@ export function planTree(
       elapsedMs: durationMs(first, last),
       role: roleFor(mine),
     };
-  });
+  };
+  const agents = agentKinds.map((agent) =>
+    summarize(
+      agent,
+      tasks.filter((t) => t.node.agent === agent),
+    ),
+  );
+  const workers = tasks.map((task) => ({
+    ...summarize(task.node.agent, [task]),
+    id: task.node.id,
+    title: task.node.title,
+    statusLabel: !task.session
+      ? plan.status === 'awaiting_approval'
+        ? 'Planned'
+        : plan.status === 'rejected'
+          ? 'Not started'
+          : task.waitsOn.length
+            ? 'Waiting'
+            : 'Queued'
+      : task.label,
+  }));
 
   const orch = state.sessions[plan.orchestratorSessionId];
   const orchTiming = timings.get(plan.orchestratorSessionId);
@@ -251,7 +276,7 @@ export function planTree(
     active: orchStatus === 'working',
   };
 
-  return { plan, orchestrator, agents, tasks };
+  return { plan, orchestrator, agents, workers, tasks };
 }
 
 function roleFor(tasks: TaskView[]): string {

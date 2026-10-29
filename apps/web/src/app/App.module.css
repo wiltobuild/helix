@@ -79,10 +79,21 @@
   color: var(--text-3);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1440px), (max-height: 900px) {
+  .shell > aside {
+    position: fixed;
+    inset: 56px 0 0 auto;
+    z-index: var(--z-dialog);
+    width: min(420px, 100vw);
+    box-shadow: var(--shadow-pop);
+  }
+
   .shell,
   .shell[data-inspector='open'] {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: 196px minmax(0, 1fr);
+    grid-template-areas:
+      'top top'
+      'nav main';
   }
 }
 
@@ -98,6 +109,9 @@
   .shell,
   .shell[data-inspector='open'] {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'top'
+      'main';
   }
 
   .shell > nav {

@@ -85,3 +85,19 @@ test('commits parse Helix commit messages; durations read naturally', () => {
   expect(formatDuration(28 * 60_000)).toBe('28m');
   expect(formatDuration(134 * 60_000)).toBe('2h 14m');
 });
+
+test('each planned task gets a distinct subagent with its own status and session', () => {
+  const { state, index, ts } = at(15);
+  const tree = planTree(state, run, index, ts)!;
+  expect(tree.workers).toHaveLength(tree.tasks.length);
+  expect(new Set(tree.workers.map((w) => w.id)).size).toBe(tree.tasks.length);
+  for (const worker of tree.workers) {
+    expect(worker.tasks).toHaveLength(1);
+    const task = worker.tasks[0]!;
+    expect(worker.id).toBe(task.node.id);
+    expect(worker.agent).toBe(task.node.agent);
+    expect(worker.active).toBe(task.status === 'working');
+    if (task.session) expect(worker.statusLabel).toBe(task.label);
+  }
+  expect(tree.workers.filter((w) => w.agent === 'codex').length).toBeGreaterThan(1);
+});

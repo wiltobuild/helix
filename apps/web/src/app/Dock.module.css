@@ -714,3 +714,56 @@ a.artifact:hover {
   color: var(--text-3);
   font-size: var(--text-xs);
 }
+
+/* A compact overview remains at the bottom; Expand restores the full timeline. */
+@media (max-width: 1440px), (max-height: 900px) {
+  .dock:not([data-expanded]) {
+    height: 148px;
+    flex: 0 0 148px;
+  }
+  .dock:not([data-expanded]) .strip {
+    padding: 2px 12px;
+  }
+  .dock:not([data-expanded]) .stripMeta {
+    display: none;
+  }
+  .head {
+    gap: 8px;
+    padding: 0 12px;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+  .tabs {
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .tab {
+    height: 34px;
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+  .controls {
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .dock:not([data-expanded]) .gantt {
+    padding: 3px 12px;
+    grid-template-rows: auto 1fr;
+  }
+  .dock:not([data-expanded]) .axisRow,
+  .dock:not([data-expanded]) .lanes {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+  .dock:not([data-expanded]) .axis {
+    height: 18px;
+  }
+  .dock:not([data-expanded]) .lane,
+  .dock:not([data-expanded]) .laneLabel {
+    height: 18px;
+  }
+  .dock:not([data-expanded]) [data-kind='task'],
+  .dock:not([data-expanded]) .legend,
+  .dock:not([data-expanded]) .laneSub {
+    display: none;
+  }
+}

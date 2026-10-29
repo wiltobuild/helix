@@ -103,9 +103,6 @@ export function TopBar({
           onClick={onShortcuts}
         />
         <IconButton label="Settings" icon={<Settings size={16} />} onClick={onSettings} />
-        <span className={s.avatar} aria-label="You">
-          {live ? 'Y' : 'A'}
-        </span>
       </div>
     </header>
   );
