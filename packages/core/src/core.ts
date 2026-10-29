@@ -1251,21 +1251,34 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     let creation = eventsFor(s).find((e) => e.type === 'session.created');
     creation ??= await emit('session.created', { session: s }, context(s, cause));
     if (!session(s.id).worktree) {
+      // Every task starts from the remote's default branch: the user's local branch may be behind
+      // merges made on GitHub (including merges from earlier Helix tasks).
       let base = p.defaultBranch;
-      if (prerequisites.length) {
-        try {
-          base = await deps.worktrees.fetchBase(p.repoPath, p.defaultBranch);
-        } catch (error) {
+      try {
+        base = await deps.worktrees.fetchBase(p.repoPath, p.defaultBranch);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (prerequisites.length) {
           await emit(
             'explain.note',
             {
-              text: `Cannot start dependent worker: fetching origin/${p.defaultBranch} failed: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Cannot start dependent worker: fetching origin/${p.defaultBranch} failed: ${reason}`,
             },
             context(s, cause),
           );
           await emit('activity.changed', { activity: 'waiting_input' }, context(s, cause));
           return s;
         }
+        // Independent work can still start offline, from the local branch.
+        await emit(
+          'explain.note',
+          {
+            text: `Could not fetch origin/${p.defaultBranch} (${reason}); starting from the local ${p.defaultBranch}, which may be behind.`,
+          },
+          context(s, cause),
+        );
+      }
+      if (prerequisites.length) {
         await emit(
           'explain.note',
           {

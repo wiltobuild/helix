@@ -908,3 +908,28 @@ describe('plan integrity and restart', () => {
     expect(harness.start).not.toHaveBeenCalled();
   });
 });
+
+test('a standalone task starts from the fetched remote base, not a stale local branch', async () => {
+  const f = fixture();
+  const p = await f.add();
+  f.git.fetchBase.mockResolvedValueOnce('origin-main-sha');
+  await f.core.createSession(p.id, request, 'fresh-base');
+  expect(f.git.fetchBase).toHaveBeenCalledExactlyOnceWith(p.repoPath, p.defaultBranch);
+  expect(f.git.create.mock.calls[0]?.[2]).toBe('origin-main-sha');
+  expect(f.store.events.some((e) => e.type === 'explain.note')).toBe(false);
+});
+
+test('a standalone task still starts offline, from the local branch, and says so', async () => {
+  const f = fixture();
+  const p = await f.add();
+  f.git.fetchBase.mockRejectedValueOnce(new Error('remote unavailable'));
+  const s = await f.core.createSession(p.id, request, 'offline-base');
+  expect(f.git.create.mock.calls[0]?.[2]).toBe(p.defaultBranch);
+  const note = f.store.events.find((e) => e.type === 'explain.note' && e.sessionId === s.id);
+  expect(note?.type === 'explain.note' && note.payload.text).toBe(
+    `Could not fetch origin/${p.defaultBranch} (remote unavailable); starting from the local ${p.defaultBranch}, which may be behind.`,
+  );
+  expect(f.store.events.some((e) => e.type === 'session.started' && e.sessionId === s.id)).toBe(
+    true,
+  );
+});

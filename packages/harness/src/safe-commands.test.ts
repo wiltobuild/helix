@@ -86,3 +86,45 @@ test('asks for anything that writes, installs, reaches outside, or expands shell
   ])
     expect(isSafeCommand(command, wt), String(command)).toBe(false);
 });
+
+// Exactly as Codex sent them in a live run on helix-demo-app (PowerShell, `-Command` without
+// -NoProfile, reads chained with `;`, quoted search patterns containing `|`).
+const psBare = (script: string) =>
+  `"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '${script}'`;
+
+test('approves read-only chains and search patterns the way Codex sends them', () => {
+  for (const command of [
+    psBare(
+      'Get-Content src/cart.ts; Get-Content src/cart.test.ts; Get-Content package.json; rg --files -g AGENTS.md',
+    ),
+    `"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "rg --files -g '"'!package-lock.json'"'; rg -n 'discount|save10|SAVE10' ."`,
+    psBare('Get-Content README.md; Get-Content src/receipt.ts; Get-ChildItem -Force'),
+    psBare(
+      'Get-Content src/cart.ts -TotalCount 40; Select-String -Pattern "SAVE10" -Path src/cart.ts',
+    ),
+    `rg -n "a|b" src && cat src/cart.ts`,
+    `grep -rn -e 'x;y' src`,
+    `echo "---"; git status`,
+  ])
+    expect(isSafeCommand(command, wt), String(command)).toBe(true);
+});
+
+test('chains are only as safe as every command in them, and nothing may run code', () => {
+  for (const command of [
+    psBare('Get-Content src/cart.ts; Remove-Item src/cart.ts'),
+    psBare('Get-Content (Remove-Item src)'),
+    psBare('Get-Content $(whoami)'),
+    psBare('Get-ChildItem | ForEach-Object { Remove-Item $_ }'),
+    'cat src/cart.ts; rm -rf src',
+    'cat src/cart.ts;',
+    '; cat src/cart.ts',
+    'echo "$(whoami)"',
+    'echo "`whoami`"',
+    'ls {a,b}',
+    `rg -n 'x' ${outside.replace(/\\/g, '/')}`,
+    'Get-Content -Path ../secret.env',
+    'rg -f ~/.ssh/id_rsa src',
+    `rg -n 'unterminated src`,
+  ])
+    expect(isSafeCommand(command, wt), String(command)).toBe(false);
+});
