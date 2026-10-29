@@ -32,6 +32,9 @@ import {
   type Provenance,
 } from '../data/describe';
 import s from './Inspector.module.css';
+import { crossReview, reviewerTarget, sessionHistory } from '../data/crossReview';
+import { ReviewSection } from './ReviewSection';
+import { ReviewChip } from './ReviewChip';
 
 interface InspectorProps {
   session: SessionState;
@@ -40,6 +43,9 @@ interface InspectorProps {
   upTo: number;
   onClose: () => void;
   onJump: (seq: number) => void;
+  tab: string;
+  onTabChange: (tab: string) => void;
+  onSelect: (id: string, tab: string) => void;
   /** Present in live mode. Actions are enabled only while viewing the live moment. */
   client?: HelixClient;
   isLive?: boolean;
@@ -52,13 +58,17 @@ export function Inspector({
   upTo,
   onClose,
   onJump,
+  tab,
+  onTabChange,
+  onSelect,
   client,
   isLive,
 }: InspectorProps) {
-  const [tab, setTab] = useState('summary');
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const id = session.session.id;
+  const review = crossReview(session, state);
+  const target = reviewerTarget(session, state, events, upTo);
   const orchPlan = Object.values(state.plans).find((p) => p.orchestratorSessionId === id);
   const planNeedsReview = orchPlan?.status === 'awaiting_approval';
   const rawStatus = deriveStatus(session);
@@ -76,10 +86,7 @@ export function Inspector({
     .map((aid) => state.approvals[aid])
     .filter((a): a is NonNullable<typeof a> => Boolean(a && !a.decision));
 
-  const history = useMemo(
-    () => events.filter((e) => e.seq <= upTo && e.sessionId === id).reverse(),
-    [events, upTo, id],
-  );
+  const history = useMemo(() => sessionHistory(events, id, upTo), [events, upTo, id]);
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -117,7 +124,20 @@ export function Inspector({
             onClick={onClose}
           />
         </div>
-        <h2 className={s.title}>{session.session.title}</h2>
+        <h2 className={s.title}>
+          {target
+            ? `Reviewing ${target.worker.session.title}${target.prNumber ? ` · PR #${target.prNumber}` : ''}`
+            : session.session.title}
+        </h2>
+        {target && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onSelect(target.worker.session.id, 'review')}
+          >
+            Back to {target.worker.session.title}
+          </Button>
+        )}
         <StatusPill status={status} {...(label ? { label } : {})} />
         {client && !isLive && (
           <p className={s.rewound}>Viewing the past. Go back to live to take actions.</p>
@@ -131,10 +151,11 @@ export function Inspector({
 
       <Tabs
         value={tab}
-        onValueChange={setTab}
+        onValueChange={onTabChange}
         items={[
           { value: 'summary', label: 'Summary' },
           { value: 'activity', label: 'Activity', count: session.chat.length },
+          ...(session.session.role === 'worker' ? [{ value: 'review', label: 'Review' }] : []),
           // The diff endpoint only knows the present; never imply it shows the moment being viewed.
           ...(client ? [{ value: 'files', label: isLive ? 'Files' : 'Current changes' }] : []),
           { value: 'why', label: 'Why' },
@@ -292,11 +313,18 @@ export function Inspector({
                     <span className={s.del}> · {session.pr.checks.failingNames.join(', ')}</span>
                   )}
                 </dd>
-                <dt>Review</dt>
+                <dt>GitHub review</dt>
                 <dd>{reviewLabel(session.pr.review.decision)}</dd>
               </>
             )}
           </dl>
+
+          {review && <ReviewChip review={review} onOpen={() => onTabChange('review')} />}
+          {session.pr?.state === 'open' && review?.status === 'reviewing' && (
+            <p className={s.muted} role="status">
+              Waiting for {review.name}'s review{review.stale ? ' of the new head' : ''}.
+            </p>
+          )}
 
           {status === 'ready_to_merge' && (
             <Button
@@ -312,6 +340,18 @@ export function Inspector({
             </Button>
           )}
         </TabPanel>
+
+        {session.session.role === 'worker' && (
+          <TabPanel value="review" className={s.panel}>
+            <ReviewSection
+              session={session}
+              state={state}
+              events={events}
+              upTo={upTo}
+              onSelect={onSelect}
+            />
+          </TabPanel>
+        )}
 
         <TabPanel value="activity" className={s.activity}>
           <div className={s.panel}>

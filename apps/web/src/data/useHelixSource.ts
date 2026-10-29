@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createHelixClient, type EventStreamStatus, type HelixClient } from '@helix/api-client';
 import type { HelixEvent, Project } from '@helix/contracts';
-import { fixtures } from '@helix/contracts';
-import { useDemoStream, type ReplaySpeed } from './useDemoStream';
 import {
-  CI_REPAIR_RECORDING,
-  DEFAULT_RECORDING,
-  fetchRecording,
-  openRecordingFile,
-  replayStart,
-  type Recording,
-} from './recordings';
+  builtInRun,
+  demoSelection,
+  presetRecording,
+  type BuiltInPreset,
+  type DemoPreset,
+} from './demoScenarios';
+import { useDemoStream, type ReplaySpeed } from './useDemoStream';
+import { fetchRecording, openRecordingFile, replayStart, type Recording } from './recordings';
 
 export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
-export type DemoPreset = 'multi-agent' | 'github-ci-repair' | 'custom';
+export type { DemoPreset } from './demoScenarios';
 
 export interface HelixSource {
   mode: SourceMode;
@@ -28,10 +27,10 @@ export interface HelixSource {
   addProject: (repoPath: string) => Promise<void>;
   /** Demo mode: the recording being replayed (undefined while playing the built-in example). */
   recording?: Pick<Recording, 'name' | 'header'>;
-  /** Active demo preset ('multi-agent' example vs bundled 'github-ci-repair' vs 'custom' uploaded .helixlog). */
+  /** Active demo scenario, or a custom uploaded .helixlog. */
   demoPreset?: DemoPreset;
-  /** Switch between the multi-agent Flow Observatory run and the recorded GitHub CI loop. */
-  selectDemoPreset?: (preset: 'multi-agent' | 'github-ci-repair') => void;
+  /** Switch between bundled recordings and the built-in cross-review run. */
+  selectDemoPreset?: (preset: BuiltInPreset) => void;
   /** Why a requested recording could not be played (the built-in example plays instead). */
   recordingError?: string;
   /** Replays a local .helixlog file in the browser; works in any mode, no daemon needed. */
@@ -55,21 +54,11 @@ const forceDemo = staticBuild || params.has('demo');
  * away in RecordingControl. `?demo=<name>` plays another bundled recording, and `?demo=example`
  * the built-in example run.
  */
-const rawDemoParam = params.get('demo') || undefined;
-const playExample = rawDemoParam === 'example';
-const requestedRecording =
-  rawDemoParam && rawDemoParam !== 'multi-agent' && !playExample ? rawDemoParam : undefined;
-/** The recording each demo scenario plays. */
-const PRESET_RECORDINGS = {
-  'multi-agent': DEFAULT_RECORDING,
-  'github-ci-repair': CI_REPAIR_RECORDING,
-} as const;
-const initialPreset: DemoPreset =
-  requestedRecording === CI_REPAIR_RECORDING
-    ? 'github-ci-repair'
-    : requestedRecording && requestedRecording !== DEFAULT_RECORDING
-      ? 'custom'
-      : 'multi-agent';
+const {
+  preset: initialPreset,
+  requestedRecording,
+  example: playExample,
+} = demoSelection(params.get('demo'));
 
 /**
  * Picks the data source. If a Helix daemon answers, show the real project (live events over SSE,
@@ -87,16 +76,18 @@ export function useHelixSource(): HelixSource {
   const [demoPreset, setDemoPreset] = useState<DemoPreset>(initialPreset);
   const [recordingError, setRecordingError] = useState<string>();
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
-  const demoRun = recording?.events ?? fixtures.passwordResetRun;
+  const demoRun = recording?.events ?? builtInRun(demoPreset);
   const demoEvents = useDemoStream(
     demoRun,
-    recording ? { startAt: replayStart(demoRun), speed } : { speed },
+    recording || demoPreset === 'cross-review'
+      ? { startAt: replayStart(demoRun), speed }
+      : { speed },
   );
 
   // Demo mode loads the scenario's recording; a missing one leaves the built-in example playing.
   useEffect(() => {
-    if (mode !== 'demo' || recording || playExample) return;
-    const targetName = demoPreset === 'custom' ? requestedRecording : PRESET_RECORDINGS[demoPreset];
+    if (mode !== 'demo' || recording || (playExample && demoPreset === 'multi-agent')) return;
+    const targetName = demoPreset === 'custom' ? requestedRecording : presetRecording(demoPreset);
     if (!targetName) return;
     let cancelled = false;
     fetchRecording(targetName)
@@ -109,7 +100,7 @@ export function useHelixSource(): HelixSource {
     };
   }, [mode, demoPreset, recording]);
 
-  const selectDemoPreset = useCallback((preset: 'multi-agent' | 'github-ci-repair') => {
+  const selectDemoPreset = useCallback((preset: BuiltInPreset) => {
     setRecordingError(undefined);
     setRecording(undefined);
     setDemoPreset(preset);

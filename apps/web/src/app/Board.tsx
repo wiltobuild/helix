@@ -1,5 +1,6 @@
 import { SectionLabel, SessionCard, columnMeta, toneVar, type BoardColumn } from '@helix/ui';
 import type { BoardCard } from '../data/describe';
+import { ReviewChip } from './ReviewChip';
 import s from './Board.module.css';
 
 interface BoardProps {
@@ -7,6 +8,7 @@ interface BoardProps {
   columns: BoardColumn[];
   selected: string | null;
   onSelect: (id: string) => void;
+  onReview: (id: string) => void;
 }
 
 const EMPTY: Partial<Record<BoardColumn, string>> = {
@@ -17,7 +19,7 @@ const EMPTY: Partial<Record<BoardColumn, string>> = {
   ready_to_merge: 'Nothing ready yet',
 };
 
-export function Board({ cards, columns, selected, onSelect }: BoardProps) {
+export function Board({ cards, columns, selected, onSelect, onReview }: BoardProps) {
   const archived = cards.filter((c) => c.column === 'archive');
   return (
     <div className={s.wrap}>
@@ -37,6 +39,9 @@ export function Board({ cards, columns, selected, onSelect }: BoardProps) {
                 <SessionCard
                   key={c.id}
                   {...c.card}
+                  action={
+                    c.review && <ReviewChip review={c.review} onOpen={() => onReview(c.id)} />
+                  }
                   selected={selected === c.id}
                   onOpen={() => onSelect(c.id)}
                 />
@@ -55,6 +60,7 @@ export function Board({ cards, columns, selected, onSelect }: BoardProps) {
               <SessionCard
                 key={c.id}
                 {...c.card}
+                action={c.review && <ReviewChip review={c.review} onOpen={() => onReview(c.id)} />}
                 selected={selected === c.id}
                 onOpen={() => onSelect(c.id)}
               />
