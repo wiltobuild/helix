@@ -25,6 +25,8 @@ import {
   toneVar,
 } from '@helix/ui';
 import { provenanceLabel, slotWaitNote } from '../data/describe';
+import { crossReview } from '../data/crossReview';
+import { ReviewChip } from './ReviewChip';
 import s from './PlanView.module.css';
 
 const NODE_W = 248;
@@ -36,7 +38,10 @@ const ROOT_W = 220;
 type Placed = { node: PlanNode; x: number; y: number; depth: number };
 
 /** Longest-path layering: a node sits one column right of its deepest dependency. */
-function layout(plan: Plan): { placed: Placed[]; width: number; height: number } {
+function layout(
+  plan: Plan,
+  nodeHeight: number,
+): { placed: Placed[]; width: number; height: number } {
   const byId = new Map(plan.nodes.map((n) => [n.id, n]));
   const depth = new Map<PlanNodeId, number>();
   const visit = (id: PlanNodeId, stack = new Set<PlanNodeId>()): number => {
@@ -53,18 +58,18 @@ function layout(plan: Plan): { placed: Placed[]; width: number; height: number }
   const columns: PlanNode[][] = [];
   for (const n of plan.nodes) (columns[depth.get(n.id)!] ??= []).push(n);
   const tallest = Math.max(...columns.map((c) => c.length));
-  const height = tallest * NODE_H + (tallest - 1) * ROW_GAP;
+  const height = tallest * nodeHeight + (tallest - 1) * ROW_GAP;
 
   const placed: Placed[] = [];
   columns.forEach((col, ci) => {
-    const colHeight = col.length * NODE_H + (col.length - 1) * ROW_GAP;
+    const colHeight = col.length * nodeHeight + (col.length - 1) * ROW_GAP;
     const top = (height - colHeight) / 2;
     col.forEach((node, ri) =>
       placed.push({
         node,
         depth: ci,
         x: ROOT_W + COL_GAP + ci * (NODE_W + COL_GAP),
-        y: top + ri * (NODE_H + ROW_GAP),
+        y: top + ri * (nodeHeight + ROW_GAP),
       }),
     );
   });
@@ -202,7 +207,12 @@ function DecisionBar({
 
 export function PlanView({ state, selected, onSelect, client, isLive }: PlanViewProps) {
   const plan = Object.values(state.plans).at(-1);
-  const graph = useMemo(() => (plan ? layout(plan) : undefined), [plan]);
+  const nodeHeight = plan?.nodes.some(
+    (n) => n.sessionId && state.sessions[n.sessionId]?.agentReview,
+  )
+    ? 156
+    : NODE_H;
+  const graph = useMemo(() => (plan ? layout(plan, nodeHeight) : undefined), [plan, nodeHeight]);
 
   if (!plan || !graph) {
     return (
@@ -274,14 +284,14 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
         <div className={s.canvas} style={{ width: graph.width, height: graph.height }}>
           <svg className={s.edges} width={graph.width} height={graph.height} aria-hidden>
             {graph.placed.map((p) => {
-              const targetY = p.y + NODE_H / 2;
+              const targetY = p.y + nodeHeight / 2;
               const sources = p.node.dependsOn.length
                 ? p.node.dependsOn.map((d) => pos.get(d)).filter((x): x is Placed => !!x)
                 : [undefined];
               const edgeStrand = agentMeta(p.node.agent).colorVar;
               return sources.map((src) => {
                 const x1 = src ? src.x + NODE_W : ROOT_W;
-                const y1 = src ? src.y + NODE_H / 2 : rootY;
+                const y1 = src ? src.y + nodeHeight / 2 : rootY;
                 const done = src ? status(src.node.id) === 'merged' : true;
                 const flowing = done && isActive(status(p.node.id));
                 const d = curve(x1, y1, p.x, targetY);
@@ -320,6 +330,8 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
             const st = status(node.id);
             const tone = toneVar(statusMeta[st].tone);
             const slotWait = slotWaitNote(state, node.id);
+            const worker = node.sessionId ? state.sessions[node.sessionId] : undefined;
+            const review = worker ? crossReview(worker, state) : undefined;
             return (
               <Tooltip
                 key={node.id}
@@ -345,7 +357,7 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                       left: x,
                       top: y,
                       width: NODE_W,
-                      height: NODE_H,
+                      height: nodeHeight,
                       '--tone': tone,
                     } as CSSProperties
                   }
@@ -369,6 +381,7 @@ export function PlanView({ state, selected, onSelect, client, isLive }: PlanView
                   ) : (
                     <StatusPill status={st} variant="inline" />
                   )}
+                  {review && <ReviewChip review={review} />}
                 </button>
               </Tooltip>
             );

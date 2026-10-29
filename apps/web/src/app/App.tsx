@@ -45,6 +45,11 @@ export function App() {
 function Workspace({ events, source }: { events: readonly HelixEvent[]; source: HelixSource }) {
   const run = useRun(events);
   const [selected, setSelected] = useState<string | null | undefined>(undefined);
+  const [inspectorTab, setInspectorTab] = useState('summary');
+  const selectSession = (id: string, tab = 'summary') => {
+    setSelected(id);
+    setInspectorTab(tab);
+  };
   const [viewOverride, setView] = useState<string | null>(null);
   const [newTask, setNewTask] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -112,7 +117,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         cards={cards}
         needsYou={needsYou.length}
         selected={effectiveSelected}
-        onSelect={setSelected}
+        onSelect={selectSession}
         onSearch={() => setSearchOpen(true)}
         onSettings={() => setSettingsOpen(true)}
         demo={!live}
@@ -225,14 +230,15 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
             <Board
               cards={cards}
               selected={effectiveSelected}
-              onSelect={setSelected}
+              onSelect={selectSession}
+              onReview={(id) => selectSession(id, 'review')}
               columns={COLUMNS}
             />
           ) : (
             <PlanView
               state={state}
               selected={effectiveSelected}
-              onSelect={setSelected}
+              onSelect={selectSession}
               {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}
             />
           )}
@@ -243,6 +249,10 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
 
       {selectedSession && (
         <Inspector
+          key={selectedSession.session.id}
+          tab={inspectorTab}
+          onTabChange={setInspectorTab}
+          onSelect={selectSession}
           session={selectedSession}
           state={state}
           events={run.events}

@@ -8,6 +8,7 @@ import {
   type SessionState,
 } from '@helix/contracts';
 import type { SessionCardProps } from '@helix/ui';
+import { crossReview, type CrossReview } from './crossReview';
 
 /** Event categories drive timeline tick colors and icons. */
 export type EventTone =
@@ -33,6 +34,12 @@ export function eventTone(e: HelixEvent): EventTone {
           : 'done';
     case 'feedback.routed':
       return 'feedback';
+    case 'agent_review.requested':
+      return 'review';
+    case 'agent_review.submitted':
+      return e.payload.review.verdict === 'approve' ? 'done' : 'failed';
+    case 'agent_review.abandoned':
+      return 'needs';
     case 'review.updated':
       return e.payload.review.decision === 'changes_requested' ? 'failed' : 'review';
     case 'pr.opened':
@@ -73,6 +80,7 @@ export function provenance(e: HelixEvent, state: ProjectState): Provenance {
     case 'plan.node_updated':
       return 'plan';
     case 'reasoning.summary':
+    case 'agent_review.submitted':
       return 'agent';
     case 'chat.item': {
       const item = e.payload.item;
@@ -190,15 +198,17 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
           ? `A reviewer requested changes on PR #${e.payload.prNumber}.`
           : `Review updated on PR #${e.payload.prNumber}.`;
     case 'feedback.routed':
+      if (e.payload.reason === 'review_findings')
+        return `Helix sent the review findings back to ${agentName(state.sessions[e.payload.toSessionId]?.session.agent ?? 'the agent')} for “${sessionTitle(state, e.payload.toSessionId)}”.`;
       return `Helix sent the ${reasonLabel(e.payload.reason)} back to ${agentName(state.sessions[e.payload.toSessionId]?.session.agent ?? 'the agent')}, which owns the branch.`;
     case 'agent_review.requested':
-      return `${who} started reviewing PR #${e.payload.prNumber}.`;
+      return `Helix asked ${who} to review “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber}.`;
     case 'agent_review.submitted':
       return e.payload.review.verdict === 'approve'
-        ? `${who} approved PR #${e.payload.prNumber}.`
-        : `${who} requested changes on PR #${e.payload.prNumber}.`;
+        ? `${who} approved “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber}.`
+        : `${who} requested changes (${e.payload.review.findings.length} ${e.payload.review.findings.length === 1 ? 'finding' : 'findings'}) for “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber}.`;
     case 'agent_review.abandoned':
-      return `${who} stopped reviewing PR #${e.payload.prNumber} without a verdict.`;
+      return `Helix ended ${who}'s review of “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber} without a verdict: ${e.payload.reason}`;
     case 'pr.merged':
       return `PR #${e.payload.prNumber} merged.`;
     case 'terminal.output_marker':
@@ -292,6 +302,9 @@ export function statusLine(
   }
   if (status === 'ci_failed' && s.pr)
     return `CI failed · ${s.pr.checks.failingNames[0] ?? 'checks'}`;
+  // The review chip already shows the verdict; the status line says what happens next.
+  if (status === 'changes_requested' && crossReview(s, state)?.status === 'changes_requested')
+    return `Findings sent back to ${agentName(s.session.agent)}`;
   if (status === 'changes_requested')
     return `Changes requested · ${s.pr?.review.unresolvedThreads ?? 0} threads`;
   if (status === 'in_review' && s.pr) {
@@ -336,6 +349,7 @@ export interface BoardCard {
   column: BoardColumn;
   status: DisplayStatus;
   card: SessionCardProps;
+  review?: CrossReview;
 }
 
 /** Sessions shown as board cards. Includes workers plus orchestrators that are planning or need review. */
@@ -346,6 +360,7 @@ export function boardCards(
 ): BoardCard[] {
   const plans = Object.values(state.plans);
   return Object.values(state.sessions).flatMap((s) => {
+    if (s.session.role === 'reviewer') return [];
     const rawStatus = deriveStatus(s);
     const isOrchestrator = s.session.role === 'orchestrator';
     const orchPlan = isOrchestrator
@@ -371,11 +386,13 @@ export function boardCards(
       ? `Approve plan · ${orchPlan.nodes.length} task${orchPlan.nodes.length === 1 ? '' : 's'}`
       : statusLine(s, status, state);
     const title = isOrchestrator ? `Plan: ${s.session.title}` : s.session.title;
+    const review = crossReview(s, state);
     return [
       {
         id: s.session.id,
         column: boardColumn(status),
         status,
+        ...(review ? { review } : {}),
         card: {
           title,
           agent: s.session.agent,

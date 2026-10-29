@@ -3,6 +3,7 @@ import { FileUp } from 'lucide-react';
 import { Button, Segmented } from '@helix/ui';
 import type { HelixSource } from '../data/useHelixSource';
 import { REPLAY_SPEEDS, type ReplaySpeed } from '../data/useDemoStream';
+import { DEMO_SCENARIOS } from '../data/demoScenarios';
 import s from './App.module.css';
 
 /** Demo-mode header control: what's being replayed, preset switcher, and opening a local .helixlog. */
@@ -20,14 +21,12 @@ export function RecordingControl({ source }: { source: HelixSource }) {
         <Segmented
           label="Demo scenario"
           size="sm"
-          value={source.demoPreset === 'github-ci-repair' ? 'github-ci-repair' : 'multi-agent'}
-          onValueChange={(v) =>
-            source.selectDemoPreset?.(v === 'github-ci-repair' ? 'github-ci-repair' : 'multi-agent')
-          }
-          items={[
-            { value: 'multi-agent', label: 'Multi-agent plan' },
-            { value: 'github-ci-repair', label: 'GitHub CI loop' },
-          ]}
+          value={source.demoPreset ?? 'multi-agent'}
+          onValueChange={(v) => {
+            const scenario = DEMO_SCENARIOS.find((item) => item.value === v);
+            if (scenario) source.selectDemoPreset?.(scenario.value);
+          }}
+          items={[...DEMO_SCENARIOS]}
         />
       )}
       <span className={s.recordingLabel} title={source.recording?.name}>
