@@ -222,7 +222,7 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
     <div class="meta">
       <div><span class="eyebrow">Build name</span><b>Helix</b></div>
       <div><span class="eyebrow">Owner</span><b>Wil Sheppard &amp; Abheeshu Dhungana</b></div>
-      <div><span class="eyebrow">Date</span><b>October 20, 2026 · revised October 22</b></div>
+      <div><span class="eyebrow">Date</span><b>October 20, 2026 · revised October 29</b></div>
       <div><span class="eyebrow">Stage</span><b>MVP · 2-week demo</b></div>
     </div>
   </div>
@@ -455,8 +455,8 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
               <tbody>
                 <tr><td>Local daemon</td><td>Listens only on 127.0.0.1. Rejects non-local <span class="mono">Host</span> headers (DNS rebinding) and browser requests whose <span class="mono">Origin</span> isn't allowlisted (cross-site requests).</td><td>No authentication on the local port, so any program already on the machine can call the API. No CSRF token beyond the Origin check.</td></tr>
                 <tr><td>GitHub token</td><td>Never stored. Helix asks <span class="mono">gh auth token</span> each time, keeps it in memory and never logs it.</td><td>None for the MVP.</td></tr>
-                <tr><td>Agent permissions</td><td>Codex runs in its workspace-write sandbox. Helix auto-approves only file edits inside the task's own worktree, sends every command approval to you, and refuses agent git writes; Helix makes the commits.</td><td>Claude Code's default permission mode for workers isn't pinned down yet.</td></tr>
-                <tr><td>Runaway agents</td><td>Three-attempt cap on automatic repairs, a stall watchdog, and Stop on each task.</td><td>Turn cap per task, a limit on parallel workers, and a "stop all agents" control (Wave 2).</td></tr>
+                <tr><td>Agent permissions</td><td>Codex runs in its workspace-write sandbox; Claude Code runs in accept-edits mode limited to its worktree. Helix answers routine requests itself: edits inside the task's worktree, read-only commands there, and the project's own scripts (no new dependencies, nothing outside the worktree, no shell expansion). Everything else goes to you, and agent git writes are refused; Helix makes the commits. Reviewers can read but never write the code under review. <span class="mono">HELIX_AUTO_APPROVE=off</span> sends every request to you.</td><td>A project's own scripts can run anything the agent wrote into them; turn auto-approval off for repositories you don't trust.</td></tr>
+                <tr><td>Runaway agents</td><td>Three-attempt cap on automatic repairs (CI failures and review findings), a stall watchdog, Stop on each task, a turn cap per task, a limit on parallel workers, and a Stop all control.</td><td>None for the MVP.</td></tr>
               </tbody>
             </table>
           </div>
@@ -465,7 +465,7 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
         <div class="sub-sec">
           <h3>Risks</h3>
           <div class="risk">
-            <div><b>Real GitHub behaves differently from our fake</b><span>The PR → CI → fix → merge loop has only run against a GitHub we wrote. We'll run it on a private test repo whose CI is built to fail once, before the demo is recorded.</span></div>
+            <div><b>Real GitHub behaves differently from our fake</b><span>The PR → CI → fix → merge loop has now run on real GitHub repositories, including a CI failure routed back and fixed. Each new run on the demo repository keeps checking it.</span></div>
             <div><b>The plan doesn't cut the work cleanly</b><span>File claims catch overlapping tasks; conflicts that slip through are routed back as merge-conflict fixes.</span></div>
             <div><b>Live agents misbehave during the demo</b><span>Recorded replay is the fallback, rehearsed in advance.</span></div>
             <div><b>Agent CLIs change their output</b><span>Adapters sit behind one interface with recorded test fixtures.</span></div>
@@ -478,9 +478,9 @@ footer{border-top:1px solid var(--line);padding-block:28px;padding-left:max(16px
           <h3>Open questions</h3>
           <ol class="q">
             <li>Final split of ownership between the two team members.</li>
-            <li>Default orchestrator agent: Claude Code (proposed) or Codex.</li>
-            <li>Hosted demo: a static replay build on Vercel is proposed. Decide by day 10 (October 29), before the demo runs are recorded, since the zero-install metric depends on it.</li>
-            <li>Claude Code's default permission mode for worker sessions.</li>
+            <li><s>Default orchestrator agent.</s> Decided: Claude Code always orchestrates.</li>
+            <li><s>Hosted demo.</s> Decided: a static replay build on Vercel, auto-deployed from main (<a href="https://helix-demo-theta.vercel.app" target="_blank" rel="noopener">helix-demo-theta.vercel.app</a>).</li>
+            <li><s>Claude Code's default permission mode for worker sessions.</s> Decided: accept-edits within the worktree, plus Helix's safe-command policy.</li>
             <li>Whether to add a per-launch token on the local API before the demo.</li>
           </ol>
         </div>
