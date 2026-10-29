@@ -97,11 +97,11 @@ export function Inspector({
   const id = session.session.id;
   const review = crossReview(session, state);
   const target = reviewerTarget(session, state, events, upTo);
-  const orchPlan = Object.values(state.plans).find((p) => p.orchestratorSessionId === id);
+  const orchPlan = Object.values(state.plans).findLast((p) => p.orchestratorSessionId === id);
   const planNeedsReview = orchPlan?.status === 'awaiting_approval';
   const rawStatus = deriveStatus(session);
   const status = planNeedsReview ? 'needs_you' : rawStatus;
-  const plan = Object.values(state.plans).find((p) =>
+  const plan = Object.values(state.plans).findLast((p) =>
     p.nodes.some((n) => n.id === session.session.planNodeId),
   );
   const node = plan?.nodes.find((n) => n.id === session.session.planNodeId);
