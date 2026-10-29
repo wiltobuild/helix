@@ -16,6 +16,8 @@ export interface HarnessOptions {
   dataDir?: string;
   claudePermissionMode?:
     'manual' | 'acceptEdits' | 'dontAsk' | 'plan' | 'auto' | 'bypassPermissions';
+  /** Approve read-only and project-script commands without asking (see safe-commands.ts). */
+  autoApproveSafeCommands?: boolean;
   codexApprovalPolicy?: 'on-request' | 'never';
   codexSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
 }

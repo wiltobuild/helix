@@ -113,6 +113,21 @@ export function limitsFromEnv(env: NodeJS.ProcessEnv): {
   };
 }
 
+/**
+ * Approval policy. By default Helix answers routine requests itself: Claude Code edits inside its
+ * worktree (as Codex already may), read-only commands there, and the project's own scripts.
+ * HELIX_AUTO_APPROVE=off sends every request to the user.
+ */
+export function approvalPolicyFromEnv(env: NodeJS.ProcessEnv): {
+  autoApproveSafeCommands: boolean;
+  claudePermissionMode: 'manual' | 'acceptEdits';
+} {
+  const raw = env.HELIX_AUTO_APPROVE?.trim().toLowerCase();
+  if (raw && raw !== 'on' && raw !== 'off') throw new Error('HELIX_AUTO_APPROVE must be on or off');
+  const on = raw !== 'off';
+  return { autoApproveSafeCommands: on, claudePermissionMode: on ? 'acceptEdits' : 'manual' };
+}
+
 export async function createRealCore(options: {
   dataDir: string;
   env: NodeJS.ProcessEnv;
@@ -121,6 +136,7 @@ export async function createRealCore(options: {
   // Validate configuration before touching storage or credentials.
   const codexArgs = codexOverrides(env);
   const limits = limitsFromEnv(env);
+  const approvals = approvalPolicyFromEnv(env);
   // HELIX_GITHUB=off never looks up a token. `gh auth token` reads the OS keyring directly, so
   // an empty GH_CONFIG_DIR alone does not keep the operator's GitHub login away from Helix.
   const githubOff = env.HELIX_GITHUB?.trim().toLowerCase() === 'off';
@@ -148,6 +164,7 @@ export async function createRealCore(options: {
     const harnessOptions = {
       env: harnessEnv,
       dataDir,
+      autoApproveSafeCommands: approvals.autoApproveSafeCommands,
       log: (message: string) =>
         console.info(JSON.stringify({ ts: new Date().toISOString(), level: 'info', message })),
       note: (sessionId: import('@helix/contracts').SessionId, text: string) => {
@@ -159,7 +176,10 @@ export async function createRealCore(options: {
       },
     };
     const harnesses = {
-      'claude-code': createHarness('claude-code', harnessOptions),
+      'claude-code': createHarness('claude-code', {
+        ...harnessOptions,
+        claudePermissionMode: approvals.claudePermissionMode,
+      }),
       codex: createHarness('codex', {
         ...harnessOptions,
         ...(codexArgs.length ? { extraArgs: codexArgs } : {}),

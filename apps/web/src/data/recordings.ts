@@ -26,6 +26,9 @@ function readable(message: string): string {
 /** Bundled recording `?demo` plays when no name is given: the orchestrator plans, Codex and Claude Code build. */
 export const DEFAULT_RECORDING = 'discount-codes';
 
+/** Bundled recording of a real CI failure routed back to the agent and fixed. */
+export const CI_REPAIR_RECORDING = 'github-ci-repair';
+
 /** Parses .helixlog text with the contracts validator; throws a readable error. */
 export function readRecording(name: string, text: string): Recording {
   const parsed = parseHelixlog(text);

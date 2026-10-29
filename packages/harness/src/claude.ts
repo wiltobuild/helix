@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { HarnessEmission, HarnessStartOptions } from '@helix/contracts';
+import type { ApprovalDecision, HarnessEmission, HarnessStartOptions } from '@helix/contracts';
 import type { HarnessOptions } from './options.js';
 import {
   array,
@@ -148,6 +148,25 @@ export class ClaudeSession extends ProcessSession {
         }).catch(() => this.fail('Could not decline Claude Git command'));
         return;
       }
+      const respond = (decision: ApprovalDecision) =>
+        this.write({
+          type: 'control_response',
+          response: {
+            subtype: 'success',
+            request_id: id,
+            response:
+              decision === 'approved'
+                ? { behavior: 'allow', updatedInput: input }
+                : {
+                    behavior: 'deny',
+                    message:
+                      decision === 'changes_requested'
+                        ? 'Changes requested by the user. Revise this action.'
+                        : 'Denied by the user.',
+                  },
+          },
+        });
+      if (/bash|shell|command/i.test(tool) && this.autoApprove(input.command, respond)) return;
       this.askApproval(
         id,
         {
@@ -161,24 +180,7 @@ export class ClaudeSession extends ProcessSession {
             string(request.decision_reason) ||
             'Claude Code requests permission for this tool call.',
         },
-        (decision) =>
-          this.write({
-            type: 'control_response',
-            response: {
-              subtype: 'success',
-              request_id: id,
-              response:
-                decision === 'approved'
-                  ? { behavior: 'allow', updatedInput: input }
-                  : {
-                      behavior: 'deny',
-                      message:
-                        decision === 'changes_requested'
-                          ? 'Changes requested by the user. Revise this action.'
-                          : 'Denied by the user.',
-                    },
-            },
-          }),
+        respond,
       );
     } else if (message.type === 'control_cancel_request') {
       this.clearApproval(string(message.request_id));
