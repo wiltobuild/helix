@@ -73,6 +73,8 @@ interface Watcher {
   facts?: PullRequestFacts;
   mergeSha?: string;
   generation: number;
+  inFlight?: Promise<void>;
+  refresh?: Promise<void>;
 }
 class RateLimited extends HelixError {
   constructor(readonly retryAt: number) {
@@ -340,12 +342,12 @@ export function createGitHubScm(options: GitHubScmOptions = {}): ScmObserver {
       report(error);
     }
   }
-  function publish(watcher: Watcher, subscriber: Subscriber) {
+  function publish(watcher: Watcher, subscriber: Subscriber, force = false) {
     const facts = watcher.facts;
     if (!facts) return;
     const previous = subscriber.previous;
     subscriber.previous = structuredClone(facts);
-    if (!equal(previous, facts))
+    if (force || !equal(previous, facts))
       deliver(subscriber, { type: 'pr.updated', payload: { pr: facts } });
     if (!watcher.subscribers.has(subscriber)) return;
     if (!equal(previous?.checks, facts.checks) || previous?.headSha !== facts.headSha)
@@ -367,7 +369,15 @@ export function createGitHubScm(options: GitHubScmOptions = {}): ScmObserver {
     subscriber.mergedSha = mergeSha;
     deliver(subscriber, { type: 'pr.merged', payload: { prNumber: watcher.number, mergeSha } });
   }
-  async function poll(watcher: Watcher) {
+  function poll(watcher: Watcher, force = false): Promise<void> {
+    if (watcher.inFlight) return watcher.inFlight;
+    const running = observe(watcher, force).finally(() => {
+      delete watcher.inFlight;
+    });
+    watcher.inFlight = running;
+    return running;
+  }
+  async function observe(watcher: Watcher, force: boolean) {
     if (watcher.controller.signal.aborted) return;
     let delay = pollMs;
     const generation = watcher.generation;
@@ -382,7 +392,7 @@ export function createGitHubScm(options: GitHubScmOptions = {}): ScmObserver {
       watcher.facts = result.facts;
       if (result.facts.state === 'merged' && result.mergeSha) watcher.mergeSha = result.mergeSha;
       delay = result.facts.checks.pending ? Math.min(pollMs, 5000) : pollMs;
-      for (const subscriber of watcher.subscribers) publish(watcher, subscriber);
+      for (const subscriber of watcher.subscribers) publish(watcher, subscriber, force);
     } catch (error) {
       if (!watcher.controller.signal.aborted) report(error);
       delay =
@@ -403,6 +413,29 @@ export function createGitHubScm(options: GitHubScmOptions = {}): ScmObserver {
   }
 
   return {
+    refresh(project, number) {
+      const watcher = watchers.get(watcherKey(project, number));
+      if (!watcher || watcher.facts?.state === 'closed' || watcher.facts?.state === 'merged')
+        return Promise.resolve();
+      if (watcher.refresh) return watcher.refresh;
+      // A poll already underway may predate the merge. Wait for it, then read again.
+      watcher.refresh = (async () => {
+        // Let a just-created watch start its queued initial poll first.
+        await Promise.resolve();
+        await watcher.inFlight;
+        clearTimeout(watcher.timer);
+        if (
+          watcher.controller.signal.aborted ||
+          watcher.facts?.state === 'closed' ||
+          watcher.facts?.state === 'merged'
+        )
+          return;
+        await poll(watcher, true);
+      })().finally(() => {
+        delete watcher.refresh;
+      });
+      return watcher.refresh;
+    },
     watch(project, number, cb) {
       const key = watcherKey(project, number);
       let watcher = watchers.get(key);
