@@ -45,7 +45,9 @@ resubmit.
 After a successful submit, record reasoning worth keeping with
 `helix explain "<why>" --node <id>`; node-specific notes need a submitted node.
 The CLI uses `HELIX_SESSION_ID`. Keep notes concise and grounded in repository
-evidence. Tell the user the plan is waiting for their approval in Helix,
+evidence. Write each note as plain words inside double quotes, with no backticks,
+dollar signs or double quotes inside it: the shell would run or cut them, so
+Helix asks the user before running such a command. Tell the user the plan is waiting for their approval in Helix,
 then stop. Never try to approve it or start workers yourself.
 
 Example (replace the id placeholders with environment values before submission):
