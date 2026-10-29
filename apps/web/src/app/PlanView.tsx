@@ -116,70 +116,19 @@ const drop = (x1: number, y1: number, x2: number, y2: number) => {
  */
 export function PlanView(props: PlanViewProps) {
   const root = useRef<HTMLDivElement>(null);
-  const previous = useRef(new Map<string, { rect: DOMRect; element: HTMLElement }>());
+  const entered = useRef(new WeakSet<HTMLElement>());
   useLayoutEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const next = new Map<string, { rect: DOMRect; element: HTMLElement }>();
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      root.current?.querySelectorAll<HTMLElement>('[data-motion-key]').forEach((element, index) => {
-        const key = element.dataset.motionKey!;
-        const old = previous.current.get(key);
-        if (
-          old?.element === element &&
-          element.getAnimations().some((a) => a.playState === 'running')
-        ) {
-          next.set(key, old);
-          return;
-        }
-        const rect = element.getBoundingClientRect();
-        next.set(key, { rect, element });
-        if (!rect.width || !rect.height || !previous.current.size) return;
-        if (old && !reduced) {
-          const dx = old.rect.x - rect.x;
-          const dy = old.rect.y - rect.y;
-          const sx = old.rect.width / rect.width;
-          const sy = old.rect.height / rect.height;
-          if (Math.abs(dx) + Math.abs(dy) < 1 && Math.abs(sx - 1) + Math.abs(sy - 1) < 0.01) return;
-          const parentScale = rect.width / element.offsetWidth || 1;
-          element.animate(
-            [
-              {
-                transformOrigin: 'top left',
-                transform:
-                  'translate(' +
-                  dx / parentScale +
-                  'px, ' +
-                  dy / parentScale +
-                  'px) scale(' +
-                  sx +
-                  ', ' +
-                  sy +
-                  ')',
-              },
-              { transformOrigin: 'top left', transform: 'none' },
-            ],
-            { duration: 480, easing: 'cubic-bezier(.22, 1, .36, 1)' },
-          );
-        } else if (!old || old.element !== element) {
-          element.animate(
-            reduced
-              ? [{ opacity: 0 }, { opacity: 1 }]
-              : [
-                  { opacity: 0, transform: 'translateY(14px)' },
-                  { opacity: 1, transform: 'none' },
-                ],
-            {
-              duration: reduced ? 120 : 360,
-              delay: reduced ? 0 : Math.min(index * 35, 140),
-              fill: 'backwards',
-              easing: 'ease-out',
-            },
-          );
-        }
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    root.current?.querySelectorAll<HTMLElement>('[data-motion-key]').forEach((element) => {
+      if (entered.current.has(element)) return;
+      entered.current.add(element);
+      // Replay changes status frequently. Animate only a newly mounted card, never
+      // its measured position: measurements include scrolling and in-flight transforms.
+      element.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: reduced ? 120 : 220,
+        easing: 'ease-out',
       });
-      previous.current = next;
     });
-    return () => cancelAnimationFrame(frame);
   });
   return (
     <div className={s.workspace} ref={root}>
