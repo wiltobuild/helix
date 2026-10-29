@@ -6,8 +6,10 @@
 > and a "why" panel whose every entry says where it came from.
 >
 > Team: 2 people · Demo: **~2 weeks** (Day 1 = Oct 20, 2026) · Then: portfolio polish, open-ended.
-> Status (Oct 22): **Wave 0 and Wave 1 done** (PRs #1 and #2 open). A real Codex task has run end to end from the UI;
-> the real GitHub PR → CI → fix loop has only run against a fake GitHub. **Wave 2 next.**
+> Status (Oct 29): **Waves 0–2 done**, plus cross-agent review (#49–#51), replay pacing and routine-approval
+> answering (#48), and fresh-base task starts (#52). Real runs are recorded and bundled (`discount-codes`,
+> `github-ci-repair`) and replay on the hosted demo. The UI is being rebuilt as **Concept 3 (Flow Observatory)**
+> in #57. Replay determinism is now tested on the real recordings, not only on fixtures.
 >
 > v3 (Oct 22) folds in the Claude + Codex PRD critique: plan approval is P0, a narrow integration policy,
 > P0 cut to the demo loop, labeled Why entries, "replay" not "rewind", security, spend guardrails,
@@ -186,7 +188,10 @@ Merge via PR on GitHub — you (or teammate) click merge after Claude's sign-off
 ## 9. Open items
 - Confirm teammate's role (proposed above).
 - ~~GitHub repo location~~ → `wiltobuild/helix`.
-- Which agent should be the orchestrator by default — Claude Code or Codex?
+- ~~Which agent should be the orchestrator by default~~ → **Claude Code** always orchestrates (#47).
 - Hosted demo: **decided** — static replay build on Vercel (project `helix-demo`, Pursuit team), auto-deploys from main: https://helix-demo-theta.vercel.app
-- Claude Code's default permission mode for worker sessions.
-- Per-launch token on the local API before the demo, or accept the risk for the MVP?
+- Claude Code's default permission mode for worker sessions. Current behaviour: `manual` unless configured
+  (`claudePermissionMode`), with Helix answering routine read-only approvals itself (#48, #52); reviewer
+  sessions run in `acceptEdits`. Confirm before the demo.
+- Per-launch token on the local API before the demo, or accept the risk for the MVP? Current protection:
+  loopback-only bind, Host check and Origin allowlist; no per-launch token yet.
