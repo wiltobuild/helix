@@ -98,3 +98,39 @@ test('Claude denies Git writes with instructions and a note, without surfacing a
   });
   expect(events.some((event) => event.type === 'approval.requested')).toBe(true);
 });
+
+test('with auto-approval on, Claude runs project scripts without an approval and explains once', () => {
+  const notes: string[] = [];
+  const probe = new Probe(
+    { note: (_id, text) => notes.push(text), autoApproveSafeCommands: true },
+    { cwd: '.', session: created.payload.session },
+  );
+  const events: HarnessEmission[] = [];
+  probe.onEvent((event) => events.push(event));
+  for (const [id, command] of [
+    ['ci', 'npm run ci 2>&1'],
+    ['test', 'npm test'],
+    ['add', 'npm install left-pad'],
+  ])
+    probe.inject({
+      type: 'control_request',
+      request_id: id,
+      request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command } },
+    });
+  expect(probe.frames).toEqual(
+    ['ci', 'test'].map((id) => ({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: id,
+        response: {
+          behavior: 'allow',
+          updatedInput: { command: id === 'ci' ? 'npm run ci 2>&1' : 'npm test' },
+        },
+      },
+    })),
+  );
+  expect(notes).toHaveLength(1);
+  // Adding a dependency is not routine: it still waits for the user.
+  expect(events.filter((event) => event.type === 'approval.requested')).toHaveLength(1);
+});

@@ -396,3 +396,26 @@ test('cancelled questions advance to the next request and completed turns close 
     { id: 'approval', result: { decision: 'cancel' } },
   ]);
 });
+
+test('with auto-approval on, Codex runs project scripts in its worktree without an approval', () => {
+  const auto = new Probe(
+    { note, autoApproveSafeCommands: true },
+    { cwd: path.join(root, 'worktree'), session: template },
+  );
+  auto.running();
+  const seen: HarnessEmission[] = [];
+  auto.onEvent((e) => seen.push(e));
+  const ps = (script: string) =>
+    `"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command '${script}'`;
+  const request = (id: string, command: string, cwd = '.') =>
+    auto.inject({
+      id,
+      method: 'item/commandExecution/requestApproval',
+      params: { ...base, command, cwd, commandActions: [] },
+    });
+  request('ci', ps('npm run ci'));
+  request('elsewhere', ps('npm run ci'), root);
+  request('net', ps('curl https://example.com'));
+  expect(auto.frames).toEqual([{ id: 'ci', result: { decision: 'accept' } }]);
+  expect(seen.filter((e) => e.type === 'approval.requested')).toHaveLength(2);
+});

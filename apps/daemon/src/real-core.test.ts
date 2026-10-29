@@ -9,6 +9,7 @@ import { createHelixCore } from '@helix/core';
 import { orchestratorPrompt } from '@helix/harness';
 import { HelixError } from '@helix/contracts';
 import {
+  approvalPolicyFromEnv,
   codexOverrides,
   consoleLog,
   createRealCore,
@@ -116,6 +117,18 @@ test('Codex model/effort and limits come from validated environment variables', 
   });
   for (const bad of ['0', '-1', '2.5', 'many'])
     expect(() => limitsFromEnv({ HELIX_MAX_TURNS: bad })).toThrow(/positive integer/);
+});
+
+test('Helix answers routine approvals by default; HELIX_AUTO_APPROVE=off asks for everything', () => {
+  expect(approvalPolicyFromEnv({})).toEqual({
+    autoApproveSafeCommands: true,
+    claudePermissionMode: 'acceptEdits',
+  });
+  expect(approvalPolicyFromEnv({ HELIX_AUTO_APPROVE: 'OFF' })).toEqual({
+    autoApproveSafeCommands: false,
+    claudePermissionMode: 'manual',
+  });
+  expect(() => approvalPolicyFromEnv({ HELIX_AUTO_APPROVE: 'maybe' })).toThrow(/on or off/);
 });
 
 test('HELIX_GITHUB=off never looks up a GitHub token', async () => {

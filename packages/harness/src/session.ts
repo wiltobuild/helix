@@ -17,6 +17,7 @@ import type { HarnessOptions } from './options.js';
 import { hasExited, killTree, spawnExecutable } from './process.js';
 import { JsonLines, compact } from './protocol.js';
 import { protocolLogger } from './protocol-log.js';
+import { isSafeCommand } from './safe-commands.js';
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -48,6 +49,7 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
   private lastActivity?: AgentActivity;
   private stderrTail: Buffer = Buffer.alloc(0);
   private trace: ReturnType<typeof protocolLogger>;
+  private explainedAutoApproval = false;
 
   constructor(
     protected options: HarnessOptions,
@@ -303,6 +305,22 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
     } finally {
       cleanup();
     }
+  }
+  /**
+   * Answers a command request without asking when it only reads the worktree or runs the
+   * project's own scripts (see safe-commands.ts). Returns false when the user must decide.
+   */
+  protected autoApprove(command: unknown, respond: PendingApproval['respond']): boolean {
+    if (!this.options.autoApproveSafeCommands) return false;
+    if (!isSafeCommand(command, this.startOptions.cwd)) return false;
+    void respond('approved').catch(() => this.fail('Could not answer the approval request'));
+    if (!this.explainedAutoApproval) {
+      this.explainedAutoApproval = true;
+      this.note(
+        'Helix approves read-only commands in this worktree and the project scripts (npm run, test, ci) without asking; anything else waits for you.',
+      );
+    }
+    return true;
   }
   protected askApproval(
     wireId: string | number,

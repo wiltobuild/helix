@@ -327,6 +327,12 @@ export class CodexSession extends ProcessSession {
         );
         return;
       }
+      if (
+        command &&
+        (!string(params.cwd) || insideWorktree(this.startOptions.cwd, [string(params.cwd)])) &&
+        this.autoApprove(params.command, respond)
+      )
+        return;
       this.askApproval(
         id,
         {

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { FileUp } from 'lucide-react';
 import { Button, Segmented } from '@helix/ui';
 import type { HelixSource } from '../data/useHelixSource';
+import { REPLAY_SPEEDS, type ReplaySpeed } from '../data/useDemoStream';
 import s from './App.module.css';
 
 /** Demo-mode header control: what's being replayed, preset switcher, and opening a local .helixlog. */
@@ -30,8 +31,15 @@ export function RecordingControl({ source }: { source: HelixSource }) {
         />
       )}
       <span className={s.recordingLabel} title={source.recording?.name}>
-        {source.recording ? `Recorded · ${recorded}` : 'Replaying multi-agent run'}
+        {source.recording ? `Recorded · ${recorded}` : 'Replaying an example run'}
       </span>
+      <Segmented
+        label="Replay speed"
+        size="sm"
+        value={String(source.speed)}
+        onValueChange={(v) => source.setSpeed(Number(v) as ReplaySpeed)}
+        items={REPLAY_SPEEDS.map((x) => ({ value: String(x), label: `${x}×` }))}
+      />
       {source.recordingError && (
         <span className={s.recordingError} role="alert">
           {source.recordingError}
