@@ -195,6 +195,19 @@ export class ClaudeSession extends ProcessSession {
           },
         });
       if (/bash|shell|command/i.test(tool) && this.autoApprove(input.command, respond)) return;
+      // Reviewers read the worktree under review: Claude's read tools ask for any path outside
+      // its scratch cwd, so allow them inside the worktree (or the scratch dir) without a prompt.
+      if (this.startOptions.review && /^(?:Read|Glob|Grep|LS)$/.test(tool)) {
+        const target = string(input.file_path) || string(input.path);
+        const roots = [this.startOptions.cwd, this.startOptions.review.worktreePath];
+        if (
+          !/(^|[\\/])\.\.([\\/]|$)/.test(string(input.pattern)) &&
+          (!target || roots.some((root) => insideWorktree(root, [target])))
+        ) {
+          void respond('approved').catch(() => this.fail('Could not answer reviewer read'));
+          return;
+        }
+      }
       this.askApproval(
         id,
         {

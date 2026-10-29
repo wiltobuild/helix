@@ -151,7 +151,7 @@ const READ_ONLY = new Set([
   'select-string',
   'get-location',
 ]);
-const GIT_READS = new Set(['status', 'diff', 'log', 'show']);
+const GIT_READS = new Set(['status', 'diff', 'log', 'show', 'rev-parse']);
 const DEV_TOOLS = new Set(['prettier', 'vitest', 'tsc', 'eslint', 'jest']);
 const HELIX = new Set(['explain', 'plan', 'status']);
 

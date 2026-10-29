@@ -273,3 +273,56 @@ test('reviewer prompt exports a valid verdict example and names task, base and r
   ])
     expect(prompt).toContain(text);
 });
+
+test('Claude reviewers read the worktree under review without a prompt, but nothing else', () => {
+  const start = { session: template, cwd: scratch, review: { worktreePath: worktree } };
+  const allowed = [
+    { tool: 'Read', input: { file_path: path.join(worktree, 'src', 'cart.ts') } },
+    { tool: 'Glob', input: { pattern: 'src/**/*.ts', path: worktree } },
+    { tool: 'Grep', input: { pattern: 'discount', path: worktree } },
+    { tool: 'Grep', input: { pattern: 'discount' } },
+    { tool: 'LS', input: { path: scratch } },
+  ];
+  const asked = [
+    { tool: 'Read', input: { file_path: path.join(root, 'secret.env') } },
+    { tool: 'Glob', input: { pattern: '../**/*.env', path: worktree } },
+    { tool: 'Read', input: { file_path: path.join(scratch, 'escape', '..', '..', 'x') } },
+  ];
+  for (const [expected, cases] of [
+    ['allow', allowed],
+    ['ask', asked],
+  ] as const)
+    for (const { tool, input } of cases) {
+      const probe = new ClaudeProbe({}, start);
+      const events: HarnessEmission[] = [];
+      probe.onEvent((e) => events.push(e));
+      probe.inject({
+        type: 'control_request',
+        request_id: 'read',
+        request: { subtype: 'can_use_tool', tool_name: tool, input },
+      });
+      const label = `${tool} ${JSON.stringify(input)}`;
+      if (expected === 'allow') {
+        expect(probe.frames, label).toEqual([
+          {
+            type: 'control_response',
+            response: {
+              subtype: 'success',
+              request_id: 'read',
+              response: { behavior: 'allow', updatedInput: input },
+            },
+          },
+        ]);
+        expect(
+          events.filter((e) => e.type === 'approval.requested'),
+          label,
+        ).toEqual([]);
+      } else {
+        expect(probe.frames, label).toEqual([]);
+        expect(
+          events.some((e) => e.type === 'approval.requested'),
+          label,
+        ).toBe(true);
+      }
+    }
+});
