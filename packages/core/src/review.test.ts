@@ -377,3 +377,83 @@ test('cross review off and non-green checks do not create reviewers', async () =
   expect(g.requests()).toHaveLength(0);
   await g.core.shutdown();
 });
+
+const fallbackCases = ['codex', 'claude-code'].flatMap((agent) =>
+  [approve, changes].flatMap((review) =>
+    ['off', 'missing', 'uninstalled', 'unsigned', 'detect_failed', 'start_failed'].map(
+      (reason) => ({
+        agent,
+        review,
+        verdict: review.verdict,
+        reason,
+      }),
+    ),
+  ),
+);
+
+test.each(fallbackCases)(
+  '$agent stale $verdict falls back after green CI ($reason), preserving same-head verdicts',
+  async ({ agent, review, reason }) => {
+    const f = await setup(agent);
+    try {
+      await f.pass();
+      const reviewer = f.reviewer();
+      await f.submit(review);
+      await f.idle();
+      if (review.verdict === 'request_changes') await f.idle(f.s.id);
+      const finished = f.state(f.p.id).sessions[f.s.id]!.agentReview;
+
+      if (reason === 'off') f.deps.crossReview = false;
+      else if (reason === 'missing') delete f.deps.harnesses[reviewer.agent];
+      else if (reason === 'detect_failed')
+        f.reviewerHarness.detect.mockRejectedValue(new Error('Detection failed'));
+      else if (reason === 'start_failed') {
+        await f.core.stopSession(reviewer.id);
+        f.reviewerHarness.failStart = true;
+      } else
+        f.reviewerHarness.detect.mockResolvedValue({
+          agent: reviewer.agent,
+          installed: reason !== 'uninstalled',
+          signedIn: reason !== 'unsigned',
+        });
+
+      // Availability changes must never erase a finished verdict for the same head.
+      await f.pass();
+      expect(f.state(f.p.id).sessions[f.s.id]!.agentReview).toEqual(finished);
+      expect(f.store.events.filter((e) => e.type === 'agent_review.abandoned')).toHaveLength(0);
+
+      await f.head('unreviewable-fix');
+      expect(f.state(f.p.id).sessions[f.s.id]!.agentReview).toEqual(finished);
+      await f.pass();
+      const greenEvent = f.store.events.findLast((e) => e.type === 'ci.updated')!;
+      const abandoned = f.store.events.filter((e) => e.type === 'agent_review.abandoned');
+      expect(abandoned).toHaveLength(1);
+      expect(abandoned[0]).toMatchObject({
+        sessionId: reviewer.id,
+        causedBy: greenEvent.seq,
+        payload: { workerSessionId: f.s.id, prNumber: f.pr.number, headSha: f.pr.headSha },
+      });
+      expect(abandoned[0]!.payload.reason.trim()).not.toBe('');
+      expect(
+        f.store.events.some(
+          (e) =>
+            e.type === 'explain.note' &&
+            e.sessionId === f.s.id &&
+            e.causedBy === abandoned[0]!.seq &&
+            e.payload.text.includes('CI and human review'),
+        ),
+      ).toBe(true);
+      expect(f.requests()).toHaveLength(1);
+      const state = f.state(f.p.id); // fixture projects the complete log with strict: true
+      expect(state.sessions[f.s.id]!.agentReview).toBeUndefined();
+      expect(deriveStatus(state.sessions[f.s.id]!)).toBe('ready_to_merge');
+      expect(state.anomalies).toEqual([]);
+      await f.pass();
+      expect(f.store.events.filter((e) => e.type === 'agent_review.abandoned')).toHaveLength(1);
+      expect(f.requests()).toHaveLength(1);
+      expect(f.harness.start).toHaveBeenCalledTimes(1); // Never start a self-review.
+    } finally {
+      await f.core.shutdown();
+    }
+  },
+);

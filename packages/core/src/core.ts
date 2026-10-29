@@ -661,11 +661,44 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await stop(s.session.id);
     }
   }
+  async function reviewFallback(
+    worker: SessionState,
+    reason: string,
+    cause: EventSeq,
+    noteWithoutReview = false,
+  ): Promise<void> {
+    const review = worker.agentReview;
+    const stale = review && worker.pr && review.headSha !== worker.pr.headSha;
+    let noteCause = cause;
+    if (stale) {
+      const reviewer = session(review.reviewerSessionId).session;
+      const abandoned = await emit(
+        'agent_review.abandoned',
+        {
+          workerSessionId: worker.session.id,
+          prNumber: worker.pr!.number,
+          headSha: review.headSha,
+          reason,
+        },
+        context(reviewer, cause),
+      );
+      held.delete(reviewer.id);
+      noteCause = abandoned.seq;
+    }
+    const text = `${reason} This PR now relies on CI and human review.`;
+    if (
+      stale ||
+      (noteWithoutReview &&
+        !eventsFor(worker.session).some(
+          (e) => e.type === 'explain.note' && e.payload.text === text,
+        ))
+    )
+      await emit('explain.note', { text }, context(worker.session, noteCause));
+  }
   async function requestReview(id: SessionId, cause: EventSeq): Promise<void> {
     const worker = session(id);
     const pr = worker.pr;
     if (
-      !deps.crossReview ||
       closing ||
       shutdownRequested ||
       pausedProjects.has(worker.session.projectId) ||
@@ -680,17 +713,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       pr.checks.pending
     )
       return;
-    const p = project(worker.session.projectId);
-    // Includes abandoned requests: fallback must not become an endless retry loop on this head.
-    if (
-      (history.get(p.project.id) ?? []).some(
-        (e) =>
-          e.type === 'agent_review.requested' &&
-          e.payload.workerSessionId === id &&
-          e.payload.headSha === pr.headSha,
-      )
-    )
+    // A verdict or request for this exact head stands, even if policy/availability changes.
+    if (worker.agentReview?.headSha === pr.headSha) return;
+    if (!deps.crossReview) {
+      await reviewFallback(worker, 'Cross-agent review is turned off.', cause);
       return;
+    }
+    const p = project(worker.session.projectId);
     const agent = crossReviewerFor(worker.session.agent);
     let available = false;
     try {
@@ -704,13 +733,24 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       /* Detection failure is also unavailability; never substitute the worker's agent. */
     }
     if (!agent || !available) {
-      const text = `No cross-agent reviewer is available (${agent ?? worker.session.agent} is not configured, installed or signed in); Helix never lets an agent review its own work, so this PR relies on CI and human review.`;
-      if (
-        !eventsFor(worker.session).some((e) => e.type === 'explain.note' && e.payload.text === text)
-      )
-        await emit('explain.note', { text }, context(worker.session, cause));
+      await reviewFallback(
+        worker,
+        `No cross-agent reviewer is available (${agent ?? worker.session.agent} is not configured, installed or signed in); Helix never lets an agent review its own work.`,
+        cause,
+        true,
+      );
       return;
     }
+    // Includes abandoned requests: fallback must not become an endless retry loop on this head.
+    if (
+      (history.get(p.project.id) ?? []).some(
+        (e) =>
+          e.type === 'agent_review.requested' &&
+          e.payload.workerSessionId === id &&
+          e.payload.headSha === pr.headSha,
+      )
+    )
+      return;
     let reviewer = Object.values(p.sessions).findLast(
       (s) =>
         s.session.role === 'reviewer' &&
@@ -743,6 +783,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       );
       await emit('session.started', {}, context(reviewer, created.seq));
     }
+    try {
+      if (!runtimes.get(reviewer.id)?.handle) await launch(reviewer, cause, false, false);
+    } catch (error) {
+      deps.log.error('Could not start cross-agent review', error);
+      await reviewFallback(worker, 'The cross-agent reviewer could not start.', cause, true);
+      return;
+    }
     const requested = await emit(
       'agent_review.requested',
       {
@@ -753,7 +800,6 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       context(reviewer, cause),
     );
     try {
-      if (!runtimes.get(reviewer.id)?.handle) await launch(reviewer, requested.seq, false, false);
       await deliver(reviewer.id, {
         text: reviewMessage(reviewer, requested),
         mode: 'queue',

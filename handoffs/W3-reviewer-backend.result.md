@@ -2,12 +2,13 @@
 
 ## Summary
 
-Implementation stopped at the frozen-contract blocker below, as instructed. This
-branch is not ready for integration until the fallback contract is resolved.
-Contracts, web/UI paths, dependencies, root configuration and the lockfile are
-unchanged. Nothing was committed or pushed.
+The cross-agent review backend now includes the stale-verdict fallback. The
+round-1 contract blocker is resolved by the accepted contract update in 45643df
+(merged as 51b0752). No further contract change is requested. Contracts, web/UI
+paths, dependencies, root configuration and the lockfile were not edited in this
+round. Nothing was committed or pushed by this agent.
 
-Implemented before discovering the blocker:
+Implemented:
 
 - Green-CI cross-agent reviewer creation, scratch directories, same-session
   re-review, current-head verdict validation and causal review events.
@@ -19,36 +20,35 @@ Implemented before discovering the blocker:
 - Reviewer read roots, file-write denial, Codex scratch sandbox and local-daemon
   network access, a reviewer prompt, CLI file/stdin submissions, daemon environment
   wiring and the on/off reviewer setting.
+- When a new head goes green but cross review is off or the cross reviewer cannot
+  be detected or started, abandon the previous head's review on its original
+  reviewer session, caused by that green CI event. A worker note explains the
+  fallback to CI and human review. Same-head verdicts remain intact; no fabricated
+  review request or self-review is used.
 
-## CONTRACT-REQUEST
+## Round 2
 
-CONTRACT-REQUEST: permit a causal fallback event to clear a stale completed review
-when the current head cannot obtain a cross-agent reviewer. The current frozen
-contracts cannot represent the required CI/human fallback in this case.
+Core uses the accepted `agent_review.abandoned` semantics to clear stale approvals
+and stale change requests when no new review can start. Abandonment names the old
+head and previous reviewer; `causedBy` names the green `ci.updated` for the new
+head. The worker explanation is linked to that abandonment. Duplicate CI updates
+do not emit duplicate abandonment events.
 
-Reproduction using the frozen `crossReviewRun` fixture and strict projection:
+Harness initialization now precedes `agent_review.requested`. If initialization
+fails, core records the stale-review fallback without pretending that a new
+review started. Failures after a real request retain the existing in-progress
+abandonment path.
 
-1. Replay the fixture through the final approval of the worker's current head.
-2. Apply `pr.updated` with a different head and passing checks. Suppose the other
-   harness is now unavailable, or cross review has been switched off.
-3. `deriveStatus` returns `in_review`: the old `agentReview` remains, and only a
-   current-head approval clears the gate.
-4. Attempt `agent_review.abandoned` naming the existing reviewer and previously
-   reviewed head. Strict projection rejects it with
-   `Review verdict requires a matching review in progress` because the prior
-   review is already approved (the same problem applies to a prior change request).
+Added 24 regression cases: both worker agents, both verdicts, and review disabled,
+missing harness, uninstalled harness, signed-out harness, detection failure and
+startup failure. Each verifies same-head preservation, pending-CI preservation,
+old-reviewer/old-head event identity, green-CI causality, worker explanation,
+`ready_to_merge`, zero strict-projection anomalies and no new review request.
 
-This was reproduced against the unchanged contracts with a read-only Node/tsx
-script. Emitting a fabricated `agent_review.requested` followed by abandonment
-would clear the state, but violates the explicit instruction not to request a
-review when no cross reviewer is available. Self-review is not an option.
-
-Suggested minimal contract change: allow `agent_review.abandoned` to clear a
-matching stale completed review when its head differs from the worker's current
-head, with a reason and causal event. Alternatively define an explicit waiver or
-fallback event. Update event semantics and strict-projection tests accordingly.
-Then core can record the unavailable-reviewer fallback without inventing a review
-request. No contract files were edited.
+Round-2 edits are limited to `packages/core/src/core.ts`,
+`packages/core/src/review.test.ts` and this handoff. The stray
+`packages/core/reviewer-check.log` and earlier handoff check log are absent; no
+verification log files are retained.
 
 ## Public API
 
@@ -100,40 +100,37 @@ request. No contract files were edited.
 
 ## Verification
 
-`pnpm.cmd check` **exited 1** on the final run. Formatting, type checking and lint
-passed. Workspace tests: **778 passed, 1 failed, 22 skipped** (801 total). Tooling
-tests: **20 passed, 0 failed, 0 skipped**. Combined: **798 passed, 1 failed,
-22 skipped** (821 total).
+Final `pnpm.cmd check`: **exit 0**. Formatting, type checking, lint, tests and
+architecture boundaries all passed. Boundaries checked **219 modules**.
+
+- Workspace tests: **804 passed, 0 failed, 22 skipped** (826 total).
+- Tooling tests: **20 passed, 0 failed, 0 skipped**.
+- Combined: **824 passed, 0 failed, 22 skipped** (846 total).
+- Targeted core review suite: **43 passed, 0 failed, 0 skipped**, including all
+  **24 new round-2 cases**.
 
 | Owned package | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: |
-| Core | 156 | 0 | 0 |
-| Harness | 135 | 1 | 2 |
+| Core | 180 | 0 | 0 |
+| Harness | 136 | 0 | 2 |
 | CLI | 40 | 0 | 0 |
 | Daemon | 67 | 0 | 4 |
 
-All **38 newly added tests passed**: 19 core lifecycle, 10 harness, 8 CLI and
-1 daemon setting test. Core lifecycle tests use strict projection and check zero
-anomalies.
+The initial full check exited 1 with **803 workspace tests passed, 1 failed,
+22 skipped**, plus 20 tooling tests passed. Its only failure was the unchanged
+`packages/harness/src/lifecycle.test.ts` case
+`debug mode captures both directions of a real JSONL transport with no unanswered requests`,
+which hit a harness request timeout. The isolated case passed (**1 passed,
+41 filtered/skipped**), then the complete check passed without code or test
+changes. The known Windows process test passed in both full runs; it was not
+changed and did not require an isolated rerun.
 
-The full check failed in the unchanged
-`packages/harness/src/process.test.ts:164`, test
-`kills every live agent tree when the host process exits abruptly`: its initial
-`expect(alive(grandchild)).toBe(true)` received false. It failed in two full runs
-but passed when rerun alone (**1 passed, 6 filtered/skipped**). Process code and
-that test were not changed; the full-check exit-zero requirement remains unmet.
-
-`pnpm.cmd boundaries` passed separately: **219 modules**. No real-agent or
-real-GitHub E2E was run. `git diff --check` passed; the branch is
-`agent/reviewer-backend`.
+No real-agent or real-GitHub E2E was run. `git diff --check` passed. Only the three
+round-2 files listed above are modified, and both old standalone check-log paths
+are absent.
 
 ## Known gaps
 
-- The CONTRACT-REQUEST above blocks complete fallback behavior and completion of
-  the requested feature. The current unavailable-reviewer branch records the
-  note but cannot remove a stale completed review gate.
-- The full repository check is not green because of the Windows process test
-  described above, despite its isolated rerun passing.
 - No real-agent smoke test was run, and no optional real cross-review E2E test
   was added. Sandbox behavior is covered by adapter protocol/permission tests;
   real Codex/Claude execution remains for the explicitly gated human-run check.
