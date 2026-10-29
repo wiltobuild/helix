@@ -15,6 +15,7 @@ import {
   type Project,
 } from '@helix/contracts';
 import { parsePlanInput } from './plan-input.js';
+import { parseReviewInput } from './review-input.js';
 
 const usage = `helix [--json] <command>
   status
@@ -23,9 +24,10 @@ const usage = `helix [--json] <command>
   send <sessionId> <text> [--interrupt]
   plan submit <file.json>
   plan show <planId>
+  review submit <file|-> --head <sha>
   explain <text> [--session <id>] [--node <id>]
 Environment: HELIX_URL, HELIX_DATA_DIR (default ~/.helix),
-  HELIX_SESSION_ID (explain/plan submit), HELIX_PROJECT_ID (plan submit)`;
+  HELIX_SESSION_ID (explain/plan submit/review submit), HELIX_PROJECT_ID (plan submit)`;
 class UsageError extends Error {}
 
 export async function resolveBaseUrl(env: NodeJS.ProcessEnv): Promise<string> {
@@ -86,6 +88,7 @@ export type CliOptions = {
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
   client?: HelixClient;
+  stdin?: () => Promise<string>;
 };
 
 /** Returns 0 success, 1 usage/configuration error, 2 daemon/transport failure. */
@@ -110,6 +113,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         interrupt: { type: 'boolean' },
         session: { type: 'string' },
         node: { type: 'string' },
+        head: { type: 'string' },
       },
     });
     json = values.json ?? false;
@@ -146,6 +150,12 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         if (!['submit', 'show'].includes(rest[0]!)) throw new UsageError(usage);
         if (rest[0] === 'show') planIdSchema.parse(rest[1]);
         break;
+      case 'review':
+        check(2, ['head']);
+        if (rest[0] !== 'submit') throw new UsageError(usage);
+        if (!values.head?.trim()) throw new UsageError('review submit requires --head <sha>');
+        if (!env.HELIX_SESSION_ID) throw new UsageError('review submit requires HELIX_SESSION_ID');
+        break;
       case 'explain':
         check(1, ['session', 'node']);
         if (values.session === undefined && env.HELIX_SESSION_ID !== undefined)
@@ -161,6 +171,18 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     const plan =
       command === 'plan' && rest[0] === 'submit'
         ? parsePlanInput(JSON.parse(await readFile(resolve(cwd, rest[1]!), 'utf8')), env)
+        : undefined;
+    const review =
+      command === 'review'
+        ? parseReviewInput(
+            JSON.parse(
+              rest[1] === '-'
+                ? await (options.stdin ?? readStdin)()
+                : await readFile(resolve(cwd, rest[1]!), 'utf8'),
+            ),
+            env,
+            values.head,
+          )
         : undefined;
     const client = options.client ?? createHelixClient({ baseUrl: await resolveBaseUrl(env) });
     contacting = true;
@@ -263,6 +285,14 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         print(response, `Recorded explanation #${response.seq}`);
         break;
       }
+      case 'review': {
+        const response = await client.submitReview(review!);
+        print(
+          response,
+          `Submitted ${response.payload.review.verdict} for PR #${response.payload.prNumber} at ${response.payload.headSha}`,
+        );
+        break;
+      }
     }
     return 0;
   } catch (error) {
@@ -282,4 +312,11 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     err(json ? JSON.stringify({ error: { code, message } }) : `${code}: ${message}`);
     return remote ? 2 : 1;
   }
+}
+
+async function readStdin(): Promise<string> {
+  process.stdin.setEncoding('utf8');
+  let text = '';
+  for await (const chunk of process.stdin) text += String(chunk);
+  return text;
 }

@@ -19,6 +19,9 @@ import { JsonLines, compact } from './protocol.js';
 import { protocolLogger } from './protocol-log.js';
 import { isSafeCommand } from './safe-commands.js';
 
+export const REVIEW_WRITE_DENIAL =
+  'Reviewers report findings; they never edit the code under review';
+
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (error: HelixError) => void;
@@ -310,14 +313,28 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
    * Answers a command request without asking when it only reads the worktree or runs the
    * project's own scripts (see safe-commands.ts). Returns false when the user must decide.
    */
-  protected autoApprove(command: unknown, respond: PendingApproval['respond']): boolean {
+  protected autoApprove(
+    command: unknown,
+    respond: PendingApproval['respond'],
+    cwd = this.startOptions.cwd,
+  ): boolean {
     if (!this.options.autoApproveSafeCommands) return false;
-    if (!isSafeCommand(command, this.startOptions.cwd)) return false;
+    if (
+      !isSafeCommand(
+        command,
+        this.startOptions.cwd,
+        this.startOptions.review ? [this.startOptions.review.worktreePath] : [],
+        cwd,
+      )
+    )
+      return false;
     void respond('approved').catch(() => this.fail('Could not answer the approval request'));
     if (!this.explainedAutoApproval) {
       this.explainedAutoApproval = true;
       this.note(
-        'Helix approves read-only commands in this worktree and the project scripts (npm run, test, ci) without asking; anything else waits for you.',
+        this.startOptions.review
+          ? 'Helix approves reviewer reads and helix review submit; scripts and installs require approval.'
+          : 'Helix approves read-only commands in this worktree and the project scripts (npm run, test, ci) without asking; anything else waits for you.',
       );
     }
     return true;

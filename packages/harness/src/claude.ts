@@ -11,7 +11,9 @@ import {
   record,
   string,
 } from './protocol.js';
-import { ProcessSession } from './session.js';
+import { ProcessSession, REVIEW_WRITE_DENIAL } from './session.js';
+import { insideWorktree } from './worktree-paths.js';
+import { isSafeCommand } from './safe-commands.js';
 import { HELIX_GIT_INSTRUCTIONS, isGitWriteCommand } from './git-policy.js';
 
 /** State is only protocol correlation, never a stored display status. */
@@ -78,7 +80,11 @@ export class ClaudeSession extends ProcessSession {
       '--permission-prompt-tool',
       'stdio',
       '--permission-mode',
-      options.claudePermissionMode ?? 'manual',
+      start.review
+        ? options.claudePermissionMode === 'manual'
+          ? 'manual'
+          : 'acceptEdits'
+        : (options.claudePermissionMode ?? 'manual'),
     ];
     if (start.resumeToken) args.push(`--resume=${start.resumeToken}`);
     if (start.session.model) args.push('--model', start.session.model);
@@ -136,6 +142,28 @@ export class ClaudeSession extends ProcessSession {
       }
       const tool = string(request.tool_name);
       const input = record(request.input);
+      if (
+        this.startOptions.review &&
+        ((/^(?:Write|Edit|MultiEdit|NotebookEdit)$/i.test(tool) &&
+          !insideWorktree(this.startOptions.cwd, [
+            string(input.file_path) || string(input.notebook_path),
+          ])) ||
+          (/bash|shell|command/i.test(tool) &&
+            !isSafeCommand(input.command, this.startOptions.cwd, [
+              this.startOptions.review.worktreePath,
+            ])))
+      ) {
+        this.note(REVIEW_WRITE_DENIAL);
+        void this.write({
+          type: 'control_response',
+          response: {
+            subtype: 'success',
+            request_id: id,
+            response: { behavior: 'deny', message: REVIEW_WRITE_DENIAL },
+          },
+        }).catch(() => this.fail('Could not decline reviewer write'));
+        return;
+      }
       if (/bash|shell|command/i.test(tool) && isGitWriteCommand(input.command)) {
         this.note(`Declined agent Git write: ${HELIX_GIT_INSTRUCTIONS}`);
         void this.write({
@@ -167,6 +195,19 @@ export class ClaudeSession extends ProcessSession {
           },
         });
       if (/bash|shell|command/i.test(tool) && this.autoApprove(input.command, respond)) return;
+      // Reviewers read the worktree under review: Claude's read tools ask for any path outside
+      // its scratch cwd, so allow them inside the worktree (or the scratch dir) without a prompt.
+      if (this.startOptions.review && /^(?:Read|Glob|Grep|LS)$/.test(tool)) {
+        const target = string(input.file_path) || string(input.path);
+        const roots = [this.startOptions.cwd, this.startOptions.review.worktreePath];
+        if (
+          !/(^|[\\/])\.\.([\\/]|$)/.test(string(input.pattern)) &&
+          (!target || roots.some((root) => insideWorktree(root, [target])))
+        ) {
+          void respond('approved').catch(() => this.fail('Could not answer reviewer read'));
+          return;
+        }
+      }
       this.askApproval(
         id,
         {

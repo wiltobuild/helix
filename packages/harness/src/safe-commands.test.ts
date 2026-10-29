@@ -33,6 +33,7 @@ test('approves reads in the worktree and project scripts, as agents actually sen
     'helix explain "Receipt depends on cart, so it runs second" --node receipt',
     'helix.cmd plan submit plan.json',
     'git status',
+    'git rev-parse HEAD',
     'git diff --stat',
     'npx prettier --check src',
     'cat src/cart.ts',

@@ -18,7 +18,7 @@ if (projectEvent.type !== 'project.added' || sessionEvent.type !== 'session.crea
 const project = projectEvent.payload.project;
 const session = sessionEvent.payload.session;
 
-test('only orchestrators receive CLI discovery, identity and a prepended PATH', () => {
+test('orchestrators and reviewers receive CLI discovery, identity and a prepended PATH', () => {
   const dataDir = join(tmpdir(), 'helix data');
   const base = process.platform === 'win32' ? { Path: 'base-path' } : { PATH: 'base-path' };
   const env = sessionEnvironment(dataDir, base);
@@ -29,6 +29,9 @@ test('only orchestrators receive CLI discovery, identity and a prepended PATH', 
     PATH: join(dataDir, 'bin') + delimiter + 'base-path',
   });
   expect(env({ project, session: { ...session, role: 'worker' } })).toBeUndefined();
+  expect(env({ project, session: { ...session, role: 'reviewer' } })).toEqual(
+    env({ project, session: { ...session, role: 'orchestrator' } }),
+  );
   expect(
     sessionEnvironment(dataDir, { PATH: '' })({
       project,

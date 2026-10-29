@@ -1,5 +1,6 @@
 import { isGitWriteCommand } from './git-policy.js';
 import { insideWorktree } from './worktree-paths.js';
+import path from 'node:path';
 
 /**
  * Commands Helix approves without asking: reading files in the session worktree and running the
@@ -7,7 +8,12 @@ import { insideWorktree } from './worktree-paths.js';
  * tools, shell expansion, redirection) still goes to the user. Recognized by parsing only; nothing
  * here executes shell input.
  */
-export function isSafeCommand(command: unknown, worktree: string): boolean {
+export function isSafeCommand(
+  command: unknown,
+  worktree: string,
+  readRoots: readonly string[] = [],
+  executionCwd = worktree,
+): boolean {
   const script = unwrapShell(command);
   if (script === undefined || isGitWriteCommand(command) || isGitWriteCommand(script)) return false;
   // Allowed glue: `cd x && …`, a trailing stderr merge, and paging output through head/tail.
@@ -18,7 +24,67 @@ export function isSafeCommand(command: unknown, worktree: string): boolean {
   if (!body || /[\n\r;`$<>|]|(?<!&)&(?!&)/.test(body)) return false;
   const segments = body.split('&&').map((part) => tokenize(part.trim()));
   if (segments.some((tokens) => tokens === undefined || tokens.length === 0)) return false;
-  return (segments as string[][]).every((tokens) => safeSegment(tokens, worktree));
+  let cwd = path.resolve(worktree, executionCwd);
+  const roots = [worktree, ...readRoots];
+  if (readRoots.length && !roots.some((root) => insideWorktree(root, [cwd]))) return false;
+  return (segments as string[][]).every((tokens) => {
+    if (!readRoots.length) return safeSegment(tokens, worktree);
+    if (!safeReadSegment(tokens, cwd, roots, worktree)) return false;
+    if (tokens[0]?.toLowerCase() === 'cd') cwd = path.resolve(cwd, nativePath(tokens[1]!));
+    return true;
+  });
+}
+
+/** Review mode never approves scripts, installs, permission expansion or write-capable flags. */
+function safeReadSegment(
+  tokens: string[],
+  cwd: string,
+  roots: readonly string[],
+  scratch: string,
+): boolean {
+  const [head, ...args] = tokens;
+  const name = head!.replace(/\.(?:exe|cmd)$/i, '').toLowerCase();
+  const inside = (arg: string) => {
+    const normalized = nativePath(arg);
+    if (normalized.startsWith('~') || normalized.split('/').includes('..')) return false;
+    return roots.some((root) => insideWorktree(root, [path.resolve(cwd, normalized)]));
+  };
+  if (name === 'cd') return args.length === 1 && inside(args[0]!);
+  if (name === 'helix') {
+    const rest = args.filter((arg) => arg !== '--json');
+    return (
+      rest.length === 5 &&
+      rest[0] === 'review' &&
+      rest[1] === 'submit' &&
+      rest[3] === '--head' &&
+      /^[\w.-]+$/.test(rest[4]!) &&
+      insideWorktree(scratch, [path.resolve(cwd, nativePath(rest[2]!))])
+    );
+  }
+  if (name === 'git') {
+    const rest = [...args];
+    if (rest[0] === '-C') {
+      if (!rest[1] || !inside(rest[1])) return false;
+      rest.splice(0, 2);
+    }
+    if (!GIT_READS.has(rest.shift() ?? '')) return false;
+    // Git's output, pager and external diff options can write or execute arbitrary code.
+    if (
+      rest.some((arg) =>
+        /^--(?:output|ext-diff|textconv|exec|open-files-in-pager)(?:=|$)/.test(arg),
+      )
+    )
+      return false;
+    return rest.every((arg) => arg.startsWith('-') || inside(arg));
+  }
+  if (!READ_ONLY.has(name)) return false;
+  if (
+    args.some((arg) =>
+      /^-(?:exec|execdir|ok|okdir|delete|fprint|fls)|^--(?:pre|hostname-bin)(?:=|$)/.test(arg),
+    )
+  )
+    return false;
+  return args.every((arg) => arg.startsWith('-') || inside(arg));
 }
 
 const SHELL = /^(?:.*[/\\])?(?:ba?sh|sh|zsh|powershell|pwsh)(?:\.exe)?$/i;
@@ -85,7 +151,7 @@ const READ_ONLY = new Set([
   'select-string',
   'get-location',
 ]);
-const GIT_READS = new Set(['status', 'diff', 'log', 'show']);
+const GIT_READS = new Set(['status', 'diff', 'log', 'show', 'rev-parse']);
 const DEV_TOOLS = new Set(['prettier', 'vitest', 'tsc', 'eslint', 'jest']);
 const HELIX = new Set(['explain', 'plan', 'status']);
 
@@ -132,6 +198,10 @@ function insidePath(arg: string, worktree: string): boolean {
   const posix = arg.replace(/\\/g, '/');
   if (posix.startsWith('~') || posix.split('/').includes('..')) return false;
   // Git Bash spells C:\x as /c/x.
-  const native = process.platform === 'win32' ? posix.replace(/^\/([A-Za-z])\//, '$1:/') : posix;
-  return insideWorktree(worktree, [native]);
+  return insideWorktree(worktree, [nativePath(posix)]);
+}
+
+function nativePath(value: string): string {
+  const posix = value.replace(/\\/g, '/');
+  return process.platform === 'win32' ? posix.replace(/^\/([A-Za-z])\//, '$1:/') : posix;
 }

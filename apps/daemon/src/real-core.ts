@@ -5,7 +5,7 @@ import { isHelixError, type HelixCore } from '@helix/contracts';
 import { openStore } from '@helix/storage';
 import { GitWorktreeManager } from '@helix/git';
 import { NodePtyHost } from '@helix/pty-host';
-import { createHarness, orchestratorPrompt } from '@helix/harness';
+import { createHarness, orchestratorPrompt, reviewerPrompt } from '@helix/harness';
 import { createGitHubScm, buildFeedbackMessage } from '@helix/scm';
 import { cacheHarnessDetection } from './harness-cache.js';
 import { sessionEnvironment, writeHelixLauncher } from './helix-launcher.js';
@@ -128,6 +128,12 @@ export function approvalPolicyFromEnv(env: NodeJS.ProcessEnv): {
   return { autoApproveSafeCommands: on, claudePermissionMode: on ? 'acceptEdits' : 'manual' };
 }
 
+export function crossReviewFromEnv(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.HELIX_REVIEWER?.trim().toLowerCase();
+  if (raw && raw !== 'on' && raw !== 'off') throw new Error('HELIX_REVIEWER must be on or off');
+  return raw !== 'off';
+}
+
 export async function createRealCore(options: {
   dataDir: string;
   env: NodeJS.ProcessEnv;
@@ -191,6 +197,9 @@ export async function createRealCore(options: {
       terminals,
       harnesses,
       orchestratorPrompt,
+      reviewerPrompt,
+      crossReview: crossReviewFromEnv(env),
+      dataDir,
       sessionEnv: sessionEnvironment(dataDir, env),
       detectHarnesses: cacheHarnessDetection(harnesses, (message, error) =>
         consoleLog.error(message, error),
