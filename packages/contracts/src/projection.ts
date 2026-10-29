@@ -174,13 +174,18 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
     }
     case 'agent_review.submitted':
     case 'agent_review.abandoned': {
-      const pending = sessionFor(state, e.payload.workerSessionId).agentReview;
+      const worker = sessionFor(state, e.payload.workerSessionId);
+      const pending = worker.agentReview;
       if (
         !pending ||
         pending.reviewerSessionId !== e.sessionId ||
-        pending.headSha !== e.payload.headSha ||
-        pending.status !== 'reviewing'
+        pending.headSha !== e.payload.headSha
       )
+        throw new Error('Review verdict requires a matching review in progress');
+      // A finished review can also be abandoned once the PR head has moved past it and no new
+      // review can start (no cross reviewer available, or cross review turned off).
+      const stale = pending.status !== 'reviewing' && worker.pr?.headSha !== pending.headSha;
+      if (pending.status !== 'reviewing' && !(e.type === 'agent_review.abandoned' && stale))
         throw new Error('Review verdict requires a matching review in progress');
       break;
     }

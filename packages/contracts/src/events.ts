@@ -142,7 +142,8 @@ export const eventSchemas = {
   ),
   /**
    * Emitted on the reviewer session when a review in progress ends without a verdict (the reviewer
-   * failed, was stopped, or gave none after a reminder). The PR falls back to CI and GitHub review.
+   * failed, was stopped, or gave none after a reminder), or to clear a finished review once the PR
+   * head has moved past it and no new review can start. The PR falls back to CI and GitHub review.
    */
   'agent_review.abandoned': event(
     'agent_review.abandoned',
