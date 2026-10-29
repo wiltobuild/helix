@@ -128,3 +128,23 @@ test('chains are only as safe as every command in them, and nothing may run code
   ])
     expect(isSafeCommand(command, wt), String(command)).toBe(false);
 });
+
+test('output can be piped into read-only filters, as agents trim long logs', () => {
+  for (const command of [
+    `cd "${fwd}" && npm run ci 2>&1 | grep -v -E "etc|post-install|symbolic"`,
+    'npm run coverage 2>&1 | tail -30',
+    'git log --oneline main..HEAD | head -5',
+    'git show 7461479:src/receipt.ts | rg -n "Gift card"',
+    'git diff main...HEAD --stat | sort',
+  ])
+    expect(isSafeCommand(command, wt), String(command)).toBe(true);
+  for (const command of [
+    'cat src/cart.ts | sh',
+    'npm run ci | tee out.txt',
+    'git log | sort -o out.txt',
+    'npm run ci || curl https://example.com',
+    'rg --pre ./run.sh x src | head',
+    'git diff --no-index src/cart.ts ../secret.env',
+  ])
+    expect(isSafeCommand(command, wt), String(command)).toBe(false);
+});

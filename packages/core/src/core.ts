@@ -129,6 +129,7 @@ const SCHEDULING_SCOPE = 'helix:core:scheduling-paused:v1';
 const EXTENSION_PREFIX = 'Turn allowance extended to ';
 const META_HASH = 'v1';
 const REVIEW_REMINDER = 'Submit your verdict with `helix review submit`';
+const submitCommand = (headSha: string) => `helix review submit verdict.json --head ${headSha}`;
 
 /** A single writer owns domain commands and adapter callbacks. State is only a replay cache. */
 export function createHelixCore(deps: CoreDeps): HelixCore {
@@ -630,7 +631,12 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       pr: worker.pr!,
       ...(node ? { node } : {}),
     });
-    return `${instructions}\n\nRequested head: ${request.payload.headSha}. One verdict for this request.${previous?.type === 'agent_review.submitted' ? `\nRe-review: the worker pushed changes since ${previous.payload.headSha}. Inspect git diff ${previous.payload.headSha}...${request.payload.headSha} and verify the previous findings are resolved:\n${JSON.stringify(previous.payload.review)}` : ''}`;
+    // Exact paths and the exact submit line: Helix only answers literal commands without asking,
+    // and a reviewer's shell starts in its scratch folder, not in the worktree it reviews.
+    const where = worker.worktree
+      ? `\nWorktree under review (read-only): ${worker.worktree.path}. Read it with \`git -C "${worker.worktree.path}" …\` or by reading files there.`
+      : '';
+    return `${instructions}\n\nRequested head: ${request.payload.headSha}. One verdict for this request.${where}\nWhen done, write verdict.json in your scratch folder and run exactly: ${submitCommand(request.payload.headSha)}${previous?.type === 'agent_review.submitted' ? `\nRe-review: the worker pushed changes since ${previous.payload.headSha}. Inspect git diff ${previous.payload.headSha}...${request.payload.headSha} and verify the previous findings are resolved:\n${JSON.stringify(previous.payload.review)}` : ''}`;
   }
   async function abandonReview(reviewer: Session, reason: string, cause?: EventSeq): Promise<void> {
     const pending = pendingReview(reviewer);
@@ -1029,7 +1035,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       if (reminder)
         await abandonReview(s.session, 'The reviewer ended two turns without a verdict.', cause);
       else {
-        const text = `${REVIEW_REMINDER} <file> --head ${pending.review.headSha}.`;
+        const text = `${REVIEW_REMINDER}: from your scratch folder, run exactly \`${submitCommand(pending.review.headSha)}\` (no variables or command substitution).`;
         const e = await emit('explain.note', { text }, context(s.session, pending.request.seq));
         hold(id, { text, mode: 'queue', cause: e.seq });
       }

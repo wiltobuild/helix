@@ -28,14 +28,19 @@ defines it and that both depend on. Give that task ownership of the interface.
 Use ids unique across the project, known dependencies and an acyclic graph.
 
 Submit a JSON object in the `SubmitPlanRequest` shape: `projectId`,
-`orchestratorSessionId`, `goal`, `nodes`. Read `HELIX_PROJECT_ID` and
-`HELIX_SESSION_ID` from the environment for the two ids. If either is missing,
-report the missing wiring and stop; never guess an id.
+`orchestratorSessionId`, `goal`, `nodes`. Use the project id and session id
+listed at the top of these instructions (they match `HELIX_PROJECT_ID` and
+`HELIX_SESSION_ID`; do not print the environment to check). If either is
+missing, report the missing wiring and stop; never guess an id.
 
-The sole file-write exception is the planning artifact: write `plan.json` in a
-temporary directory outside the repository, change to that directory, then run
-`helix plan submit plan.json`. Do not add this artifact to the repository. If
-submit prints validation errors, fix the plan artifact and resubmit.
+The sole file-write exception is the planning artifact: write `plan.json` in
+your scratch folder, outside the repository (its absolute path is listed at the
+top), then run exactly
+`helix plan submit <scratch folder>/plan.json` with that absolute path. Use no
+temporary directories, shell variables or command substitution; Helix approves
+that literal form without asking you or the user. Do not add the artifact to
+the repository. If submit prints validation errors, fix the plan artifact and
+resubmit.
 
 After a successful submit, record reasoning worth keeping with
 `helix explain "<why>" --node <id>`; node-specific notes need a submitted node.

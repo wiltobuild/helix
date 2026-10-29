@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -22,16 +23,21 @@ test('orchestrators and reviewers receive CLI discovery, identity and a prepende
   const dataDir = join(tmpdir(), 'helix data');
   const base = process.platform === 'win32' ? { Path: 'base-path' } : { PATH: 'base-path' };
   const env = sessionEnvironment(dataDir, base);
-  expect(env({ project, session: { ...session, role: 'orchestrator' } })).toEqual({
+  const shared = {
     HELIX_DATA_DIR: dataDir,
     HELIX_SESSION_ID: session.id,
     HELIX_PROJECT_ID: project.id,
     PATH: join(dataDir, 'bin') + delimiter + 'base-path',
+  };
+  // Orchestrators also get a scratch folder for their plan artifact, created on demand.
+  const scratch = join(dataDir, 'scratch', session.id);
+  expect(env({ project, session: { ...session, role: 'orchestrator' } })).toEqual({
+    ...shared,
+    HELIX_SCRATCH_DIR: scratch,
   });
+  expect(existsSync(scratch)).toBe(true);
   expect(env({ project, session: { ...session, role: 'worker' } })).toBeUndefined();
-  expect(env({ project, session: { ...session, role: 'reviewer' } })).toEqual(
-    env({ project, session: { ...session, role: 'orchestrator' } }),
-  );
+  expect(env({ project, session: { ...session, role: 'reviewer' } })).toEqual(shared);
   expect(
     sessionEnvironment(dataDir, { PATH: '' })({
       project,

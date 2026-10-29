@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { openStore } from '@helix/storage';
 import { createHelixCore } from '@helix/core';
 import { orchestratorPrompt, reviewerPrompt } from '@helix/harness';
-import { HelixError } from '@helix/contracts';
+import { HelixError, fixtures, isEventOf } from '@helix/contracts';
 import {
   approvalPolicyFromEnv,
   crossReviewFromEnv,
@@ -88,7 +88,14 @@ test('real composition runs without SCM and closes its store exactly once', asyn
   try {
     const daemon = await startDaemon({ core, dataDir, port: 0, version: 'test' });
     const deps = vi.mocked(createHelixCore).mock.calls.at(-1)![0];
-    expect(deps.orchestratorPrompt).toBe(orchestratorPrompt);
+    // The daemon adds each orchestrator's scratch folder (a native path) to the shared prompt.
+    const ctx = {
+      project: fixtures.passwordResetProject,
+      session: fixtures.passwordResetRun.find(isEventOf('session.created'))!.payload.session,
+    };
+    expect(deps.orchestratorPrompt!(ctx)).toBe(
+      orchestratorPrompt({ ...ctx, scratchDir: join(dataDir, 'scratch', ctx.session.id) }),
+    );
     expect(deps.reviewerPrompt).toBe(reviewerPrompt);
     expect(deps.crossReview).toBe(true);
     expect(deps.dataDir).toBe(dataDir);

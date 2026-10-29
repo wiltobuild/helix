@@ -16,19 +16,17 @@ export function isSafeCommand(
 ): boolean {
   const script = unwrapShell(command);
   if (script === undefined || isGitWriteCommand(command) || isGitWriteCommand(script)) return false;
-  // Allowed glue: `cd x && …`, a trailing stderr merge, and paging output through head/tail.
-  const body = script
-    .replace(/\s+2>&1\b/g, '')
-    .replace(/\s*\|\s*(?:head|tail)(?:\s+-n)?(?:\s+-?\d+)?\s*$/, '')
-    .trim();
+  // Allowed glue: `cd x && …`, `;`, stderr merges, and piping output into read-only filters.
+  const body = script.replace(/\s+2>&1\b/g, '').trim();
   const parts = body ? splitScript(body) : undefined;
   if (!parts) return false;
-  const segments = parts.map((part) => tokenize(part.trim()));
+  const segments = parts.map((part) => tokenize(part.text.trim()));
   if (segments.some((tokens) => tokens === undefined || tokens.length === 0)) return false;
   let cwd = path.resolve(worktree, executionCwd);
   const roots = [worktree, ...readRoots];
   if (readRoots.length && !roots.some((root) => insideWorktree(root, [cwd]))) return false;
-  return (segments as string[][]).every((tokens) => {
+  return (segments as string[][]).every((tokens, i) => {
+    if (parts[i]!.piped) return safeFilter(tokens, (arg) => roots.some((r) => insidePath(arg, r)));
     if (!readRoots.length) return safeSegment(tokens, worktree);
     if (!safeReadSegment(tokens, cwd, roots, worktree)) return false;
     if (tokens[0]?.toLowerCase() === 'cd') cwd = path.resolve(cwd, nativePath(tokens[1]!));
@@ -69,14 +67,8 @@ function safeReadSegment(
       rest.splice(0, 2);
     }
     if (!GIT_READS.has(rest.shift() ?? '')) return false;
-    // Git's output, pager and external diff options can write or execute arbitrary code.
-    if (
-      rest.some((arg) =>
-        /^--(?:output|ext-diff|textconv|exec|open-files-in-pager)(?:=|$)/.test(arg),
-      )
-    )
-      return false;
-    return rest.every((arg) => arg.startsWith('-') || inside(arg));
+    // Revisions and pathspecs (`main...HEAD`, `sha:src/a.ts`) only read inside the repository.
+    return safeGitReadArgs(rest);
   }
   if (!READ_ONLY.has(name)) return false;
   if (
@@ -115,9 +107,10 @@ function unwrapShell(command: unknown): string | undefined {
  * the background or expands (`$` and backticks, even inside double quotes) makes it unsafe, as do
  * parentheses and braces, which run code in PowerShell (`Get-Content (Remove-Item x)`) and bash.
  */
-function splitScript(script: string): string[] | undefined {
-  const parts: string[] = [];
+function splitScript(script: string): { text: string; piped: boolean }[] | undefined {
+  const parts: { text: string; piped: boolean }[] = [];
   let current = '';
+  let piped = false;
   let quote: "'" | '"' | undefined;
   for (let i = 0; i < script.length; i++) {
     const c = script[i]!;
@@ -129,15 +122,43 @@ function splitScript(script: string): string[] | undefined {
       quote = c;
       current += c;
     } else if (c === ';' || (c === '&' && script[i + 1] === '&')) {
-      parts.push(current);
+      parts.push({ text: current, piped });
       current = '';
+      piped = false;
       if (c === '&') i++;
+    } else if (c === '|' && script[i + 1] !== '|') {
+      // Output piped into the next command, which must then be a read-only filter.
+      parts.push({ text: current, piped });
+      current = '';
+      piped = true;
     } else if (/[\n\r`$<>|&(){}]/.test(c)) return undefined;
     else current += c;
   }
   if (quote) return undefined;
-  parts.push(current);
-  return parts.some((part) => !part.trim()) ? undefined : parts;
+  parts.push({ text: current, piped });
+  return parts.some((part) => !part.text.trim()) ? undefined : parts;
+}
+
+/** Commands that only read piped input (and files inside the roots) and print a result. */
+const FILTERS = new Set(['grep', 'rg', 'select-string', 'head', 'tail', 'wc', 'sort']);
+
+function safeFilter(tokens: string[], inside: (arg: string) => boolean): boolean {
+  const [head, ...args] = tokens;
+  const name = head!.replace(/\.(?:exe|cmd)$/i, '').toLowerCase();
+  if (!FILTERS.has(name)) return false;
+  // `sort -o file` writes a file; ripgrep's --pre runs a program.
+  if (args.some((arg) => /^(?:-o|--output|--pre)(?:=|$)/.test(arg))) return false;
+  return pathArgs(name, args).every(inside);
+}
+
+/**
+ * Git read arguments: revisions and pathspecs stay inside the repository, so they need no path
+ * check. Options that write files, run programs or read outside the repository are refused.
+ */
+function safeGitReadArgs(args: readonly string[]): boolean {
+  return !args.some((arg) =>
+    /^--(?:output|ext-diff|textconv|exec|open-files-in-pager|no-index)(?:=|$)/.test(arg),
+  );
 }
 
 /**
@@ -289,14 +310,18 @@ function safeSegment(tokens: string[], worktree: string): boolean {
   const paths = () => pathArgs(name, args).every((arg) => insidePath(arg, worktree));
   if (name === 'cd') return args.length === 1 && insidePath(args[0]!, worktree);
   if (READ_ONLY.has(name)) {
+    // find can delete or run programs; ripgrep's --pre runs a program on every file it searches.
     if (
-      name === 'find' &&
-      args.some((arg) => /^-(?:exec|execdir|ok|okdir|delete|fprint)/.test(arg))
+      args.some((arg) =>
+        /^-(?:exec|execdir|ok|okdir|delete|fprint|fls)|^--(?:pre|pre-glob|hostname-bin)(?:=|$)/.test(
+          arg,
+        ),
+      )
     )
       return false;
     return paths();
   }
-  if (name === 'git') return GIT_READS.has(args[0] ?? '') && paths();
+  if (name === 'git') return GIT_READS.has(args[0] ?? '') && safeGitReadArgs(args.slice(1));
   if (
     (name === 'node' || name === 'npm' || name === 'pnpm') &&
     /^(?:--version|-v)$/.test(args[0] ?? '')

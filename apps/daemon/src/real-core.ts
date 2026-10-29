@@ -8,7 +8,7 @@ import { NodePtyHost } from '@helix/pty-host';
 import { createHarness, orchestratorPrompt, reviewerPrompt } from '@helix/harness';
 import { createGitHubScm, buildFeedbackMessage } from '@helix/scm';
 import { cacheHarnessDetection } from './harness-cache.js';
-import { sessionEnvironment, writeHelixLauncher } from './helix-launcher.js';
+import { orchestratorScratch, sessionEnvironment, writeHelixLauncher } from './helix-launcher.js';
 
 /** Only caller-authored messages and error codes reach logs, never adapter error bodies. */
 export const consoleLog: CoreLog = {
@@ -196,7 +196,8 @@ export async function createRealCore(options: {
       worktrees: new GitWorktreeManager({ dataDir, projects: store }),
       terminals,
       harnesses,
-      orchestratorPrompt,
+      orchestratorPrompt: (ctx) =>
+        orchestratorPrompt({ ...ctx, scratchDir: orchestratorScratch(dataDir, ctx.session) }),
       reviewerPrompt,
       crossReview: crossReviewFromEnv(env),
       dataDir,

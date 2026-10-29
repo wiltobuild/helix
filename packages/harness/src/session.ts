@@ -313,19 +313,26 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
    * Answers a command request without asking when it only reads the worktree or runs the
    * project's own scripts (see safe-commands.ts). Returns false when the user must decide.
    */
+  /** An orchestrator's plan-artifact folder (`HELIX_SCRATCH_DIR` from the daemon), if any. */
+  protected scratchDir(): string | undefined {
+    return this.startOptions.env?.HELIX_SCRATCH_DIR || undefined;
+  }
   protected autoApprove(
     command: unknown,
     respond: PendingApproval['respond'],
     cwd = this.startOptions.cwd,
   ): boolean {
     if (!this.options.autoApproveSafeCommands) return false;
+    const scratch = this.scratchDir();
     if (
       !isSafeCommand(
         command,
         this.startOptions.cwd,
         this.startOptions.review ? [this.startOptions.review.worktreePath] : [],
         cwd,
-      )
+      ) &&
+      // Orchestrators may also work in their scratch folder (`helix plan submit <scratch>/plan.json`).
+      !(scratch && isSafeCommand(command, scratch))
     )
       return false;
     void respond('approved').catch(() => this.fail('Could not answer the approval request'));

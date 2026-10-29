@@ -126,6 +126,11 @@ test.each(['codex', 'claude-code'])(
       }),
     );
     expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ worker: f.s, reviewer }));
+    // The request names the worktree to read and the exact, literal submit command.
+    const head = f.requests()[0]!.payload.headSha;
+    const request = String(f.reviewerHarness.handles.get(reviewer.id)!.send.mock.calls[0]![0]);
+    expect(request).toContain(`Worktree under review (read-only): ${f.s.worktreePath}`);
+    expect(request).toContain(`run exactly: helix review submit verdict.json --head ${head}`);
     expect(f.requests()[0]!.causedBy).toBe(
       f.store.events.findLast((e) => e.type === 'ci.updated')!.seq,
     );
