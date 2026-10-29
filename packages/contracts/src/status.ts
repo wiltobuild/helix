@@ -28,6 +28,8 @@ export type BoardColumn = z.infer<typeof boardColumnSchema>;
  * changes_requested > ready_to_merge > in_review > exited > pending.
  * Active repair wins over failures; unknown activity alone never means exited.
  * Draft PRs and unresolved review threads block ready_to_merge (remain in_review).
+ * A cross-agent review, once started, must approve the current PR head before ready_to_merge;
+ * its change requests count as changes_requested. Without one, CI and GitHub review decide.
  */
 export function deriveStatus(s: SessionState): DisplayStatus {
   if (s.session.archivedAt !== undefined) return 'archived';
@@ -38,6 +40,9 @@ export function deriveStatus(s: SessionState): DisplayStatus {
   if (s.pr?.state === 'open') {
     if (s.pr.checks.failed > 0) return 'ci_failed';
     if (s.pr.review.decision === 'changes_requested') return 'changes_requested';
+    const agentReview = s.agentReview?.headSha === s.pr.headSha ? s.agentReview : undefined;
+    if (agentReview?.status === 'changes_requested') return 'changes_requested';
+    if (s.agentReview && agentReview?.status !== 'approved') return 'in_review';
     if (
       s.pr.checks.total > 0 &&
       s.pr.checks.passed === s.pr.checks.total &&

@@ -19,7 +19,9 @@ import {
   type UnsequencedEvent,
 } from './index.js';
 
-const samples = Object.fromEntries(fixtures.passwordResetRun.map((e) => [e.type, e]));
+const samples = Object.fromEntries(
+  [...fixtures.crossReviewRun, ...fixtures.passwordResetRun].map((e) => [e.type, e]),
+);
 const base = fixtures.passwordResetRun[2]!;
 samples['scheduling.changed'] = eventSchemas['scheduling.changed'].parse({
   ...fixtures.passwordResetRun[0],
@@ -40,6 +42,16 @@ samples['plan.rejected'] = eventSchemas['plan.rejected'].parse({
   ...base,
   type: 'plan.rejected',
   payload: { planId: fixtures.passwordResetPlan.id, reason: 'Split the task further' },
+});
+samples['agent_review.abandoned'] = eventSchemas['agent_review.abandoned'].parse({
+  ...fixtures.crossReviewRun.find((e) => e.type === 'agent_review.requested'),
+  type: 'agent_review.abandoned',
+  payload: {
+    workerSessionId: fixtures.crossReviewIds.worker,
+    prNumber: 7,
+    headSha: 'sha',
+    reason: 'The reviewer stopped without a verdict.',
+  },
 });
 samples['terminal.output_marker'] = eventSchemas['terminal.output_marker'].parse({
   ...base,
@@ -78,6 +90,14 @@ const invalid: Record<EventType, unknown> = {
   },
   'review.updated': { prNumber: 142, review: { decision: 'approved', unresolvedThreads: -1 } },
   'feedback.routed': { prNumber: 142, reason: 'slow', summary: 'fix', toSessionId: 's' },
+  'agent_review.requested': { workerSessionId: 's', prNumber: 7, headSha: '' },
+  'agent_review.submitted': {
+    workerSessionId: 's',
+    prNumber: 7,
+    headSha: 'sha',
+    review: { verdict: 'lgtm', summary: 'ok', findings: [] },
+  },
+  'agent_review.abandoned': { workerSessionId: 's', prNumber: 7, headSha: 'sha', reason: ' ' },
   'pr.merged': { prNumber: 0, mergeSha: 'sha' },
   'terminal.output_marker': { bytesOffset: 0.5 },
 };

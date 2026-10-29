@@ -10,6 +10,7 @@ import {
 } from './ids.js';
 import {
   agentActivitySchema,
+  agentReviewSchema,
   approvalDecisionSchema,
   approvalSchema,
   chatItemSchema,
@@ -115,9 +116,41 @@ export const eventSchemas = {
     'feedback.routed',
     z.strictObject({
       prNumber: pullRequestNumberSchema,
-      reason: z.enum(['ci_failed', 'changes_requested', 'merge_conflict']),
+      reason: z.enum(['ci_failed', 'changes_requested', 'merge_conflict', 'review_findings']),
       summary: z.string(),
       toSessionId: sessionIdSchema,
+    }),
+  ),
+  /** Emitted on the reviewer session: it starts reviewing the worker's PR at headSha. */
+  'agent_review.requested': event(
+    'agent_review.requested',
+    z.strictObject({
+      workerSessionId: sessionIdSchema,
+      prNumber: pullRequestNumberSchema,
+      headSha: z.string().min(1),
+    }),
+  ),
+  /** Emitted on the reviewer session with its verdict for the requested headSha. */
+  'agent_review.submitted': event(
+    'agent_review.submitted',
+    z.strictObject({
+      workerSessionId: sessionIdSchema,
+      prNumber: pullRequestNumberSchema,
+      headSha: z.string().min(1),
+      review: agentReviewSchema,
+    }),
+  ),
+  /**
+   * Emitted on the reviewer session when a review in progress ends without a verdict (the reviewer
+   * failed, was stopped, or gave none after a reminder). The PR falls back to CI and GitHub review.
+   */
+  'agent_review.abandoned': event(
+    'agent_review.abandoned',
+    z.strictObject({
+      workerSessionId: sessionIdSchema,
+      prNumber: pullRequestNumberSchema,
+      headSha: z.string().min(1),
+      reason: z.string().trim().min(1).max(500),
     }),
   ),
   'pr.merged': event(

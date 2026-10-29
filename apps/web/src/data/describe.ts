@@ -191,6 +191,14 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
           : `Review updated on PR #${e.payload.prNumber}.`;
     case 'feedback.routed':
       return `Helix sent the ${reasonLabel(e.payload.reason)} back to ${agentName(state.sessions[e.payload.toSessionId]?.session.agent ?? 'the agent')}, which owns the branch.`;
+    case 'agent_review.requested':
+      return `${who} started reviewing PR #${e.payload.prNumber}.`;
+    case 'agent_review.submitted':
+      return e.payload.review.verdict === 'approve'
+        ? `${who} approved PR #${e.payload.prNumber}.`
+        : `${who} requested changes on PR #${e.payload.prNumber}.`;
+    case 'agent_review.abandoned':
+      return `${who} stopped reviewing PR #${e.payload.prNumber} without a verdict.`;
     case 'pr.merged':
       return `PR #${e.payload.prNumber} merged.`;
     case 'terminal.output_marker':
@@ -198,12 +206,16 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
   }
 }
 
-const reasonLabel = (r: 'ci_failed' | 'changes_requested' | 'merge_conflict') =>
+const reasonLabel = (
+  r: 'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings',
+) =>
   r === 'ci_failed'
     ? 'CI failure'
     : r === 'changes_requested'
       ? 'review comments'
-      : 'merge conflict';
+      : r === 'review_findings'
+        ? 'review findings'
+        : 'merge conflict';
 
 export function truncate(text: string, max: number): string {
   const t = text.replace(/\s+/g, ' ').trim();

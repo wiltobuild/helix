@@ -62,6 +62,15 @@ const cases = [
   { name: 'submitPlan', method: 'submitPlan', payload: planBody },
   { name: 'decidePlan', method: 'decidePlan', payload: { decision: 'approve' } },
   { name: 'explain', method: 'explain', payload: { sessionId: session.id, text: 'Because' } },
+  {
+    name: 'submitReview',
+    method: 'submitReview',
+    payload: {
+      reviewerSessionId: session.id,
+      headSha: 'abc',
+      review: { verdict: 'approve', summary: 'Looks right.', findings: [] },
+    },
+  },
   { name: 'exportRecording', method: 'exportRecording' },
   {
     name: 'importRecording',
