@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fixtures, type HelixEvent } from '@helix/contracts';
+import { fixtures, helixEventSchema, type HelixEvent } from '@helix/contracts';
 import { createSseParser, subscribeEvents, type SseFrame, type EventStreamStatus } from './sse.js';
 
 afterEach(() => vi.useRealTimers());
@@ -107,6 +107,97 @@ it('delivers 10 then unseen 9, suppresses exact 9 retries, retains conflicts, an
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(requestUrl(fetcher.mock.calls[1]?.[0]).searchParams.get('since')).toBe('10');
     expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ 'Last-Event-ID': '10' });
+  } finally {
+    subscription.close();
+  }
+});
+
+it('preserves a multi-megabyte chunked design event through late backfill, exact retries and monotonic reconnects', async () => {
+  vi.useFakeTimers();
+  const sessionId = fixtures.passwordResetRun.find((value) => value.sessionId)?.sessionId;
+  const large = helixEventSchema.parse({
+    ...event,
+    seq: 10,
+    sessionId,
+    type: 'design.updated',
+    payload: {
+      design: {
+        sessionId,
+        revision: 1,
+        brief: 'Three embedded raster concepts',
+        status: 'ready',
+        rounds: [
+          {
+            revision: 1,
+            jobId: 'large-design',
+            concepts: ['A', 'B', 'C'].map((letter) => ({
+              id: letter,
+              title: `Concept ${letter}`,
+              imageUrl: `data:image/png;base64,${letter.repeat(1024 * 1024)}`,
+              mimeType: 'image/png',
+              prompt: 'A storefront',
+              rationale: 'Transport payload fixture',
+              tradeoffs: [],
+              recommended: letter === 'A',
+            })),
+          },
+        ],
+        conversation: [],
+        references: [],
+        receipts: [],
+      },
+    },
+  });
+  const largeFrame = frame(10, large);
+  // Pull bounded slices of one buffer, rather than allocating a Uint8Array per byte.
+  const chunked = (text: string) => {
+    const bytes = new TextEncoder().encode(text);
+    let offset = 0;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (offset >= bytes.length) {
+            controller.close();
+            return;
+          }
+          const end = Math.min(bytes.length, offset + 64 * 1024);
+          controller.enqueue(bytes.subarray(offset, end));
+          offset = end;
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+  };
+  expect(new TextEncoder().encode(largeFrame).length).toBeGreaterThan(3 * 1024 * 1024);
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(chunked(largeFrame + frame(9) + frame(9)))
+    .mockResolvedValueOnce(chunked(largeFrame + frame(9) + frame(12) + frame(11)))
+    .mockResolvedValueOnce(chunked(frame(13)));
+  const received: HelixEvent[] = [];
+  const subscription = subscribeEvents({
+    baseUrl: 'http://localhost:4317',
+    since: 8,
+    projectId: event.projectId,
+    fetch: fetcher,
+    onEvent: (value) => received.push(value),
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.map((value) => value.seq)).toEqual([10, 9]);
+    expect(received[0]).toEqual(large);
+    await vi.advanceTimersByTimeAsync(350);
+    expect(received.map((value) => value.seq)).toEqual([10, 9, 12, 11]);
+    await vi.advanceTimersByTimeAsync(350);
+    expect(received.map((value) => value.seq)).toEqual([10, 9, 12, 11, 13]);
+    expect(received[0]).toEqual(large);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(
+      fetcher.mock.calls.map(([input]) => requestUrl(input).searchParams.get('since')),
+    ).toEqual(['8', '10', '12']);
+    for (const [index, cursor] of ['8', '10', '12'].entries()) {
+      expect(fetcher.mock.calls[index]?.[1]?.headers).toMatchObject({ 'Last-Event-ID': cursor });
+    }
   } finally {
     subscription.close();
   }
