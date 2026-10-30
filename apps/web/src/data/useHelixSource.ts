@@ -10,11 +10,19 @@ import {
 } from './demoScenarios';
 import type { ReplaySpeed } from './useDemoStream';
 import { fetchRecording, openRecordingFile, type Recording } from './recordings';
+import {
+  emptyHistory,
+  receiveEvent,
+  receiveStatus,
+  selectHistory,
+  sourceIdentity,
+} from './sourceHistory';
 
 export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
 export type { DemoPreset } from './demoScenarios';
 
 export interface HelixSource {
+  sourceId: string;
   mode: SourceMode;
   events: readonly HelixEvent[];
   /** Connected projects (live mode; empty in demo/connecting). */
@@ -69,8 +77,8 @@ export function useHelixSource(): HelixSource {
   const [mode, setMode] = useState<SourceMode>(forceDemo ? 'demo' : 'connecting');
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [project, setProject] = useState<Project>();
-  const [liveEvents, setLiveEvents] = useState<HelixEvent[]>([]);
-  const [stream, setStream] = useState<EventStreamStatus>('connecting');
+  const [liveHistory, setLiveHistory] = useState(() => emptyHistory(''));
+  const [sourceRevision, setSourceRevision] = useState(0);
   const [error, setError] = useState<string>();
   const [recording, setRecording] = useState<Recording>();
   const [demoPreset, setDemoPreset] = useState<DemoPreset>(initialPreset);
@@ -85,7 +93,12 @@ export function useHelixSource(): HelixSource {
     if (!targetName) return;
     let cancelled = false;
     fetchRecording(targetName)
-      .then((r) => !cancelled && setRecording(r))
+      .then((r) => {
+        if (!cancelled) {
+          setRecording(r);
+          setSourceRevision((revision) => revision + 1);
+        }
+      })
       .catch((e: unknown) => {
         if (!cancelled) setRecordingError(e instanceof Error ? e.message : String(e));
       });
@@ -95,6 +108,7 @@ export function useHelixSource(): HelixSource {
   }, [mode, demoPreset, recording]);
 
   const selectDemoPreset = useCallback((preset: BuiltInPreset) => {
+    setSourceRevision((revision) => revision + 1);
     setRecordingError(undefined);
     setRecording(undefined);
     setDemoPreset(preset);
@@ -105,6 +119,7 @@ export function useHelixSource(): HelixSource {
       const r = await openRecordingFile(file);
       setRecordingError(undefined);
       setRecording(r);
+      setSourceRevision((revision) => revision + 1);
       setDemoPreset('custom');
       setMode('demo');
     } catch (e) {
@@ -155,20 +170,26 @@ export function useHelixSource(): HelixSource {
     };
   }, [loadProjects]);
 
+  const projectId = project?.id;
   useEffect(() => {
-    if (mode !== 'live' || !project) return;
-    setLiveEvents([]);
+    if (mode !== 'live' || !projectId) return;
+    let cancelled = false;
+    setLiveHistory((previous) => selectHistory(previous, projectId));
     const sub = client.events({
       since: 0,
-      projectId: project.id,
-      onEvent: (e) =>
-        setLiveEvents((prev) =>
-          prev.length && prev[prev.length - 1]!.seq >= e.seq ? prev : [...prev, e],
-        ),
-      onStatus: setStream,
+      projectId,
+      onEvent: (event) => {
+        if (!cancelled) setLiveHistory((previous) => receiveEvent(previous, projectId, event));
+      },
+      onStatus: (status) => {
+        if (!cancelled) setLiveHistory((previous) => receiveStatus(previous, projectId, status));
+      },
     });
-    return () => sub.close();
-  }, [mode, project]);
+    return () => {
+      cancelled = true;
+      sub.close();
+    };
+  }, [mode, projectId]);
 
   const addProject = useCallback(
     async (repoPath: string) => {
@@ -197,6 +218,7 @@ export function useHelixSource(): HelixSource {
   return useMemo<HelixSource>(() => {
     if (mode === 'demo' || mode === 'connecting')
       return {
+        sourceId: sourceIdentity('demo', demoPreset, sourceRevision),
         mode,
         events: demoRun,
         projects: [],
@@ -214,12 +236,13 @@ export function useHelixSource(): HelixSource {
         ...(error ? { error } : {}),
       };
     return {
+      sourceId: sourceIdentity('live', projectId ?? ''),
       mode,
-      events: liveEvents,
+      events: selectHistory(liveHistory, projectId ?? '').events,
       projects,
       client,
       ...(project ? { project } : {}),
-      stream,
+      stream: selectHistory(liveHistory, projectId ?? '').status,
       selectProject,
       addProject,
       openRecording,
@@ -231,10 +254,11 @@ export function useHelixSource(): HelixSource {
   }, [
     mode,
     demoRun,
-    liveEvents,
+    liveHistory,
     projects,
     project,
-    stream,
+    projectId,
+    sourceRevision,
     selectProject,
     addProject,
     openRecording,

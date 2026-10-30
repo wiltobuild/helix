@@ -29,7 +29,7 @@ import {
   narratedEvent,
   type PlanTree,
 } from '../data/observatory';
-import { eventIndexAtTime, timelineMilestones } from '../data/timeline';
+import { ganttTimeAxis, pointerTime, timelineMilestones } from '../data/timeline';
 import type { RunView } from '../data/useRun';
 import type { HelixSource } from '../data/useHelixSource';
 import { REPLAY_SPEEDS, type ReplaySpeed } from '../data/useDemoStream';
@@ -99,10 +99,14 @@ export function Dock({
   const narrated = narratedEvent(events, index);
   const cause = narrated.causedBy !== undefined ? run.bySeq.get(narrated.causedBy) : undefined;
   const live = source.mode === 'live';
-  const elapsed = Date.parse(run.current.ts) - Date.parse(events[0]!.ts);
+  const elapsed = run.position;
 
   return (
-    <section className={s.dock} data-expanded={expanded || undefined} aria-label="Run timeline">
+    <section
+      className={s.dock}
+      data-expanded={expanded || undefined}
+      aria-label="Project history timeline"
+    >
       {/* Why strip */}
       <div className={s.strip} aria-live="polite">
         <span className={s.whyTag}>Why</span>
@@ -127,7 +131,7 @@ export function Dock({
           {(
             [
               ['activity', 'Activity'],
-              ['logs', 'Run logs'],
+              ['logs', 'Event logs'],
               ['timeline', 'Timeline'],
               ['artifacts', 'Artifacts'],
             ] as const
@@ -146,6 +150,15 @@ export function Dock({
         </div>
 
         <div className={s.controls}>
+          <select
+            className={s.speed}
+            aria-label="Timeline clock"
+            value={run.timeMode}
+            onChange={(e) => run.setTimeMode(e.target.value === 'active' ? 'active' : 'elapsed')}
+          >
+            <option value="elapsed">Elapsed</option>
+            <option value="active">Active</option>
+          </select>
           <IconButton
             label="Previous event"
             shortcut="["
@@ -163,7 +176,7 @@ export function Dock({
             onClick={() => run.step(1)}
           />
           <span className={s.clock} title={`Event ${index + 1} of ${events.length}`}>
-            {clock(elapsed)} / {clock(Date.parse(events.at(-1)!.ts) - Date.parse(events[0]!.ts))}
+            {clock(elapsed)} / {clock(run.mapping.total)}
           </span>
           {live ? (
             <button
@@ -215,6 +228,55 @@ export function Dock({
         </div>
       </div>
 
+      <details className={s.timing}>
+        <summary>
+          Project history: {clock(run.timing.elapsed)} elapsed · {clock(run.timing.active)} active ·{' '}
+          {clock(run.timing.human)} global human wait
+          {run.timing.completed ? ' · observed work ended' : ''}
+          {!run.timing.durationKnown ? ' · partial duration' : ''}
+          {run.timing.warnings.length ? ' · uncertainty (details)' : ''}
+        </summary>
+        <div className={s.accounting}>
+          <p>
+            Elapsed measures the observed project history, including gaps between tasks, not a
+            single run. Active subtracts only evidenced human waits blocking the whole project with
+            no other agent working. Unknown time stays active; CI, model, queue, review and merge
+            readiness do not establish human waits. Live time extends only while connected with
+            unfinished recorded work; recordings stop at their observed end.
+          </p>
+          <p>
+            Bars are session spans, not CPU or work durations. Per-session totals below are never
+            summed for global time. Arrow keys and [ / ] visit every event, including collapsed
+            waits.
+          </p>
+          {run.timing.warnings.map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+          <table>
+            <caption>Per-session accounting over observed project history</caption>
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Evidenced work</th>
+                <th>Approval wait</th>
+                <th>Other / unknown</th>
+              </tr>
+            </thead>
+            <tbody>
+              {run.timing.perAgent.map((agent) => (
+                <tr key={agent.sessionId}>
+                  <th scope="row">
+                    {identityFor(run.latestState, agent.sessionId)?.name ?? agent.sessionId}
+                  </th>
+                  <td>{clock(agent.work)}</td>
+                  <td>{clock(agent.approvalWait)}</td>
+                  <td>{clock(agent.unknown)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
       <div className={s.body}>
         {tab === 'timeline' && <Gantt run={run} onSelectSession={onSelectSession} />}
         {tab === 'activity' && (
@@ -231,7 +293,7 @@ export function Dock({
                     data-current={f.index === index || undefined}
                   >
                     <span className={s.feedTime}>
-                      {clock(Date.parse(f.ts) - Date.parse(events[0]!.ts))}
+                      {clock(run.eventTime(f.index))} {run.timeMode}
                     </span>
                     <span className={s.dot} style={{ background: TONE_VAR[f.tone] }} />
                     {sess && sess.session.role !== 'orchestrator' ? (
@@ -266,27 +328,22 @@ export function Dock({
 function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: string) => void }) {
   const { events, index, state, latestState } = run;
   // History remains visible when scrubbing; only the playhead follows the cursor.
-  const { lanes, startTs, endTs } = useMemo(() => {
+  const { lanes } = useMemo(() => {
     const last = events.length - 1;
     const fullTree = planTree(latestState, events, last, events[last]!.ts);
-    return ganttLanes(events, last, latestState, fullTree);
-  }, [events, latestState]);
-  const cursorAt = Math.max(
-    0,
-    Math.min(1, (Date.parse(run.current.ts) - startTs) / (endTs - startTs)),
-  );
+    return ganttLanes(events, last, latestState, fullTree, ganttTimeAxis(run.timing, run.mapping));
+  }, [events, latestState, run.timing, run.mapping]);
+  const cursorAt = run.position / Math.max(run.mapping.total, 1);
   const milestones = useMemo(() => timelineMilestones(events), [events]);
   const chart = useRef<HTMLDivElement>(null);
-  const span = endTs - startTs;
+  const span = run.mapping.total;
   const ticks = [0, 0.2, 0.4, 0.6, 0.8, 1];
 
   const seekToX = (clientX: number) => {
     const el = chart.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-    const t = startTs + frac * span;
-    run.seek(eventIndexAtTime(events, t));
+    run.seekTime(pointerTime(clientX, r.left, r.width, span));
   };
   const onDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
@@ -317,8 +374,7 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
             </option>
             {milestones.map((i) => (
               <option key={events[i]!.seq} value={i}>
-                {clock(Date.parse(events[i]!.ts) - startTs)} ·{' '}
-                {describeEvent(events[i]!, latestState)}
+                {clock(run.eventTime(i))} {run.timeMode} · {describeEvent(events[i]!, latestState)}
               </option>
             ))}
           </select>
@@ -332,22 +388,17 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
           <input
             type="range"
             className={s.range}
-            min={startTs}
-            max={endTs}
-            value={Date.parse(run.current.ts)}
-            onChange={(e) => run.seek(eventIndexAtTime(events, Number(e.target.value)))}
+            min={0}
+            max={Math.max(span, 1)}
+            step="any"
+            value={run.position}
+            onChange={(e) => run.seekTime(Number(e.target.value))}
             onKeyDown={(e) => {
-              if (
-                ['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End'].includes(e.key)
-              ) {
-                e.preventDefault();
-                if (e.key === 'Home') run.seek(0);
-                else if (e.key === 'End') run.seek(events.length - 1);
-                else run.step(e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 1);
-              }
+              if (e.metaKey || e.ctrlKey || e.altKey) return;
+              if (run.key(e.key, true)) e.preventDefault();
             }}
             aria-label="Timeline position"
-            aria-valuetext={`Event ${run.current.seq}: ${describeEvent(run.current, state)}`}
+            aria-valuetext={`${clock(run.position)} ${run.timeMode}. Event ${run.current.seq}: ${describeEvent(run.current, state)}`}
           />
         </div>
       </div>
@@ -415,7 +466,7 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
                   style={
                     {
                       left: `${b.from * 100}%`,
-                      width: `${Math.max(0.4, (b.to - b.from) * 100)}%`,
+                      width: `${Math.max(0, (b.to - b.from) * 100)}%`,
                       '--lane':
                         l.kind === 'orchestrator'
                           ? 'var(--strand-orchestrator)'
@@ -435,7 +486,7 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
                       style={
                         { left: `${m.at * 100}%`, '--mark': TONE_VAR[m.tone] } as CSSProperties
                       }
-                      title={`#${m.seq} · ${m.text}`}
+                      title={`#${m.seq} · ${clock(run.eventTime(m.index))} ${run.timeMode} · ${m.text}`}
                       aria-label={`Event ${m.seq}: ${m.text}`}
                       data-current={m.index === index || undefined}
                       data-event-index={m.index}
@@ -450,14 +501,36 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
           <span className={s.now} style={{ left: `${cursorAt * 100}%` }} aria-hidden>
             <span className={s.nowHead} />
           </span>
+          {run.timeMode === 'active' &&
+            run.timing.humanWait.map((wait) => {
+              const eventIndex = run.timing.times.findIndex((time) => time >= wait.start);
+              return (
+                <button
+                  key={wait.start}
+                  type="button"
+                  className={s.waitMarker}
+                  style={{
+                    left: `${(run.mapping.forward(wait.start) / Math.max(span, 1)) * 100}%`,
+                  }}
+                  data-event-index={eventIndex}
+                  title={`Collapsed human wait ${clock(wait.end - wait.start)} · ${new Date(wait.start).toISOString()} – ${new Date(wait.end).toISOString()}`}
+                  aria-label={`Inspect collapsed human wait of ${clock(wait.end - wait.start)}`}
+                  onClick={(e) => {
+                    if (e.detail === 0) run.seek(eventIndex);
+                  }}
+                >
+                  Ⅱ
+                </button>
+              );
+            })}
         </div>
       </div>
       <p className={s.legend}>
         <span>
-          <i data-k="solid" /> recorded work
+          <i data-k="solid" /> recorded session span
         </span>
         <span>
-          <i data-k="dash" /> planned, not started
+          <i data-k="dash" /> planned, duration unknown
         </span>
         <span>
           <i data-k="mark" /> event (click to jump)
@@ -474,7 +547,6 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
 
 function RunLog({ run }: { run: RunView }) {
   const { events, index, state } = run;
-  const start = Date.parse(events[0]!.ts);
   const rows = events.slice(Math.max(0, index - 199), index + 1).reverse();
   return (
     <ol className={s.log}>
@@ -484,7 +556,9 @@ function RunLog({ run }: { run: RunView }) {
           <li key={e.seq}>
             <button type="button" onClick={() => run.seek(events.indexOf(e))}>
               <span className={s.logSeq}>#{e.seq}</span>
-              <span className={s.logTime}>{clock(Date.parse(e.ts) - start)}</span>
+              <span className={s.logTime}>
+                {clock(run.eventTime(events.indexOf(e)))} {run.timeMode}
+              </span>
               <span
                 className={s.logType}
                 style={{
@@ -659,7 +733,7 @@ function WhyOverlay({
               }}
             >
               <span className={s.stepSeq}>
-                #{e.seq} · {e.type}
+                #{e.seq} · {clock(run.eventTime(events.indexOf(e)))} {run.timeMode} · {e.type}
               </span>
               <span className={s.stepText}>{describeEvent(e, state)}</span>
               <span className={s.stepSource} data-source={provenance(e, state)}>

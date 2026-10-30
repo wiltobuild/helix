@@ -1,7 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createProjector, type HelixEvent, type ProjectState } from '@helix/contracts';
-import { indexIdentities, withIdentityIndex } from './identity';
-import { replayDelays, replayPause } from './useDemoStream';
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from 'react';
+import type { HelixEvent, ProjectState } from '@helix/contracts';
+import { accountTime, timeMapping, type TimeAccounting, type TimeMode } from './activeTime';
+import { createSafeProjector } from './safeProjection';
+import {
+  cursorIndex,
+  initialTimeline,
+  timelineDelay,
+  timelineKeyAction,
+  timelineTimers,
+  transitionTimeline,
+  type PlaybackOptions,
+  type TimelineAction,
+} from './timelineState';
+export { cursorIndex, eventCursor } from './timelineState';
 
 export interface RunView {
   events: readonly HelixEvent[];
@@ -16,89 +27,110 @@ export interface RunView {
   playing: boolean;
   togglePlay: () => void;
   bySeq: ReadonlyMap<number, HelixEvent>;
+  timeMode: TimeMode;
+  setTimeMode: (mode: TimeMode) => void;
+  timing: TimeAccounting;
+  mapping: ReturnType<typeof timeMapping>;
+  seekTime: (position: number) => void;
+  eventTime: (index: number) => number;
+  position: number;
+  key: (key: string, slider?: boolean) => boolean;
 }
 
-/** One playback clock. Live logs follow the tail; recordings expose their entire history. */
+/** One story-paced playback clock; the chart always gets the full latest projection.
+ * A source ID changes only on deliberate selection, never because earlier backfill arrives. */
 export function useRun(
-  events: readonly HelixEvent[],
+  input: readonly HelixEvent[],
   {
     recorded = false,
     speed = 1,
     startAt = 0,
-  }: { recorded?: boolean; speed?: number; startAt?: number } = {},
-): RunView {
-  const last = events.length - 1;
-  const initial = {
-    head: events[0],
-    cursor: recorded ? Math.min(startAt, last) : null,
-    playing: recorded && last > startAt,
-  };
-  const [stored, setControl] = useState(initial);
-  // Switching recordings resets immediately; appending live events preserves the cursor.
-  const control = stored.head === events[0] ? stored : initial;
+    connected = false,
+    sourceId = 'history',
+  }: PlaybackOptions & { connected?: boolean; sourceId?: string } = {},
+): RunView | { error: string } {
+  const observed = useMemo(() => accountTime(input), [input]);
+  const events = observed.events;
+  const [stored, setControl] = useState(() =>
+    initialTimeline(sourceId, events, { recorded, startAt }),
+  );
+  const control =
+    stored.sourceId === sourceId
+      ? stored
+      : initialTimeline(sourceId, events, { recorded, startAt });
   if (control !== stored) setControl(control);
-  const index = control.cursor === null ? last : Math.max(0, Math.min(control.cursor, last));
-  const current = events[index]!;
-  const projector = useMemo(() => createProjector(events), [events]);
-  const bySeq = useMemo(() => new Map(events.map((e) => [e.seq, e])), [events]);
-  const identities = useMemo(() => indexIdentities(events), [events]);
-  const state = useMemo(
-    () => withIdentityIndex(projector.at(current.seq), identities),
-    [projector, current.seq, identities],
+  const liveClock = connected && !recorded;
+  const timing = useMemo(
+    () => (liveClock && control.now !== undefined ? accountTime(input, control.now) : observed),
+    [input, observed, liveClock, control.now],
   );
-  const latestState = useMemo(
-    () => withIdentityIndex(projector.at(events[last]!.seq), identities),
-    [projector, events, last, identities],
-  );
-  const delays = useMemo(() => (recorded ? replayDelays(events) : []), [events, recorded]);
-  const delay = (recorded ? (delays[index] ?? 650) : replayPause(current)) / speed;
-  const lastRef = useRef(last);
-  lastRef.current = last;
-
-  const seek = useCallback(
-    (i: number) => {
-      const cursor = Math.max(0, Math.min(i, last));
-      setControl((c) => (c.cursor === cursor && !c.playing ? c : { ...c, cursor, playing: false }));
+  const mapping = useMemo(() => timeMapping(timing, control.timeMode), [timing, control.timeMode]);
+  const projector = useMemo(() => createSafeProjector(observed), [observed]);
+  const index = cursorIndex(events, control.cursor);
+  const current = events[index];
+  const last = events.at(-1);
+  const projection = useMemo(() => projector.at(current?.seq ?? 0), [projector, current?.seq]);
+  const latest = useMemo(() => projector.at(last?.seq ?? 0), [projector, last?.seq]);
+  const valid = projection.ok && latest.ok;
+  const bySeq = useMemo(() => new Map(events.map((event) => [event.seq, event])), [events]);
+  const dispatch = useCallback(
+    (action: TimelineAction) => {
+      if (!valid) return;
+      setControl((state) =>
+        state.sourceId === sourceId ? transitionTimeline(state, action, timing) : state,
+      );
     },
-    [last],
+    [timing, sourceId, valid],
   );
-  const step = useCallback((delta: number) => seek(index + delta), [seek, index]);
-  const goLive = useCallback(() => {
-    setControl((c) => ({ ...c, cursor: null, playing: false }));
-  }, []);
-
+  const policy = timelineTimers(control, liveClock, observed);
+  const clockEnabled = valid && policy.clock;
+  const replayEnabled = valid && policy.replay;
+  const delay = useMemo(
+    () => timelineDelay(events, index, { recorded, speed }),
+    [events, index, recorded, speed],
+  );
+  const tickClock = useEffectEvent(() =>
+    dispatch({ type: 'clockTick', now: Date.now(), connected: liveClock }),
+  );
+  const tickReplay = useEffectEvent(() => dispatch({ type: 'replayTick' }));
   useEffect(() => {
-    if (!control.playing) return;
-    const timer = window.setTimeout(() => {
-      setControl((c) => {
-        if (!c.playing || c.head !== control.head) return c;
-        const next = Math.min(index + 1, lastRef.current);
-        return { ...c, cursor: next, playing: next < lastRef.current };
-      });
-    }, delay);
+    if (!clockEnabled) return;
+    const timer = window.setInterval(() => tickClock(), 1000);
+    return () => window.clearInterval(timer);
+  }, [clockEnabled]);
+  useEffect(() => {
+    if (!replayEnabled) return;
+    const timer = window.setTimeout(() => tickReplay(), delay);
     return () => window.clearTimeout(timer);
-  }, [control.playing, control.head, index, delay]);
-
-  const togglePlay = useCallback(() => {
-    setControl((c) =>
-      c.playing
-        ? { ...c, cursor: index, playing: false }
-        : { ...c, cursor: index >= last ? 0 : index, playing: last > 0 },
-    );
-  }, [index, last]);
-
+  }, [replayEnabled, sourceId, current?.seq, delay]);
+  if (!projection.ok) return { error: projection.error };
+  if (!latest.ok) return { error: latest.error };
+  if (!current) return { error: 'No event is available at the selected position.' };
   return {
     events,
-    state,
-    latestState,
     current,
     index,
-    isLive: control.cursor === null,
-    seek,
-    step,
-    goLive,
-    playing: control.playing,
-    togglePlay,
+    state: projection.state,
+    latestState: latest.state,
     bySeq,
+    timing,
+    mapping,
+    isLive: control.cursor === null,
+    playing: control.playing,
+    timeMode: control.timeMode,
+    position: mapping.forward(control.cursor === null ? timing.end : timing.times[index]!),
+    eventTime: (i) => mapping.forward(timing.times[i] ?? timing.start),
+    seek: (i) => dispatch({ type: 'seek', index: i }),
+    step: (delta) => dispatch({ type: 'step', delta }),
+    goLive: () => dispatch({ type: 'live' }),
+    togglePlay: () => dispatch({ type: 'togglePlay' }),
+    setTimeMode: (mode) => dispatch({ type: 'mode', mode }),
+    seekTime: (position) => dispatch({ type: 'seekTime', position }),
+    key: (key, slider = false) => {
+      const action = timelineKeyAction(key, events.length, slider);
+      if (!action) return false;
+      dispatch(action);
+      return true;
+    },
   };
 }

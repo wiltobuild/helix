@@ -7,6 +7,7 @@ import { indexIdentities, resolveIdentities, withIdentityIndex } from '../data/i
 import { ganttLanes, planTree } from '../data/observatory';
 import type { HelixSource } from '../data/useHelixSource';
 import type { RunView } from '../data/useRun';
+import { accountTime, timeMapping } from '../data/activeTime';
 import { NavRail, type SessionSummary } from './Chrome';
 import { Dock } from './Dock';
 
@@ -19,7 +20,17 @@ function runAt(events: readonly HelixEvent[], seq: number): RunView {
   const state = withIdentityIndex(projectUpTo(events, seq), identities);
   const latestState = withIdentityIndex(projectUpTo(events, events.at(-1)!.seq), identities);
   const index = events.findIndex((e) => e.seq === seq);
+  const timing = accountTime(events);
+  const mapping = timeMapping(timing, 'elapsed');
   return {
+    timing,
+    mapping,
+    timeMode: 'elapsed',
+    position: mapping.forward(timing.times[index]!),
+    eventTime: (i) => mapping.forward(timing.times[i]!),
+    setTimeMode: vi.fn(),
+    seekTime: vi.fn(),
+    key: () => false,
     events,
     state,
     latestState,
@@ -37,6 +48,7 @@ function runAt(events: readonly HelixEvent[], seq: number): RunView {
 
 function source(events: readonly HelixEvent[]): HelixSource {
   return {
+    sourceId: 'demo:identity',
     mode: 'demo',
     events,
     projects: [],

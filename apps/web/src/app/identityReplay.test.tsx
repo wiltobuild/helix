@@ -14,6 +14,7 @@ import { Inspector } from './Inspector';
 import { Dock } from './Dock';
 import { CommitsView } from './SessionViews';
 import type { HelixSource } from '../data/useHelixSource';
+import { accountTime, timeMapping } from '../data/activeTime';
 
 const noop = () => {};
 const render = (element: React.ReactNode) =>
@@ -176,10 +177,13 @@ test('timeline and inspector history retain worker/reviewer identities across pr
   expect(history).toContain('Discount Codes Reviewer requested changes');
   expect(history).toContain('findings back to Discount Codes Engineer');
   expect(history).not.toContain('Codex requested changes');
+  const timing = accountTime(events);
+  const mapping = timeMapping(timing, 'elapsed');
   const timeline = render(
     <Dock
       source={
         {
+          sourceId: 'demo:identity-replay',
           mode: 'demo',
           events,
           projects: [],
@@ -197,6 +201,14 @@ test('timeline and inspector history retain worker/reviewer identities across pr
       onExpand={noop}
       onSelectSession={noop}
       run={{
+        timing,
+        mapping,
+        timeMode: 'elapsed',
+        position: mapping.forward(timing.times[events.indexOf(current)]!),
+        eventTime: (i) => mapping.forward(timing.times[i]!),
+        setTimeMode: noop,
+        seekTime: noop,
+        key: () => false,
         events,
         state,
         latestState: state,

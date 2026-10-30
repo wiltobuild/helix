@@ -130,6 +130,52 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.timing {
+  flex: none;
+  max-height: 50%;
+  overflow: auto;
+  padding: 2px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
+.timing summary {
+  cursor: pointer;
+}
+.accounting {
+  max-height: 150px;
+  overflow: auto;
+}
+.accounting p {
+  margin: var(--space-2) 0;
+}
+.accounting table {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+}
+.accounting th,
+.accounting td {
+  padding: 3px 6px;
+}
+.accounting caption {
+  text-align: left;
+}
+.waitMarker {
+  position: absolute;
+  top: 0;
+  z-index: 4;
+  transform: translateX(-50%);
+  border: 1px dashed var(--status-needs);
+  border-radius: 3px;
+  color: var(--status-needs);
+  background: var(--surface);
+  padding: 0 3px;
+  font-size: 10px;
+  cursor: pointer;
 }
 
 .clock {

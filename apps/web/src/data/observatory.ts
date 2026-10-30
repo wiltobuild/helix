@@ -434,22 +434,24 @@ export interface Lane {
 
 /**
  * Gantt lanes: one for the orchestrator, one per agent, one per task. The axis spans the whole
- * recording (so the cursor line moves as you scrub); bars stop at the cursor, and tasks that haven't
- * started show a dashed "planned" placeholder after it.
+ * history. The Dock passes the latest projection and a shared clock mapping while scrubbing.
+ * Tasks that haven't started have a zero-duration planned marker, not an estimated work span.
  */
 export function ganttLanes(
   events: readonly HelixEvent[],
   uptoIndex: number,
   state: ProjectState,
   tree: PlanTree | undefined,
+  axis?: { eventAt: (index: number) => number; tail: number },
 ): { lanes: Lane[]; startTs: number; endTs: number; cursorAt: number } {
   const identities = resolveProjectIdentities(state);
   const startTs = Date.parse(events[0]!.ts);
   const endTs = Math.max(Date.parse(events.at(-1)!.ts), startTs + 1000);
   const span = endTs - startTs;
   const at = (ts: string) => Math.min(1, Math.max(0, (Date.parse(ts) - startTs) / span));
+  const eventAt = (index: number) => axis?.eventAt(index) ?? at(events[index]!.ts);
   const cursorTs = events[Math.min(uptoIndex, events.length - 1)]!.ts;
-  const cursorAt = at(cursorTs);
+  const cursorAt = axis?.tail ?? at(cursorTs);
 
   const marksFor = (pred: (e: HelixEvent) => boolean) => {
     const marks: Lane['marks'] = [];
@@ -457,17 +459,33 @@ export function ganttLanes(
       const e = events[i]!;
       const tone = eventTone(e);
       if (tone === 'quiet' || !pred(e)) continue;
-      marks.push({ at: at(e.ts), tone, seq: e.seq, index: i, text: describeEvent(e, state) });
+      marks.push({
+        at: eventAt(i),
+        tone,
+        seq: e.seq,
+        index: i,
+        text: describeEvent(e, state),
+      });
     }
     return marks;
   };
 
-  const timings = sessionTimings(events, uptoIndex);
+  // Keep endpoint identity: equal or backward wall timestamps need not share an axis position.
+  const endpoints = new Map<string, { start: number; end: number; merged?: number }>();
+  for (let i = 0; i <= uptoIndex && i < events.length; i++) {
+    const event = events[i]!;
+    if (!event.sessionId) continue;
+    const endpoint = endpoints.get(event.sessionId) ?? { start: i, end: i };
+    endpoint.end = i;
+    if (event.type === 'pr.merged') endpoint.merged = i;
+    endpoints.set(event.sessionId, endpoint);
+  }
   const barFor = (sessionId: string, status: DisplayStatus): Lane['bars'] => {
-    const t = timings.get(sessionId);
-    if (!t?.start) return [];
+    const t = endpoints.get(sessionId);
+    if (!t) return [];
     const finished = status === 'merged' || status === 'archived' || status === 'exited';
-    const to = finished ? at(t.merged ?? t.end!) : cursorAt;
+    const from = eventAt(t.start);
+    const to = finished ? eventAt(t.merged ?? t.end) : cursorAt;
     const tone: Lane['bars'][number]['tone'] =
       status === 'merged' || status === 'archived'
         ? 'done'
@@ -476,7 +494,7 @@ export function ganttLanes(
           : status === 'in_review' || status === 'ready_to_merge'
             ? 'review'
             : 'working';
-    return [{ from: at(t.start), to: Math.max(to, at(t.start) + 0.004), tone }];
+    return [{ from, to: Math.max(to, from), tone }];
   };
 
   const lanes: Lane[] = [];
@@ -508,39 +526,17 @@ export function ganttLanes(
           e.type === 'plan.rejected',
       ),
     });
-    const avgTask =
-      tree.tasks
-        .map((t) =>
-          t.session
-            ? durationMs(
-                timings.get(t.session.session.id)?.start,
-                timings.get(t.session.session.id)?.merged,
-              )
-            : 0,
-        )
-        .filter((d) => d > 0)
-        .reduce((a, b, _i, arr) => a + b / arr.length, 0) || span * 0.25;
     for (const a of tree.agents) {
       const ids = new Set(a.tasks.flatMap((t) => (t.session ? [t.session.session.id] : [])));
       const bars = a.tasks.flatMap((t) =>
         t.session ? barFor(t.session.session.id, t.status) : [],
       );
-      const from = Math.min(...bars.map((b) => b.from));
-      const to = Math.max(...bars.map((b) => b.to));
       lanes.push({
         id: `agent-${a.agent}`,
         kind: 'agent',
         label: `${agentLabel(a.agent)} provider`,
         agent: a.agent,
-        bars: bars.length
-          ? [
-              {
-                from,
-                to,
-                tone: a.active ? 'working' : a.statusLabel === 'Done' ? 'done' : 'working',
-              },
-            ]
-          : [],
+        bars,
         marks: marksFor((e) => Boolean(e.sessionId && ids.has(e.sessionId))),
       });
     }
@@ -548,8 +544,7 @@ export function ganttLanes(
       const id = t.session?.session.id;
       const bars = id ? barFor(id, t.status) : [];
       if (!id) {
-        const width = Math.min(0.3, avgTask / span);
-        bars.push({ from: cursorAt, to: Math.min(1, cursorAt + width), tone: 'planned' });
+        bars.push({ from: cursorAt, to: cursorAt, tone: 'planned' });
       }
       lanes.push({
         id: `task-${t.node.id}`,

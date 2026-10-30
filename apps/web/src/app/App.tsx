@@ -13,7 +13,8 @@ import {
   type BoardColumn,
 } from '@helix/ui';
 import { useHelixSource, type HelixSource } from '../data/useHelixSource';
-import { useRun } from '../data/useRun';
+import { useRun, type RunView } from '../data/useRun';
+import { HistoryUnavailable } from './HistoryUnavailable';
 import { replayStart } from '../data/recordings';
 import { boardCards, relativeTo, type BoardCard } from '../data/describe';
 import { formatDuration, planTree } from '../data/observatory';
@@ -49,7 +50,7 @@ export function App() {
         <Spinner size={18} label="Connecting to Helix" />
       </div>
     );
-  return <Workspace events={source.events} source={source} />;
+  return <Workspace key={source.sourceId} events={source.events} source={source} />;
 }
 
 function Workspace({ events, source }: { events: readonly HelixEvent[]; source: HelixSource }) {
@@ -57,7 +58,15 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     recorded: source.mode !== 'live',
     speed: source.speed,
     startAt: Math.max(0, replayStart(events) - 1),
+    sourceId: source.sourceId,
+    connected: source.mode === 'live' && source.stream === 'live',
   });
+  if ('error' in run)
+    return <HistoryUnavailable error={run.error} events={events} source={source} />;
+  return <ProjectedWorkspace run={run} source={source} />;
+}
+
+function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource }) {
   const { state, bySeq, current } = run;
   const [selected, setSelected] = useState<string | null | undefined>(() =>
     window.matchMedia('(max-width: 1440px), (max-height: 900px)').matches ? null : undefined,
@@ -129,7 +138,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     ? state.sessions[tree.orchestrator.sessionId as keyof typeof state.sessions]
     : undefined;
   const sessionTitle = orch?.session.title ?? cards[0]?.card.title ?? state.project.name;
-  const elapsedMs = Date.parse(current.ts) - Date.parse(run.events[0]!.ts);
+  const elapsedMs = run.position;
 
   const active: SessionSummary | undefined = tree
     ? {
@@ -142,7 +151,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
             : tree.orchestrator.tone === 'done'
               ? 'merged'
               : 'working',
-        meta: `${tree.tasks.length} tasks · ${tree.agents.length} agents · ${formatDuration(elapsedMs)}`,
+        meta: `${tree.tasks.length} tasks · ${tree.agents.length} agents · ${formatDuration(elapsedMs)} ${run.timeMode} history`,
         live: mode === 'live',
       }
     : cards[0]
@@ -250,6 +259,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               {...(tree ? { goal: tree.plan.goal } : {})}
               mode={mode}
               elapsedMs={elapsedMs}
+              timeMode={run.timeMode}
               tab={tab}
               onTab={setTab}
               counts={{ board: activeCount, files: undefined, commits: undefined }}

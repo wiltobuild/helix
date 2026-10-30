@@ -261,6 +261,7 @@ export function SessionHeader({
   goal,
   mode,
   elapsedMs,
+  timeMode = 'elapsed',
   tab,
   onTab,
   counts,
@@ -277,6 +278,7 @@ export function SessionHeader({
   goal?: string;
   mode: 'live' | 'replaying' | 'recording' | 'paused';
   elapsedMs: number;
+  timeMode?: 'active' | 'elapsed';
   tab: SessionTab;
   onTab: (t: SessionTab) => void;
   counts: Partial<Record<SessionTab, number>>;
@@ -331,7 +333,7 @@ export function SessionHeader({
           {goal && <p className={s.goal}>{goal}</p>}
           <p className={s.subMeta}>
             {recorded ? `Recorded ${recorded} · ` : source.mode !== 'live' ? 'Example run · ' : ''}
-            {formatDuration(elapsedMs)} elapsed
+            {formatDuration(elapsedMs)} {timeMode} project history
             {source.recordingError && (
               <span className={s.recordingError} role="alert">
                 {' '}

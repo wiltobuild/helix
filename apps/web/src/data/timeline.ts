@@ -1,4 +1,18 @@
 import type { HelixEvent } from '@helix/contracts';
+import { timeMapping, type TimeAccounting } from './activeTime';
+
+/** Shared fractional chart adapter. Its zero-width intervals stay zero; no fake work width. */
+export function ganttTimeAxis(timing: TimeAccounting, mapping: ReturnType<typeof timeMapping>) {
+  const span = Math.max(mapping.total, 1);
+  return {
+    eventAt: (index: number) => mapping.forward(timing.times[index] ?? timing.start) / span,
+    tail: mapping.forward(timing.end) / span,
+  };
+}
+export function pointerTime(clientX: number, left: number, width: number, total: number): number {
+  if (![clientX, left, width, total].every(Number.isFinite) || width <= 0) return 0;
+  return Math.min(1, Math.max(0, (clientX - left) / width)) * Math.max(0, total);
+}
 
 /** Last event at or before the requested time; duplicate timestamps keep log order. */
 export function eventIndexAtTime(events: readonly HelixEvent[], time: number): number {
