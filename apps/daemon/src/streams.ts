@@ -32,37 +32,61 @@ export function openEventStream(
   });
   reply.raw.flushHeaders();
   let stopped = false;
+  let replayFull = false;
   let unsubscribe: (() => void) | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  const pending: string[] = [];
+  let pendingBytes = 0;
   const close = () => {
     if (stopped) return;
     stopped = true;
+    pending.length = 0;
+    pendingBytes = 0;
     clearInterval(timer);
     unsubscribe?.();
     streams.delete(close);
     reply.raw.destroy();
   };
+  // Full-resolution visual events exceed ordinary socket buffers. Respect
+  // backpressure instead of destroying a healthy connection after one write.
+  let blocked = false;
+  const flush = () => {
+    if (stopped || blocked) return;
+    while (pending.length && !stopped) {
+      const frame = pending.shift()!;
+      pendingBytes -= Buffer.byteLength(frame);
+      if (!reply.raw.write(frame)) {
+        blocked = true;
+        reply.raw.once('drain', () => {
+          blocked = false;
+          flush();
+        });
+        return;
+      }
+    }
+    // Finish complete accepted frames before reconnecting at the client's
+    // last delivered sequence. Destroying here would replay the same backlog.
+    if (replayFull && !stopped) reply.raw.end();
+  };
   const write = (frame: string) => {
-    if (stopped) return;
-    if (
-      reply.raw.writableLength > MAX_BUFFER ||
-      (reply.raw.socket?.writableLength ?? 0) > MAX_BUFFER
-    ) {
-      close();
+    if (stopped || replayFull) return;
+    if (pendingBytes + Buffer.byteLength(frame) > 64 * 1024 * 1024) {
+      replayFull = true;
+      clearInterval(timer);
+      unsubscribe?.();
+      flush();
       return;
     }
-    reply.raw.write(frame);
-    if (
-      reply.raw.writableLength > MAX_BUFFER ||
-      (reply.raw.socket?.writableLength ?? 0) > MAX_BUFFER
-    )
-      close();
+    pending.push(frame);
+    pendingBytes += Buffer.byteLength(frame);
+    flush();
   };
   streams.add(close);
   reply.raw.once('close', close);
   reply.raw.once('error', close);
   try {
     unsubscribe = core.events.subscribe(since, (event) => {
+      if (stopped || replayFull) return;
       if (!query.projectId || event.projectId === query.projectId) {
         if (
           process.env.NODE_ENV !== 'production' &&
@@ -79,7 +103,7 @@ export function openEventStream(
       }
     });
     // A synchronous replay can hit backpressure before subscribe returns its cleanup.
-    if (stopped) unsubscribe();
+    if (stopped || replayFull) unsubscribe();
     else timer = setInterval(() => write(sse.heartbeat), sse.heartbeatMs);
   } catch {
     close();

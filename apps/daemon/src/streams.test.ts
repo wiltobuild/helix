@@ -106,7 +106,7 @@ it('SSE gives Last-Event-ID precedence, filters projects, rejects invalid cursor
   ).toBe(400);
 });
 
-it('SSE shuts down synchronously replaying slow clients and unsubscribes', async () => {
+it('SSE unsubscribes when a client cancels a large replay', async () => {
   const { core, baseUrl } = await setup();
   const huge = {
     ...event,
@@ -118,6 +118,44 @@ it('SSE shuts down synchronously replaying slow clients and unsubscribes', async
   await response?.body?.cancel();
   await vi.waitFor(() => expect(core.events.subscribers.size).toBe(0));
 });
+
+it('SSE delivers large frames and following events across reconnect', async () => {
+  const { core, baseUrl, sockets } = await setup();
+  const large = {
+    ...event,
+    type: 'explain.note' as const,
+    payload: { text: 'raster-payload'.repeat(600_000) },
+  };
+  await core.events.append([event, large, event]);
+  const received: number[] = [];
+  const subscription = subscribeEvents({ baseUrl, onEvent: (e) => received.push(e.seq) });
+  cleanups.push(() => subscription.close());
+  await vi.waitFor(() => expect(received).toEqual([1, 2, 3]), { timeout: 15000 });
+  for (const socket of sockets) socket.destroy();
+  await core.events.append([large, event]);
+  await vi.waitFor(() => expect(received).toEqual([1, 2, 3, 4, 5]), { timeout: 15000 });
+});
+
+it('SSE drains a full bounded replay queue then resumes without gaps', async () => {
+  const { core, baseUrl } = await setup();
+  const large = {
+    ...event,
+    type: 'explain.note' as const,
+    payload: { text: 'x'.repeat(2 * 1024 * 1024) },
+  };
+  // Replay is synchronous: the first large write blocks, so later frames
+  // exceed the 64 MiB queue before a drain callback can run.
+  await core.events.append(Array.from({ length: 36 }, () => large));
+  const received: number[] = [];
+  const subscription = subscribeEvents({ baseUrl, onEvent: (e) => received.push(e.seq) });
+  cleanups.push(() => subscription.close());
+  await vi.waitFor(() => expect(received).toEqual(Array.from({ length: 36 }, (_, i) => i + 1)), {
+    timeout: 45000,
+  });
+  expect(core.events.cursors.length).toBeGreaterThan(1);
+  subscription.close();
+  await vi.waitFor(() => expect(core.events.subscribers.size).toBe(0));
+}, 60000);
 
 it('WS replays scrollback, accepts input/resize, sends out/exit and detaches', async () => {
   const { core, attachment, outputs, baseUrl } = await setup();
