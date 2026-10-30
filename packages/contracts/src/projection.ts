@@ -1,3 +1,4 @@
+import type { VisualDesign } from './visual-design.js';
 import {
   crossReviewerFor,
   type AgentActivity,
@@ -17,6 +18,7 @@ import { deriveStatus, type DisplayStatus } from './status.js';
 export type Worktree = PayloadFor<'worktree.created'>;
 export type WorktreeState = Worktree & { diff?: PayloadFor<'worktree.diff_updated'> };
 export type SessionState = {
+  design?: VisualDesign;
   session: Session;
   activity: AgentActivity;
   turnLimited: boolean;
@@ -107,6 +109,10 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
         throw new Error('Session identity mismatch');
       if (Object.hasOwn(state.sessions, e.payload.session.id))
         throw new Error('Session already exists');
+      break;
+    case 'design.updated':
+      sessionFor(state, e.payload.design.sessionId);
+      if (e.sessionId !== e.payload.design.sessionId) throw new Error('Design session mismatch');
       break;
     case 'approval.requested':
       sessionFor(state, e.payload.approval.sessionId);
@@ -239,6 +245,10 @@ function reduceInto(
   const next = state;
   const getSession = () => sessionFor(next, e.sessionId);
   switch (e.type) {
+    case 'design.updated':
+      getSession().design = structuredClone(e.payload.design);
+      getSession().lastEventSeq = e.seq;
+      break;
     case 'project.added':
       throw new Error('Project already added');
     case 'scheduling.changed':
