@@ -464,7 +464,13 @@
 
 .iconWork {
   color: var(--status-working);
-  animation: orchSpin 1.4s linear infinite;
+  animation: taskSpin 1.4s linear infinite;
+}
+
+@keyframes taskSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .iconTodo {
