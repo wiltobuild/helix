@@ -36,6 +36,18 @@ const planBody = {
   nodes: plan.nodes,
 };
 const cases = [
+  { name: 'discoveryIntake', method: 'discoveryIntake' },
+  {
+    name: 'changeDiscovery',
+    method: 'changeDiscovery',
+    payload: {
+      action: 'new',
+      mode: 'direct',
+      id: 'new',
+      revision: 0,
+      requestId: 'discovery-command',
+    },
+  },
   { name: 'projectIntake', method: 'projectIntake' },
   {
     name: 'changeIntake',

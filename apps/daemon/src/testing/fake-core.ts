@@ -133,6 +133,12 @@ export function createFakeCore() {
     changeIntake: vi
       .fn<NonNullable<HelixCore['changeIntake']>>()
       .mockResolvedValue({ draft: null }),
+    discoveryIntake: vi
+      .fn<NonNullable<HelixCore['discoveryIntake']>>()
+      .mockResolvedValue({ draft: null }),
+    changeDiscovery: vi
+      .fn<NonNullable<HelixCore['changeDiscovery']>>()
+      .mockResolvedValue({ draft: null }),
     health: vi.fn<HelixCore['health']>().mockResolvedValue({ status: 'ok', version: 'test' }),
     harnesses: vi
       .fn<HelixCore['harnesses']>()
