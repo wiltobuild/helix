@@ -1,5 +1,10 @@
 import { expect, test, vi } from 'vitest';
-import { sessionIdSchema, planNodeIdSchema, type VisualConcept } from '@helix/contracts';
+import {
+  projectBuilds,
+  sessionIdSchema,
+  planNodeIdSchema,
+  type VisualConcept,
+} from '@helix/contracts';
 import {
   needsVisualDesign,
   newVisualDesign,
@@ -122,6 +127,8 @@ test('automatic exploration, idempotent regenerate, replay and revision-bound ap
     expect(f.provider.mock.calls[0]?.length).toBeGreaterThan(0);
     const first = (await f.core.sessionDesign!(f.owner.id)).design!;
     expect(first.status).toBe('ready');
+    expect(first.brief).toBe('Build a coffee storefront');
+    expect(projectBuilds(f.state(f.project.id))[0]?.goal).toBe('Build a coffee storefront');
     const request = {
       requestId: 'regenerate',
       revision: first.revision,
@@ -134,6 +141,7 @@ test('automatic exploration, idempotent regenerate, replay and revision-bound ap
     ]);
     await f.drain();
     expect(f.provider).toHaveBeenCalledTimes(2);
+    expect(projectBuilds(f.state(f.project.id))[0]?.goal).toBe('Build a coffee storefront');
     expect(f.state(f.project.id).sessions[f.owner.id]!.design?.rounds).toHaveLength(2);
     await expect(
       f.core.changeDesign!(f.owner.id, {
@@ -240,6 +248,13 @@ test('direct visual task is held, then launches the same session after approval'
       text: 'Choose editorial layout',
     });
     expect(Object.keys(f.state(p.id).sessions)).toEqual([s.id]);
+    expect(projectBuilds(f.state(p.id))[0]?.goal).toBe('Build a website');
+    expect(projectBuilds(f.state(p.id))[0]?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'design', status: 'approved' }),
+        expect.objectContaining({ kind: 'implementation', started: 1 }),
+      ]),
+    );
     expect(f.state(p.id).sessions[s.id]!.worktree).toBeDefined();
   } finally {
     await f.core.shutdown();
