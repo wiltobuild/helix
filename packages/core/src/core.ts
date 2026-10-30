@@ -131,6 +131,12 @@ type Context = {
   causedBy?: EventSeq;
 };
 type Reason = PayloadFor<'feedback.routed'>['reason'];
+type Recheck = {
+  cause: EventSeq;
+  attempts: number;
+  resolved?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+};
 const RESUME_SCOPE = 'helix:core:resume:v1';
 const DELIVERY_SCOPE = 'helix:core:delivered:v1';
 const MESSAGE_SCOPE = 'helix:core:message:v1';
@@ -153,6 +159,12 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   const history = new Map<ProjectId, HelixEvent[]>();
   const runtimes = new Map<SessionId, Runtime>();
   const watchers = new Map<SessionId, Unsubscribe>();
+  const rechecks = new Map<SessionId, Recheck>();
+  const refreshing = new Map<SessionId, Promise<void>>();
+  const mergeBatches = new Map<
+    ProjectId,
+    { merges: HelixEvent<'pr.merged'>[]; timer: ReturnType<typeof setTimeout> }
+  >();
   const held = new Map<SessionId, Delivery[]>();
   const resumes = new Map<SessionId, string>();
   const seenFeedback = new Set<string>();
@@ -296,7 +308,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }
     });
   }
-  function background(sessionId: SessionId, work: () => Promise<void>): void {
+  function background(sessionId: SessionId, work: () => void | Promise<void>): void {
     if (closing) return;
     void enqueue(async () => {
       if (closing) return;
@@ -1241,6 +1253,84 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     const opened = await emit('pr.opened', { pr }, context(s.session, cause));
     watch(id, opened.seq);
   }
+  function cancelRecheck(id: SessionId): void {
+    clearTimeout(rechecks.get(id)?.timer);
+    rechecks.delete(id);
+  }
+  function canRecheck(id: SessionId): boolean {
+    const s = session(id);
+    return (
+      !closing &&
+      !shutdownRequested &&
+      watchers.has(id) &&
+      !s.session.archivedAt &&
+      s.pr?.state === 'open'
+    );
+  }
+  function refreshPr(id: SessionId, job: Recheck): void {
+    if (rechecks.get(id) !== job) return;
+    if (!canRecheck(id) || job.resolved) {
+      cancelRecheck(id);
+      return;
+    }
+    job.attempts++;
+    const s = session(id);
+    // Keep network I/O outside the writer queue so shutdown can unsubscribe and abort it.
+    // A later merge must get a read started after that merge, even if an older refresh is slow.
+    const pending = Promise.resolve(refreshing.get(id))
+      .then(() => {
+        if (canRecheck(id) && rechecks.get(id) === job)
+          return deps.scm!.refresh!(project(s.session.projectId).project, s.pr!.number);
+      })
+      .catch((error: unknown) => deps.log.error('Post-merge PR refresh failed', error));
+    refreshing.set(id, pending);
+    void pending.finally(() => {
+      if (refreshing.get(id) === pending) refreshing.delete(id);
+      background(id, () => {
+        if (rechecks.get(id) !== job) return;
+        if (!canRecheck(id) || job.resolved || job.attempts >= 4) {
+          cancelRecheck(id);
+          return;
+        }
+        // Watch callbacks are queued before refresh resolves; inspect their latest result.
+        job.timer = setTimeout(() => refreshPr(id, job), 20_000);
+        job.timer.unref();
+      });
+    });
+  }
+  function recheckAfterMerge(merged: HelixEvent<'pr.merged'>): void {
+    if (!deps.scm?.refresh || closing || shutdownRequested) return;
+    const pending = mergeBatches.get(merged.projectId);
+    if (pending) {
+      pending.merges.push(merged);
+      return;
+    }
+    const merges = [merged];
+    const timer = setTimeout(() => {
+      background(merged.sessionId!, async () => {
+        mergeBatches.delete(merged.projectId);
+        if (closing || shutdownRequested) return;
+        const latest = merges.at(-1)!;
+        for (const s of Object.values(project(merged.projectId).sessions)) {
+          const id = s.session.id;
+          if (!canRecheck(id)) continue;
+          cancelRecheck(id);
+          const note = await emit(
+            'explain.note',
+            {
+              text: `Re-checking PR #${s.pr!.number} after ${merges.map((e) => `PR #${e.payload.prNumber} merged (event #${e.seq})`).join(', ')}.`,
+            },
+            context(s.session, latest.seq),
+          );
+          const job: Recheck = { cause: note.seq, attempts: 0 };
+          rechecks.set(id, job);
+          refreshPr(id, job);
+        }
+      });
+    }, 250);
+    timer.unref();
+    mergeBatches.set(merged.projectId, { merges, timer });
+  }
   function watch(id: SessionId, cause?: EventSeq): void {
     const s = session(id);
     const needsMerge =
@@ -1257,8 +1347,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       id,
       deps.scm.watch(project(s.session.projectId).project, s.pr.number, (emission) => {
         const copy = structuredClone(emission);
+        const observationCause =
+          emission.type === 'pr.updated' ? (rechecks.get(id)?.cause ?? cause) : cause;
         background(id, async () => {
-          await onScm(id, copy, cause);
+          await onScm(id, copy, observationCause);
         });
       }),
     );
@@ -1279,13 +1371,20 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (number !== s.pr.number)
       throw new HelixError('INVALID_REQUEST', 'SCM update has the wrong PR');
     const e = await emit(emission.type, emission.payload, context(s.session, cause));
+    const recheck = rechecks.get(id);
+    if (emission.type === 'pr.updated' && recheck && recheck.cause === cause)
+      recheck.resolved =
+        emission.payload.pr.state !== 'open' || emission.payload.pr.mergeable !== 'unknown';
     if (session(id).pr?.state !== 'open')
       await stopReviewers(s.session, 'The worker PR was closed or merged.', e.seq);
     if (emission.type === 'pr.merged') {
+      cancelRecheck(id);
       watchers.get(id)?.();
       watchers.delete(id);
+      recheckAfterMerge(e as HelixEvent<'pr.merged'>);
       await schedule(s.session.projectId, e.seq);
     } else if (emission.type === 'pr.updated' && emission.payload.pr.state === 'closed') {
+      cancelRecheck(id);
       watchers.get(id)?.();
       watchers.delete(id);
     } else if (emission.type === 'ci.updated' && emission.payload.checks.failed > 0) {
@@ -1663,6 +1762,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     shutdown: () => {
       // Suppress scheduling even for exit callbacks already ahead of shutdown in the queue.
       shutdownRequested = true;
+      for (const batch of mergeBatches.values()) clearTimeout(batch.timer);
+      mergeBatches.clear();
+      for (const id of rechecks.keys()) cancelRecheck(id);
       return enqueue(async () => {
         if (closing) return;
         closing = true;

@@ -213,6 +213,64 @@ test('review adapters refuse shell write requests and permission expansion', asy
   expect(codex.frames.at(-1)).toEqual({ id: 'read', result: { decision: 'accept' } });
 });
 
+test('Codex reviewer surfaces the Daybreak sandbox startup failure as unavailable', () => {
+  const probe = new CodexProbe(
+    {},
+    { session: template, cwd: scratch, review: { worktreePath: worktree } },
+  );
+  const events: HarnessEmission[] = [];
+  probe.onEvent((e) => events.push(e));
+  probe.inject({
+    method: 'item/completed',
+    params: {
+      item: {
+        type: 'commandExecution',
+        command: 'git rev-parse HEAD',
+        status: 'failed',
+        exitCode: -1,
+        aggregatedOutput:
+          'Failed to create unified exec process: helper_unknown_error: setup refresh had errors',
+      },
+    },
+  });
+  expect(events).toContainEqual({ type: 'activity.changed', payload: { activity: 'unknown' } });
+  expect(
+    events.some(
+      (e) =>
+        e.type === 'chat.item' &&
+        e.payload.item.kind === 'message' &&
+        e.payload.item.role === 'system' &&
+        e.payload.item.text.includes(
+          'No AI review verdict was produced; CI is not an AI approval.',
+        ),
+    ),
+  ).toBe(true);
+  expect(probe.frames).toEqual([]);
+});
+
+test.each([
+  { exitCode: 1, aggregatedOutput: 'Tests failed' },
+  { exitCode: -1, aggregatedOutput: 'Other failure with private repository output' },
+  {
+    exitCode: 1,
+    aggregatedOutput:
+      'Failed to create unified exec process: helper_unknown_error: setup refresh had errors',
+  },
+])('ordinary command failures do not abandon review: $exitCode $aggregatedOutput', (failure) => {
+  const probe = new CodexProbe(
+    {},
+    { session: template, cwd: scratch, review: { worktreePath: worktree } },
+  );
+  const events: HarnessEmission[] = [];
+  probe.onEvent((e) => events.push(e));
+  probe.inject({
+    method: 'item/completed',
+    params: { item: { type: 'commandExecution', command: 'git show HEAD', ...failure } },
+  });
+  expect(events).toHaveLength(1);
+  expect(events[0]!.type).toBe('chat.item');
+});
+
 test('Codex reviewer forces scratch workspace-write and network access for local helix CLI', async () => {
   const transcript = path.join(root, 'protocol.jsonl');
   const session = await createHarness('codex', {
