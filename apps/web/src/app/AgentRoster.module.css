@@ -1,0 +1,109 @@
+.summary,
+.secondary {
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-wrap: anywhere;
+}
+
+.card[data-active] {
+  border-color: var(--status-working);
+}
+
+.header {
+  display: flex;
+  align-items: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.header > div {
+  min-width: 0;
+}
+
+.header h2 {
+  font: 650 18px / 1.35 var(--font-display);
+}
+
+.status {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.task {
+  line-height: 1.5;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  width: 100%;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--text-2);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.id {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.relationships {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.relationships button,
+.open {
+  background: none;
+  border: 0;
+  padding: 3px 0;
+  color: var(--accent-hover);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.open {
+  margin-top: auto;
+}
+
+.relationships button:hover,
+.open:hover {
+  text-decoration: underline;
+}
+
+.relationships button:focus-visible,
+.open:focus-visible {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 3px;
+}
