@@ -25,6 +25,7 @@ import { Board } from './Board';
 import { TimelineBar } from './TimelineBar';
 import { Inspector } from './Inspector';
 import { PlanView } from './PlanView';
+import { VisualDesignPanel } from './VisualDesignPanel';
 import { NewTaskDialog } from './NewTaskDialog';
 import { Onboarding } from './Onboarding';
 import s from './App.module.css';
@@ -58,7 +59,11 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
 
   const { state, bySeq, current } = run;
   const hasPlan = Object.keys(state.plans).length > 0;
-  const view = viewOverride ?? (hasPlan ? 'plan' : 'board');
+  const hasVisualDesign = Object.values(state.sessions).some((session) => session.design);
+  const needsVisualDecision = Object.values(state.sessions).some(
+    (session) => session.design && session.design.status !== 'approved',
+  );
+  const view = viewOverride ?? (needsVisualDecision ? 'visual' : hasPlan ? 'plan' : 'board');
   const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
   const activeCount = cards.filter((c) => c.column !== 'archive').length;
   const needsYou = cards.filter((c) => c.column === 'needs_you');
@@ -111,7 +116,10 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   }, [run]);
 
   return (
-    <div className={s.shell} data-inspector={selectedSession ? 'open' : 'closed'}>
+    <div
+      className={s.shell}
+      data-inspector={selectedSession && view !== 'visual' ? 'open' : 'closed'}
+    >
       <Sidebar
         project={state.project}
         cards={cards}
@@ -144,6 +152,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               items={[
                 { value: 'plan', label: 'Plan', icon: <Network size={13} /> },
                 { value: 'board', label: 'Board', icon: <LayoutGrid size={13} /> },
+                { value: 'visual', label: 'Design' },
               ]}
             />
             {live && source.client && (
@@ -196,12 +205,24 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         </header>
 
         <div className={s.content}>
+          {view !== 'visual' && hasVisualDesign && (
+            <div className={s.planBanner} role="status">
+              <span>
+                {needsVisualDecision
+                  ? 'A visual direction needs your input.'
+                  : 'The approved visual direction is available.'}
+              </span>
+              <Button size="sm" onClick={() => setView('visual')}>
+                Open design workspace
+              </Button>
+            </div>
+          )}
           {view === 'board' && state.schedulingPaused && (
             <div className={s.slotBanner} role="status">
               Scheduling is paused after Stop all. Approve a plan or create a task to resume.
             </div>
           )}
-          {view === 'board' && pendingPlan && (
+          {view !== 'plan' && pendingPlan && (
             <div className={s.planBanner} role="status">
               <span>
                 <strong>A plan is waiting for your approval.</strong> “{pendingPlan.goal}” ·{' '}
@@ -226,7 +247,16 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               </Button>
             </div>
           )}
-          {view === 'board' ? (
+          {view === 'visual' ? (
+            <VisualDesignPanel
+              state={state}
+              events={run.events}
+              selected={effectiveSelected}
+              isLive={live && run.isLive}
+              connected={source.stream === 'live'}
+              {...(live && source.client ? { client: source.client } : {})}
+            />
+          ) : view === 'board' ? (
             <Board
               cards={cards}
               selected={effectiveSelected}
@@ -247,7 +277,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         <TimelineBar run={run} />
       </main>
 
-      {selectedSession && (
+      {selectedSession && view !== 'visual' && (
         <Inspector
           key={selectedSession.session.id}
           tab={inspectorTab}
