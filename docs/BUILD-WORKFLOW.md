@@ -1,0 +1,20 @@
+# Project, Build and stage contract
+
+A **Project** is the repository/product. A **Build** is one requested outcome inside it. A **Stage** describes work within that outcome; it is not another build. Agent **sessions** remain execution identities (orchestrator, worker or reviewer).
+
+`projectBuilds(projectState)` in `@helix/contracts` is a pure read model. Pass the projection at the replay cursor. Each `BuildView` has `projectId`, `rootSessionId`, `title`, original `goal`, optional latest `planId`, owned `sessionIds`, and evidence-based `stages`. The root session ID is the existing identity, not a new database identifier. Unparented orchestrators and direct workers are roots; plan-attached workers and reviewers are not builds. Membership includes historical plans and descendant/reviewer sessions; progress counts use the latest plan only.
+
+The original goal is `session.prompt`. Core already saves the unchanged create-session request and initializes design from that prompt; design generation/refinement does not replace it. A plan's `goal` remains its own editable planning artifact. UI headers now retain the original request even when that artifact describes a narrower stage. Blank legacy prompts remain blank rather than inventing intent.
+
+Stages are observations, not a scheduler or authorization source:
+
+- Planning exists for an orchestrator; status comes from the latest plan's recorded approval state, or preparing before submission. `planId` binds the observation to that plan.
+- Design exists only when recorded design state exists. Status, revision, approved decision revision and optional checkpoint head come from that state. Pending/ready/failed/unavailable/cancelled are retained.
+- Implementation counts planned tasks, allocated worktrees and merged PRs. Allocated worktrees mean started, not success. No plan means one direct worker task.
+- Review exists only once workers have PR facts. Current AI approvals require the current PR head; stale reviews are counted separately. Ready-to-merge uses the existing gate calculation. These facts do not certify acceptance or declare the entire build complete.
+
+Stages can overlap: independent backend work may run while visual-dependent work waits. No synthetic intake, adversarial plan review, Output or acceptance-verifier stage is emitted. Add those only alongside real future events and revision bindings. Design/plan approvals, checkpoint commit binding, merge gates, API routes, session IDs, event names, recordings and storage are unchanged. No migration is needed.
+
+Guided intake should preserve the user's overall outcome when calling the existing create-session API. Keep a future reviewed brief as a separately versioned artifact bound to this root; do not overwrite historical `session.prompt` or reinterpret design decisions as plan approval. Plan review must bind to plan ID/revision; Output and acceptance must bind to the actual worker commit and approved brief/design. This patch supplies no new write API or approval power.
+
+Integration: internal `Page = 'sessions'`, SessionHeader and NewTaskDialog names remain compatibility details while user-facing navigation says Builds/New build. Agent detail and permission scope still correctly say session. The selected build scopes PlanTree, board, files, design, Tasks, Agents and PRs through `buildWorkspace(projectState, selectedRootOrAgentId)`. Recent builds changes that selection; the default is the latest recorded root. Project Overview, CI, Knowledge, event history/timing and project-wide Stop all retain their existing scope. Search includes all build roots and project task cards, including older builds outside the six recent shortcuts. Guided intake can select its newly created root through the same existing callback. Adjacent Agents roster patch overlaps only two copy lines in Pages.tsx; preserve its component replacement and apply Open build/New build wording. Branding also edits Chrome.tsx; retain its logo changes and these Build labels/stage props.

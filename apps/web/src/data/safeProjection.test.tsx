@@ -83,7 +83,7 @@ test('the unavailable view shows both retained variants and no approval or mutat
   expect(html).toContain(`View ${fixtures.passwordResetProject.name}`);
   expect(html.match(/<button/g)).toHaveLength(1); // Source selection only.
   expect(html).not.toContain('Approve plan');
-  expect(html).not.toContain('New task');
+  expect(html).not.toContain('New build');
   expect(html).not.toContain('Merge');
 });
 

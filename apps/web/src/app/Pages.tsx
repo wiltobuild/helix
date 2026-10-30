@@ -103,9 +103,9 @@ function Overview({ state, events, index, tree, onOpen, onSeek, onPage }: PagePr
       {tree && sum && (
         <section className={s.card}>
           <div className={s.cardHead}>
-            <h2>Current plan</h2>
+            <h2>Selected build plan</h2>
             <button type="button" className={s.link} onClick={() => onPage('sessions')}>
-              Open session →
+              Open build →
             </button>
           </div>
           <p className={s.lead}>{tree.plan.goal}</p>
@@ -271,7 +271,7 @@ function Tasks({ state, tree, onOpen }: PageProps) {
         </tbody>
       </table>
       {planned.length + extra.length === 0 && (
-        <p className={s.empty}>No tasks yet. Start one from Tasks ▾ → New task.</p>
+        <p className={s.empty}>No tasks yet. Start one from Tasks ▾ → New build.</p>
       )}
     </Frame>
   );

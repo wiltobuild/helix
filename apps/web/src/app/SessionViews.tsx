@@ -142,7 +142,10 @@ export function CommitsView({
   const merges = events
     .slice(0, index + 1)
     .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e.type === 'pr.merged');
+    .filter(
+      ({ e }) =>
+        e.type === 'pr.merged' && e.sessionId && Object.hasOwn(state.sessions, e.sessionId),
+    );
   if (list.length === 0 && merges.length === 0)
     return (
       <EmptyState

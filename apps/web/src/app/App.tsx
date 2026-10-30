@@ -9,7 +9,13 @@ import {
   PanelBottom,
   PanelRight,
 } from 'lucide-react';
-import { deriveStatus, type HarnessInfo, type HelixEvent, type Project } from '@helix/contracts';
+import {
+  deriveStatus,
+  type BuildView,
+  type HarnessInfo,
+  type HelixEvent,
+  type Project,
+} from '@helix/contracts';
 import {
   AgentBadge,
   ActorBadge,
@@ -23,6 +29,7 @@ import {
 } from '@helix/ui';
 import { useHelixSource, type HelixSource } from '../data/useHelixSource';
 import { useRun, type RunView } from '../data/useRun';
+import { buildWorkspace } from '../data/buildWorkspace';
 import { HistoryUnavailable } from './HistoryUnavailable';
 import { replayStart } from '../data/recordings';
 import { boardCards, relativeTo, type BoardCard } from '../data/describe';
@@ -78,7 +85,12 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
 }
 
 function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource }) {
-  const { state, bySeq, current } = run;
+  const { bySeq, current } = run;
+  const [selectedBuild, setSelectedBuild] = useState<string>();
+  const { builds, build, state } = useMemo(
+    () => buildWorkspace(run.state, selectedBuild),
+    [run.state, selectedBuild],
+  );
   const [selected, setSelected] = useState<string | null | undefined>(() =>
     window.matchMedia('(max-width: 1440px), (max-height: 900px)').matches ? null : undefined,
   );
@@ -144,6 +156,8 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   const [addRepoOpen, setAddRepoOpen] = useState(false);
 
   const selectSession = (id: string, tab = 'summary') => {
+    const owner = builds.find((b) => b.sessionIds.some((sessionId) => sessionId === id));
+    setSelectedBuild(owner?.rootSessionId ?? id);
     setInspectorHidden(false);
     setSelected(id);
     setInspectorTab(tab);
@@ -167,6 +181,10 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   );
   const tab: SessionTab = tabOverride ?? (needsVisualDecision ? 'visual' : 'plan');
   const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
+  const searchCards = useMemo(
+    () => boardCards(run.state, bySeq, current.ts),
+    [run.state, bySeq, current.ts],
+  );
   const activeCount = cards.filter((c) => c.column !== 'archive').length;
   const working = Object.values(state.sessions).filter(
     (x) => x.session.role !== 'orchestrator' && deriveStatus(x) === 'working',
@@ -200,7 +218,8 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   const orch = tree
     ? state.sessions[tree.orchestrator.sessionId as keyof typeof state.sessions]
     : undefined;
-  const sessionTitle = orch?.session.title ?? cards[0]?.card.title ?? state.project.name;
+  const sessionTitle =
+    build?.title ?? orch?.session.title ?? cards[0]?.card.title ?? state.project.name;
   const elapsedMs = run.position;
 
   const active: SessionSummary | undefined = tree
@@ -217,34 +236,31 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
         meta: `${tree.tasks.length} tasks · ${tree.agents.length} agents · ${formatDuration(elapsedMs)} ${run.timeMode} history`,
         live: mode === 'live',
       }
-    : cards[0]
+    : build
       ? {
-          id: cards[0].id,
-          title: cards[0].card.title,
-          identity: cards[0].identity,
-          status: cards[0].status,
-          meta: cards[0].card.updated ?? '',
+          id: build.rootSessionId,
+          title: build.title,
+          identity: identityFor(state, build.rootSessionId),
+          status: deriveStatus(state.sessions[build.rootSessionId]!),
+          meta: '',
           live: mode === 'live',
         }
       : undefined;
-  const recent: SessionSummary[] = Object.values(state.sessions)
-    .filter(
-      (x) =>
-        x.session.role !== 'reviewer' &&
-        x.session.id !== active?.id &&
-        (x.session.role === 'orchestrator' || !x.session.planNodeId),
-    )
+  const recent: SessionSummary[] = builds
+    .filter((b) => b.rootSessionId !== active?.id)
     .slice(-6)
     .reverse()
-    .map((x) => ({
-      id: x.session.id,
-      title: x.session.title,
-      identity: identityFor(state, x.session.id),
-      status: deriveStatus(x),
-      meta: relativeTo(bySeq.get(x.lastEventSeq)?.ts ?? x.session.createdAt, current.ts),
-      live: false,
-    }));
-
+    .map((b) => {
+      const x = run.state.sessions[b.rootSessionId]!;
+      return {
+        id: b.rootSessionId,
+        title: b.title,
+        identity: identityFor(run.state, b.rootSessionId),
+        status: deriveStatus(x),
+        meta: relativeTo(bySeq.get(x.lastEventSeq)?.ts ?? x.session.createdAt, current.ts),
+        live: false,
+      };
+    });
   const prCount = Object.values(state.sessions).filter((x) => x.pr).length;
 
   // Keyboard: [ ] step, L live, ⌘N new task, ⌘K search, ? shortcuts, Esc closes the inspector.
@@ -287,7 +303,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
       <StopAll
         client={source.client}
         projectId={state.project.id}
-        running={runningAgents(state)}
+        running={runningAgents(run.state)}
         canAct={run.isLive}
       />
     ) : (
@@ -331,7 +347,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
               state={state}
               source={source}
               title={sessionTitle}
-              {...(tree ? { goal: tree.plan.goal } : {})}
+              {...(build ? { goal: build.goal, build } : tree ? { goal: tree.plan.goal } : {})}
               mode={mode}
               elapsedMs={elapsedMs}
               timeMode={run.timeMode}
@@ -521,7 +537,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
           <div className={s.content}>
             <NavPage
               page={page}
-              state={state}
+              state={page === 'tasks' || page === 'agents' || page === 'prs' ? state : run.state}
               events={run.events}
               index={run.index}
               tree={tree}
@@ -582,7 +598,8 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
       <SearchDialog
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        cards={cards}
+        cards={searchCards}
+        builds={builds}
         onSelectSession={(id) => {
           openFromPage(id);
           setSearchOpen(false);
@@ -624,7 +641,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
 
 const SHORTCUTS: [string, string][] = [
   ['⌘K', 'Search tasks and commands'],
-  ['⌘N', 'New task'],
+  ['⌘N', 'New build'],
   ['⌘↵', 'Approve the plan (when it is waiting)'],
   ['⌘R', 'Request changes to the plan (when it is waiting)'],
   ['[  ]', 'Step back / forward one event'],
@@ -662,6 +679,7 @@ function SearchDialog({
   open,
   onOpenChange,
   cards,
+  builds,
   onSelectSession,
   onNewTask,
   onSwitchView,
@@ -669,6 +687,7 @@ function SearchDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   cards: readonly BoardCard[];
+  builds: readonly BuildView[];
   onSelectSession: (id: string) => void;
   onNewTask: () => void;
   onSwitchView: (view: 'board' | 'plan') => void;
@@ -698,7 +717,7 @@ function SearchDialog({
         onOpenChange(next);
       }}
       title="Search workspace"
-      description="Jump to a session, filter by branch or agent, or run a workspace command."
+      description="Find any build in this project, filter agent tasks, or run a workspace command."
     >
       <div className={s.dialogStack}>
         <TextField
@@ -709,6 +728,21 @@ function SearchDialog({
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
         />
+        <div className={s.searchList} aria-label="Matching builds">
+          {builds
+            .filter((b) => `${b.title} ${b.goal}`.toLowerCase().includes(q))
+            .map((b) => (
+              <button
+                key={b.rootSessionId}
+                type="button"
+                className={s.searchItem}
+                onClick={() => onSelectSession(b.rootSessionId)}
+              >
+                <span className={s.searchItemTitle}>{b.title}</span>
+                <span className={s.searchItemMeta}>Build</span>
+              </button>
+            ))}
+        </div>
         <div className={s.searchList} role="listbox" aria-label="Matching tasks">
           {matches.map((c) => (
             <button
@@ -735,7 +769,7 @@ function SearchDialog({
         </div>
         <div className={s.quickActions}>
           <Button size="sm" icon={<Plus size={13} />} onClick={onNewTask}>
-            New task
+            New build
           </Button>
           <Button size="sm" icon={<LayoutGrid size={13} />} onClick={() => onSwitchView('board')}>
             Board view

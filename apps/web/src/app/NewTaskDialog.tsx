@@ -53,7 +53,7 @@ export function NewTaskDialog({
       onOpenChange(false);
       onCreated(session.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start the task.');
+      setError(err instanceof Error ? err.message : 'Could not start the build.');
     } finally {
       setBusy(false);
     }
@@ -63,7 +63,7 @@ export function NewTaskDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="New task"
+      title="New build"
       description={
         demo
           ? 'Demo mode replays a recorded run. Start helixd to delegate real work.'
@@ -81,7 +81,7 @@ export function NewTaskDialog({
             disabled={demo || !title.trim() || !prompt.trim()}
             onClick={() => void submit()}
           >
-            {plan ? 'Plan and start' : 'Start task'}
+            {plan ? 'Create plan' : 'Start build'}
           </Button>
         </>
       }
@@ -95,7 +95,7 @@ export function NewTaskDialog({
       >
         <TextField
           id="task-title"
-          label="Task"
+          label="Build name"
           placeholder="Add password reset to the login flow"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -103,7 +103,7 @@ export function NewTaskDialog({
         />
         <TextArea
           id="task-prompt"
-          label="What should the agent do?"
+          label="What should this build achieve?"
           hint="Describe the outcome and how you'll know it's done. ⌘/Ctrl + Enter to start."
           placeholder="Users can request a reset link by email. Tokens expire after 30 minutes and work once."
           value={prompt}
@@ -114,7 +114,7 @@ export function NewTaskDialog({
           checked={plan}
           onCheckedChange={setPlan}
           label="Let the orchestrator plan it"
-          description="Claude Code splits the goal into tasks with dependencies and assigns each to Codex or Claude Code."
+          description="Claude Code plans tasks within this build. You approve the plan before workers start; visual work also needs design approval."
         />
         {plan ? (
           <div className={s.row}>
