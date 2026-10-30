@@ -802,6 +802,8 @@
   top: var(--graph-menu-top, 150px);
   right: var(--graph-menu-right, 12px);
   width: min(300px, 80vw);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

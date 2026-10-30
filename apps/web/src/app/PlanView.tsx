@@ -360,6 +360,56 @@ function PlanCanvas({
   const [autoFit, setAutoFit] = useState(false);
   const [manualZoom, setManualZoom] = useState(false);
   const [following, setFollowing] = useState(true);
+  const optionsRef = useRef<HTMLDetailsElement>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  useLayoutEffect(() => {
+    const details = optionsRef.current;
+    if (!optionsOpen || !details) return;
+    const bounds = details.getBoundingClientRect();
+    const menu = details.querySelector<HTMLDivElement>('[data-graph-menu]');
+    if (!menu) return;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const top = Math.max(8, Math.min(bounds.bottom + 4, height - menu.offsetHeight - 8));
+    const right = Math.max(8, Math.min(width - bounds.right, width - menu.offsetWidth - 8));
+    details.style.setProperty('--graph-menu-top', `${top}px`);
+    details.style.setProperty('--graph-menu-right', `${right}px`);
+    const close = () => {
+      if (menu.contains(document.activeElement)) {
+        details.querySelector('summary')?.focus({ preventScroll: true });
+      }
+      details.open = false;
+      setOptionsOpen(false);
+    };
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !details.contains(event.target)) close();
+    };
+    // Layout can move the anchor without resizing it (focus mode, panel toggles,
+    // toolbar scrolling). Observe its position only while this small menu is open.
+    let frame = 0;
+    const checkAnchor = () => {
+      const next = details.getBoundingClientRect();
+      if (
+        !details.isConnected ||
+        window.innerWidth !== width ||
+        window.innerHeight !== height ||
+        Math.abs(next.left - bounds.left) > 0.5 ||
+        Math.abs(next.top - bounds.top) > 0.5 ||
+        Math.abs(next.width - bounds.width) > 0.5 ||
+        Math.abs(next.height - bounds.height) > 0.5
+      ) {
+        close();
+        return;
+      }
+      frame = requestAnimationFrame(checkAnchor);
+    };
+    frame = requestAnimationFrame(checkAnchor);
+    document.addEventListener('pointerdown', outside);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('pointerdown', outside);
+    };
+  }, [optionsOpen]);
   const followed = useRef<string | null>(null);
   const groups = graph?.groups ?? [];
   const working =
@@ -678,15 +728,10 @@ function PlanCanvas({
 
   const controls = (
     <details
+      ref={optionsRef}
       className={s.graphOptions}
       onToggle={(event) => {
-        if (!event.currentTarget.open) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        event.currentTarget.style.setProperty('--graph-menu-top', `${bounds.bottom + 4}px`);
-        event.currentTarget.style.setProperty(
-          '--graph-menu-right',
-          `${Math.max(12, window.innerWidth - bounds.right)}px`,
-        );
+        setOptionsOpen(event.currentTarget.open);
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && event.currentTarget.open) {
@@ -698,7 +743,7 @@ function PlanCanvas({
       }}
     >
       <summary>Graph options</summary>
-      <div className={s.controls} role="group" aria-label="Graph controls">
+      <div data-graph-menu className={s.controls} role="group" aria-label="Graph controls">
         {selectedTask && <span>Selected dependency path · {related.size} tasks</span>}
         <Button size="sm" onClick={goToWorking}>
           {client ? 'Resume live' : 'Go to current work'}
