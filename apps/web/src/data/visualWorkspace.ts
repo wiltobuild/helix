@@ -107,6 +107,8 @@ export function parseVisualReferences(text: string): string[] {
 }
 
 /** One unresolved submission at a time. Retrying an uncertain response reuses its identity. */
+export class VisualSubmissionRejected extends Error {}
+
 export class VisualSubmission {
   private pending?: VisualCommand;
   private busy = false;
@@ -133,6 +135,9 @@ export class VisualSubmission {
     try {
       await adapter.send(this.pending);
       return true;
+    } catch (failure) {
+      if (failure instanceof VisualSubmissionRejected) this.pending = undefined;
+      throw failure;
     } finally {
       this.busy = false;
       // Retain identity until a fresh server revision is observed, including after success.

@@ -6,6 +6,7 @@ import {
   rasterUrl,
   visualUrl,
   VisualSubmission,
+  VisualSubmissionRejected,
   type VisualAction,
   type VisualConceptView,
   type VisualRoundView,
@@ -164,7 +165,7 @@ function WorkspaceRevision({
       }
     } catch (failure) {
       setActionError(failure instanceof Error ? failure.message : 'Could not save this decision.');
-      setUncertain(action);
+      setUncertain(failure instanceof VisualSubmissionRejected ? undefined : action);
     } finally {
       setBusy(false);
     }

@@ -30,6 +30,7 @@ import { Board } from './Board';
 import { Dock } from './Dock';
 import { Inspector } from './Inspector';
 import { PlanView } from './PlanView';
+import { VisualDesignPanel } from './VisualDesignPanel';
 import { NavPage } from './Pages';
 import { CommitsView, FilesView } from './SessionViews';
 import { NewTaskDialog } from './NewTaskDialog';
@@ -72,6 +73,9 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   const selectSession = (id: string, tab = 'summary') => {
     setSelected(id);
     setInspectorTab(tab);
+    setTab((currentTab) =>
+      currentTab === 'visual' || (currentTab === null && needsVisualDecision) ? 'plan' : currentTab,
+    );
   };
   const openFromPage = (id: string, tab = 'summary') => {
     setPage('sessions');
@@ -83,7 +87,11 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     [state, run.events, run.index, current.ts],
   );
   // Plan is the primary workspace, including while the orchestrator is preparing it.
-  const tab: SessionTab = tabOverride ?? 'plan';
+  const hasVisualDesign = Object.values(state.sessions).some((session) => session.design);
+  const needsVisualDecision = Object.values(state.sessions).some(
+    (session) => session.design && session.design.status !== 'approved',
+  );
+  const tab: SessionTab = tabOverride ?? (needsVisualDecision ? 'visual' : 'plan');
   const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
   const activeCount = cards.filter((c) => c.column !== 'archive').length;
   const working = Object.values(state.sessions).filter(
@@ -109,6 +117,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   const selectedSession = effectiveSelected
     ? state.sessions[effectiveSelected as keyof typeof state.sessions]
     : undefined;
+  const showInspector = !!selectedSession && !(page === 'sessions' && tab === 'visual');
   const live = source.mode === 'live';
   const repoList: readonly Project[] =
     source.projects.length > 0 ? source.projects : [state.project];
@@ -203,7 +212,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     );
 
   return (
-    <div className={s.shell} data-inspector={selectedSession ? 'open' : 'closed'}>
+    <div className={s.shell} data-inspector={showInspector ? 'open' : 'closed'}>
       <TopBar
         source={source}
         working={working}
@@ -222,7 +231,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         }}
         {...(active ? { active } : {})}
         recent={recent}
-        onOpenSession={(id) => selectSession(id)}
+        onOpenSession={openFromPage}
         onSettings={() => setSettingsOpen(true)}
       />
 
@@ -250,6 +259,28 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
               activeCount={activeCount}
             />
             <div className={s.content}>
+              {tab !== 'visual' && hasVisualDesign && (
+                <div className={s.planBanner} role="status">
+                  <span>
+                    {needsVisualDecision
+                      ? 'A visual direction needs your input.'
+                      : 'The approved visual direction is available.'}
+                  </span>
+                  <Button size="sm" onClick={() => setTab('visual')}>
+                    Open design workspace
+                  </Button>
+                </div>
+              )}
+              {tab === 'visual' && (
+                <VisualDesignPanel
+                  state={state}
+                  events={run.events}
+                  selected={effectiveSelected}
+                  isLive={live && run.isLive}
+                  connected={source.stream === 'live'}
+                  {...(live && source.client ? { client: source.client } : {})}
+                />
+              )}
               {tab === 'board' && (
                 <>
                   {tree?.plan.status === 'awaiting_approval' && (
@@ -328,7 +359,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         />
       </main>
 
-      {selectedSession && (
+      {selectedSession && showInspector && (
         <Inspector
           key={selectedSession.session.id}
           tab={inspectorTab}
@@ -353,8 +384,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
           : {})}
         onCreated={(id) => {
           run.goLive();
-          setPage('sessions');
-          setSelected(id);
+          openFromPage(id);
         }}
       />
 
@@ -363,8 +393,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         onOpenChange={setSearchOpen}
         cards={cards}
         onSelectSession={(id) => {
-          setPage('sessions');
-          setSelected(id);
+          openFromPage(id);
           setSearchOpen(false);
         }}
         onNewTask={() => {
