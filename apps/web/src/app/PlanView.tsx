@@ -733,6 +733,12 @@ function PlanCanvas({
       onToggle={(event) => {
         setOptionsOpen(event.currentTarget.open);
       }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          event.currentTarget.open = false;
+          setOptionsOpen(false);
+        }
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && event.currentTarget.open) {
           event.preventDefault();
