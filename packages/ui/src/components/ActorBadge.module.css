@@ -4,7 +4,7 @@
   gap: 7px;
   min-width: 0;
   color: var(--text);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .symbol {
@@ -15,26 +15,28 @@
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
 
 .meta {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   min-width: 0;
   color: var(--text-3);
-  font: 500 var(--text-2xs) / 1 var(--font-mono);
+  font: 500 var(--text-xs) / 1.35 var(--font-mono);
 }
 
 .provider {
   color: var(--agent);
-}
-
-.model {
-  color: var(--text-3);
-  font-weight: 400;
 }
 
 /* A reviewer is the opposite agent judging the author's work: tag it so the two never blur. */

@@ -63,8 +63,8 @@ export function TopBar({
   return (
     <header className={s.topbar}>
       <div className={s.brand}>
+        <span className={s.wordmark}>Helix</span>
         <HelixLogo size={24} active={working > 0} />
-        <span className={s.wordmark}>HELIX</span>
         <span className={s.tagline}>Coding Agent Orchestrator</span>
         {!live && <span className={s.demoTag}>Demo</span>}
       </div>

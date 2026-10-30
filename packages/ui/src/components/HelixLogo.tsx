@@ -1,22 +1,21 @@
+import type { CSSProperties } from 'react';
 import { cx } from '../cx';
 import s from './HelixLogo.module.css';
 
 export interface HelixLogoProps {
-  /** Pixel width and height of the SVG mark (default 22). */
+  /** Height of the mark; the horizontal mark is twice as wide. */
   size?: number;
-  /** Gently pulses base-pair rungs and nucleotide nodes when agents are actively working. */
+  /** Advances the opposing dotted strands while work is in progress. */
   active?: boolean;
-  /** `mark` = standalone two-strand DNA crossover; `badge` = framed squircle tile. */
   variant?: 'mark' | 'badge';
   className?: string;
 }
 
-/**
- * The Helix two-strand DNA mark:
- *   Strand A (--strand-claude) = Claude Code
- *   Strand B (--strand-codex)  = Codex
- *   Base-pair rungs            = shared contract & append-only event log
- */
+// PRD.html: samples spaced by 14 at k=.045, opposing sine waves, depth-shaded dots,
+// neutral rungs on alternate samples, phase advancing .012 per 60 Hz frame.
+const samples = Array.from({ length: 19 }, (_, i) => ({ x: 4 + i * 3.1, phase: i * 0.63 }));
+const period = (2 * Math.PI) / 0.72;
+
 export function HelixLogo({
   size = 22,
   active = false,
@@ -26,68 +25,59 @@ export function HelixLogo({
   return (
     <svg
       className={cx(s.logo, className)}
-      width={size}
+      width={size * 2}
       height={size}
-      viewBox="0 0 32 32"
+      viewBox="0 0 64 32"
       fill="none"
+      data-helix="dotted"
       data-active={active || undefined}
       aria-hidden
     >
-      {variant === 'badge' && (
-        <rect x="1" y="1" width="30" height="30" rx="8" className={s.tile} strokeWidth="1.5" />
+      {variant === 'badge' && <rect x="1" y="1" width="62" height="30" rx="8" className={s.tile} />}
+      {samples
+        .filter((_, i) => i % 2 === 0)
+        .map(({ x, phase }) => (
+          <line
+            key={x}
+            className={s.rung}
+            x1={x}
+            x2={x}
+            y1="6"
+            y2="26"
+            style={
+              {
+                '--height': Math.abs(Math.sin(phase)),
+                '--delay': `${-phase / 0.72}s`,
+              } as CSSProperties
+            }
+          />
+        ))}
+      {[false, true].map((front) =>
+        [0, Math.PI].map((offset, strand) =>
+          samples.map(({ x, phase }, i) => {
+            const angle = phase + offset;
+            return (
+              <circle
+                key={`${front}-${strand}-${i}`}
+                className={cx(strand ? s.rust : s.teal, front ? s.front : s.back)}
+                cx={x}
+                cy="16"
+                r="1.5"
+                style={
+                  {
+                    '--y': `${Math.sin(angle) * 10}px`,
+                    '--depth': 0.625 + 0.275 * Math.cos(angle),
+                    '--radius': `${1.3 + 0.6 * Math.cos(angle)}px`,
+                    '--visibility': Math.cos(angle) >= 0 === front ? 'visible' : 'hidden',
+                    '--delay': `${-angle / 0.72}s`,
+                    '--period': `${period}s`,
+                  } as CSSProperties
+                }
+              />
+            );
+          }),
+        ),
       )}
-      <line
-        className={cx(s.rung, s.rung1)}
-        x1="10"
-        y1="7"
-        x2="22"
-        y2="7"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <line
-        className={cx(s.rung, s.rung2)}
-        x1="11"
-        y1="13"
-        x2="21"
-        y2="13"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <line
-        className={cx(s.rung, s.rung3)}
-        x1="11"
-        y1="19"
-        x2="21"
-        y2="19"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <line
-        className={cx(s.rung, s.rung4)}
-        x1="10"
-        y1="25"
-        x2="22"
-        y2="25"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path
-        className={s.strandClaude}
-        d="M8 4 C24 10, 8 22, 24 28"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-      />
-      <path
-        className={s.strandCodex}
-        d="M24 4 C8 10, 24 22, 8 28"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-      />
-      <circle className={cx(s.nodeClaude, s.nodeA)} cx="8" cy="4" r="2.1" />
-      <circle className={cx(s.nodeCodex, s.nodeB)} cx="24" cy="4" r="2.1" />
-      <circle className={cx(s.nodeClaude, s.nodeB)} cx="24" cy="28" r="2.1" />
-      <circle className={cx(s.nodeCodex, s.nodeA)} cx="8" cy="28" r="2.1" />
     </svg>
   );
 }

@@ -4,102 +4,218 @@
   vertical-align: middle;
   overflow: visible;
 }
-
 .tile {
   fill: var(--surface);
   stroke: var(--border-strong);
 }
-
 .rung {
   stroke: var(--border-strong);
-  opacity: 0.75;
+  stroke-width: 0.7;
+  opacity: 0.65;
+  transform-origin: center;
+  transform: scaleY(var(--height));
 }
-
-.strandClaude {
-  stroke: var(--strand-claude);
+.teal,
+.rust {
+  transform: translateY(var(--y));
+  opacity: var(--depth);
+  r: var(--radius);
+  visibility: var(--visibility);
 }
-
-.strandCodex {
-  stroke: var(--strand-codex);
-}
-
-.nodeClaude {
-  fill: var(--strand-claude);
-}
-
-.nodeCodex {
+.teal {
   fill: var(--strand-codex);
 }
-
-.nodeA,
-.nodeB {
-  transform-box: fill-box;
-  transform-origin: center;
+.rust {
+  fill: var(--strand-claude);
 }
-
-@keyframes helixRungPulse {
-  0%,
-  100% {
-    opacity: 0.4;
-    stroke-width: 1.4;
+/* Sixteen samples of the PRD sine/depth equations, interpolated linearly. */
+@keyframes strand {
+  0% {
+    transform: translateY(0px);
+    opacity: 0.9;
+    r: 1.9px;
+  }
+  6.25% {
+    transform: translateY(3.8268px);
+    opacity: 0.8791;
+    r: 1.8543px;
+  }
+  12.5% {
+    transform: translateY(7.0711px);
+    opacity: 0.8195;
+    r: 1.7243px;
+  }
+  18.75% {
+    transform: translateY(9.2388px);
+    opacity: 0.7302;
+    r: 1.5296px;
+  }
+  25% {
+    transform: translateY(10px);
+    opacity: 0.625;
+    r: 1.3px;
+  }
+  31.25% {
+    transform: translateY(9.2388px);
+    opacity: 0.5198;
+    r: 1.0704px;
+  }
+  37.5% {
+    transform: translateY(7.0711px);
+    opacity: 0.4305;
+    r: 0.8757px;
+  }
+  43.75% {
+    transform: translateY(3.8268px);
+    opacity: 0.3709;
+    r: 0.7457px;
   }
   50% {
-    opacity: 0.95;
-    stroke-width: 2;
+    transform: translateY(0px);
+    opacity: 0.35;
+    r: 0.7px;
+  }
+  56.25% {
+    transform: translateY(-3.8268px);
+    opacity: 0.3709;
+    r: 0.7457px;
+  }
+  62.5% {
+    transform: translateY(-7.0711px);
+    opacity: 0.4305;
+    r: 0.8757px;
+  }
+  68.75% {
+    transform: translateY(-9.2388px);
+    opacity: 0.5198;
+    r: 1.0704px;
+  }
+  75% {
+    transform: translateY(-10px);
+    opacity: 0.625;
+    r: 1.3px;
+  }
+  81.25% {
+    transform: translateY(-9.2388px);
+    opacity: 0.7302;
+    r: 1.5296px;
+  }
+  87.5% {
+    transform: translateY(-7.0711px);
+    opacity: 0.8195;
+    r: 1.7243px;
+  }
+  93.75% {
+    transform: translateY(-3.8268px);
+    opacity: 0.8791;
+    r: 1.8543px;
+  }
+  100% {
+    transform: translateY(0px);
+    opacity: 0.9;
+    r: 1.9px;
   }
 }
-
-@keyframes helixNodeA {
-  0%,
-  100% {
-    transform: translateX(0) scale(1);
+@keyframes rung {
+  0% {
+    transform: scaleY(0);
+  }
+  6.25% {
+    transform: scaleY(0.3827);
+  }
+  12.5% {
+    transform: scaleY(0.7071);
+  }
+  18.75% {
+    transform: scaleY(0.9239);
+  }
+  25% {
+    transform: scaleY(1);
+  }
+  31.25% {
+    transform: scaleY(0.9239);
+  }
+  37.5% {
+    transform: scaleY(0.7071);
+  }
+  43.75% {
+    transform: scaleY(0.3827);
   }
   50% {
-    transform: translateX(1.5px) scale(1.12);
+    transform: scaleY(0);
+  }
+  56.25% {
+    transform: scaleY(0.3827);
+  }
+  62.5% {
+    transform: scaleY(0.7071);
+  }
+  68.75% {
+    transform: scaleY(0.9239);
+  }
+  75% {
+    transform: scaleY(1);
+  }
+  81.25% {
+    transform: scaleY(0.9239);
+  }
+  87.5% {
+    transform: scaleY(0.7071);
+  }
+  93.75% {
+    transform: scaleY(0.3827);
+  }
+  100% {
+    transform: scaleY(0);
   }
 }
+.logo[data-active] .teal,
+.logo[data-active] .rust {
+  animation: strand var(--period) linear var(--delay) infinite;
+}
+.logo[data-active] .rung {
+  animation: rung 8.726646s linear var(--delay) infinite;
+}
 
-@keyframes helixNodeB {
+/* Paint the near strand last, as in the PRD. Switch layers at the separated wave peaks. */
+@keyframes front {
   0%,
   100% {
-    transform: translateX(0) scale(1);
+    visibility: visible;
   }
-  50% {
-    transform: translateX(-1.5px) scale(1.12);
+  25% {
+    visibility: hidden;
+  }
+  75% {
+    visibility: visible;
   }
 }
-
-.logo[data-active='true'] .rung1 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 0s;
+@keyframes back {
+  0%,
+  100% {
+    visibility: hidden;
+  }
+  25% {
+    visibility: visible;
+  }
+  75% {
+    visibility: hidden;
+  }
 }
-
-.logo[data-active='true'] .rung2 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 0.35s;
+.logo[data-active] .front {
+  animation:
+    strand var(--period) linear var(--delay) infinite,
+    front var(--period) step-end var(--delay) infinite;
 }
-
-.logo[data-active='true'] .rung3 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 0.7s;
+.logo[data-active] .back {
+  animation:
+    strand var(--period) linear var(--delay) infinite,
+    back var(--period) step-end var(--delay) infinite;
 }
-
-.logo[data-active='true'] .rung4 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 1.05s;
-}
-
-.logo[data-active='true'] .nodeA {
-  animation: helixNodeA 2.2s var(--ease-in-out) infinite;
-}
-
-.logo[data-active='true'] .nodeB {
-  animation: helixNodeB 2.2s var(--ease-in-out) infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .logo[data-active='true'] .rung1,
-  .logo[data-active='true'] .rung2,
-  .logo[data-active='true'] .rung3,
-  .logo[data-active='true'] .rung4,
-  .logo[data-active='true'] .nodeA,
-  .logo[data-active='true'] .nodeB {
+  .logo[data-active] .teal,
+  .logo[data-active] .rust,
+  .logo[data-active] .rung {
     animation: none;
   }
 }
