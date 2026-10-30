@@ -73,6 +73,9 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   const selectSession = (id: string, tab = 'summary') => {
     setSelected(id);
     setInspectorTab(tab);
+    setTab((currentTab) =>
+      currentTab === 'visual' || (currentTab === null && needsVisualDecision) ? 'plan' : currentTab,
+    );
   };
   const openFromPage = (id: string, tab = 'summary') => {
     setPage('sessions');
@@ -228,7 +231,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         }}
         {...(active ? { active } : {})}
         recent={recent}
-        onOpenSession={(id) => selectSession(id)}
+        onOpenSession={openFromPage}
         onSettings={() => setSettingsOpen(true)}
       />
 
@@ -381,8 +384,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
           : {})}
         onCreated={(id) => {
           run.goLive();
-          setPage('sessions');
-          setSelected(id);
+          openFromPage(id);
         }}
       />
 
@@ -391,8 +393,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
         onOpenChange={setSearchOpen}
         cards={cards}
         onSelectSession={(id) => {
-          setPage('sessions');
-          setSelected(id);
+          openFromPage(id);
           setSearchOpen(false);
         }}
         onNewTask={() => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { HelixClient } from '@helix/api-client';
 import type { HelixEvent, ProjectState, SessionId, VisualDesign } from '@helix/contracts';
 import { visualDesignRequest, visualDesignView } from '../data/visualDesignAdapter';
+import { VisualSubmissionRejected } from '../data/visualWorkspace';
 import { VisualWorkspace } from './VisualWorkspace';
 
 interface Props {
@@ -124,8 +125,17 @@ function ConnectedWorkspace({
                   command.workspaceId !== sessionId ||
                   command.revision !== design?.revision
                 )
-                  throw new Error('This design changed. Refresh before making a decision.');
-                const request = visualDesignRequest(command);
+                  throw new VisualSubmissionRejected(
+                    'This design changed. Refresh before making a decision.',
+                  );
+                let request;
+                try {
+                  request = visualDesignRequest(command);
+                } catch (failure) {
+                  throw new VisualSubmissionRejected(
+                    failure instanceof Error ? failure.message : 'Invalid design decision.',
+                  );
+                }
                 if (request.references) {
                   request.references = [
                     ...new Map(
@@ -136,7 +146,7 @@ function ConnectedWorkspace({
                     ).values(),
                   ];
                   if (request.references.length > 20)
-                    throw new Error(
+                    throw new VisualSubmissionRejected(
                       'This design has reached its reference limit of 20 images and links.',
                     );
                 }

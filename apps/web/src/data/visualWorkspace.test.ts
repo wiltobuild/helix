@@ -3,6 +3,7 @@ import {
   canChooseRound,
   parseVisualReferences,
   VisualSubmission,
+  VisualSubmissionRejected,
   visualUrl,
   type VisualCommand,
 } from './visualWorkspace';
@@ -16,6 +17,21 @@ const draft: Omit<VisualCommand, 'requestId'> = {
   feedback: 'Try three warmer directions',
   references: [],
 };
+
+test('a definite preflight rejection allows correction with a new request identity', async () => {
+  let id = 0;
+  const submission = new VisualSubmission(() => `request-${++id}`);
+  const send = vi
+    .fn()
+    .mockRejectedValueOnce(new VisualSubmissionRejected('Reference limit exceeded'))
+    .mockResolvedValue(undefined);
+  await expect(submission.send(draft, { send })).rejects.toThrow('Reference limit');
+  await expect(
+    submission.send({ ...draft, references: ['https://example.com'] }, { send }),
+  ).resolves.toBe(true);
+  expect(send.mock.calls[0]?.[0]).toMatchObject({ requestId: 'request-1' });
+  expect(send.mock.calls[1]?.[0]).toMatchObject({ requestId: 'request-2' });
+});
 
 test('reject-all ignores repeated in-flight clicks and retries an uncertain response with the same identity', async () => {
   let reject!: (reason: Error) => void;
