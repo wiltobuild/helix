@@ -11,9 +11,9 @@ test('HelixLogo renders the horizontal dotted PRD strands with neutral rungs and
   expect(idleHtml).not.toContain('data-active="true"');
   expect(idleHtml).toContain('width="48"');
   expect(idleHtml).toContain('height="24"');
-  expect(idleHtml.match(/<line /g)?.length).toBe(10);
-  expect(idleHtml).not.toContain('<path ');
-  expect(idleHtml.match(/<circle /g)?.length).toBe(76);
+  expect(idleHtml.match(/<line /g)?.length).toBe(12);
+  expect(idleHtml.match(/<path /g)?.length).toBe(2);
+  expect(idleHtml.match(/<circle /g)?.length).toBe(50);
 
   const activeBadgeHtml = renderToStaticMarkup(<HelixLogo size={38} active variant="badge" />);
   expect(activeBadgeHtml).toContain('data-active="true"');

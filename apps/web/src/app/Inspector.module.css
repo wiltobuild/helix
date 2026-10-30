@@ -28,22 +28,12 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 40px;
+  width: 56px;
   height: 40px;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--strand-orchestrator) 14%, var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--strand-orchestrator) 40%, var(--border));
   color: var(--strand-orchestrator);
-}
-
-.orchTile[data-active] svg {
-  animation: spin 6s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .headText {

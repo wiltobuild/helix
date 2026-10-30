@@ -117,9 +117,6 @@
 
 .time {
   flex: none;
-}
-
-.time {
   color: var(--text-3);
   font: var(--text-2xs) / 1 var(--font-mono);
   font-variant-numeric: tabular-nums;

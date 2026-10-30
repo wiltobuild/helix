@@ -22,6 +22,7 @@
   letter-spacing: -0.035em;
   background: linear-gradient(100deg, var(--strand-codex), var(--strand-claude));
   background-clip: text;
+  -webkit-background-clip: text;
   color: transparent;
 }
 
