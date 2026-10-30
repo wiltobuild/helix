@@ -491,3 +491,336 @@
     animation: none;
   }
 }
+
+.planning {
+  display: grid;
+  gap: var(--space-4);
+  width: min(100%, 720px);
+  margin: auto;
+}
+.planning .orch {
+  width: 100%;
+}
+.planningNext {
+  padding: var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+}
+.planningNext p {
+  margin: var(--space-2) 0 0;
+  color: var(--text-2);
+}
+.planningEvents {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.planningEvents li + li {
+  margin-top: var(--space-2);
+}
+
+.standbyAgents {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+}
+.standbyAgents::before {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--space-4));
+  left: 50%;
+  height: var(--space-4);
+  border-left: 1px dashed var(--border-strong);
+}
+.standbyAgent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--agent) 35%, var(--border));
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+}
+.standbyAgent::before {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--space-4));
+  height: var(--space-4);
+  border-top: 1px dashed var(--border-strong);
+}
+.standbyAgent:first-child::before {
+  left: 50%;
+  right: calc(-1 * var(--space-4) / 2);
+  border-left: 1px dashed var(--border-strong);
+}
+.standbyAgent:last-child::before {
+  right: 50%;
+  left: calc(-1 * var(--space-4) / 2);
+  border-right: 1px dashed var(--border-strong);
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.workspace > .view {
+  flex: 1;
+  height: auto;
+  min-height: 200px;
+}
+.agent {
+  transition:
+    border-color 360ms ease,
+    box-shadow 360ms ease,
+    background-color 360ms ease;
+}
+.edge {
+  transition:
+    stroke 360ms ease,
+    opacity 360ms ease;
+}
+.reviewLane {
+  flex: none;
+  max-height: 34%;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--status-review) 6%, var(--surface));
+}
+.reviewHeading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.reviewHeading > span {
+  color: var(--text-3);
+}
+.reviewCards {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.reviewerCard {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  flex: 0 0 280px;
+  max-width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--status-review);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 300ms ease,
+    background-color 300ms ease;
+}
+.reviewerCard:hover {
+  background: var(--surface-2);
+}
+.reviewerCard[data-review='approved'] {
+  border-left-color: var(--status-ready);
+}
+.reviewerCard[data-review='changes_requested'] {
+  border-left-color: var(--status-needs);
+}
+.reviewerCopy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.reviewerTag {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--status-review);
+  font-size: var(--text-2xs);
+}
+.reviewTarget {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent,
+  .edge,
+  .reviewerCard {
+    transition-duration: 120ms;
+  }
+}
+
+.unplannedTask {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: var(--space-2);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.unplannedTask span {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+.reviewLane {
+  border-top: 2px solid var(--status-review);
+  background: color-mix(in srgb, var(--status-review) 12%, var(--bg));
+}
+.reviewerCard {
+  flex-basis: 350px;
+  border: 1px solid color-mix(in srgb, var(--status-review) 65%, var(--border));
+  border-top: 5px solid var(--status-review);
+  border-radius: 3px 3px 16px 3px;
+  background: color-mix(in srgb, var(--status-review) 9%, var(--surface));
+}
+.reviewerCard[data-review='approved'] {
+  border-top-color: var(--status-ready);
+}
+.reviewerCard[data-review='changes_requested'] {
+  border-top-color: var(--status-needs);
+}
+.reviewSeal {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  flex: none;
+  width: 52px;
+  min-height: 64px;
+  border-radius: 3px 3px 12px 3px;
+  color: var(--status-review);
+  background: var(--status-review-soft);
+  border: 1px solid var(--status-review);
+}
+.reviewSeal > span {
+  font: 700 8px / 1 var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.reviewerTag {
+  font-weight: 700;
+}
+.reviewPlaceholder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--text-2);
+}
+.orch:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+/* Reviews are ordinary canvas nodes, never a panel taking height from the graph. */
+.workspace {
+  display: block;
+  overflow: hidden;
+}
+.workspace > .view {
+  height: 100%;
+  min-height: 0;
+  display: block;
+}
+.stage {
+  margin: 0 auto;
+}
+.planning {
+  margin: 0 auto;
+}
+.reviewNodes {
+  position: relative;
+  width: 100%;
+}
+.reviewCards {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  overflow: visible;
+}
+.reviewerCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  flex: none;
+  padding: var(--space-3);
+}
+.reviewSeal {
+  width: 36px;
+  min-height: 48px;
+}
+.reviewSeal svg {
+  width: 22px;
+  height: 22px;
+}
+.reviewerCard > [role='img'] {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.reviewerCopy {
+  grid-column: 1 / -1;
+}
+.reviewerCopy > .reviewTarget:last-child {
+  font-size: var(--text-xs);
+}
+.reviewNodePosition {
+  position: absolute;
+}
+.reviewNodePosition::before,
+.directTask .reviewNodes::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  height: 44px;
+  border-left: 2px dashed var(--status-review);
+}
+.directTask {
+  display: grid;
+  gap: 28px;
+  width: 100%;
+}
+.directTask .reviewNodes::before {
+  height: 28px;
+}
+
+.standbyAgents {
+  align-items: start;
+}
+
+.agentBranch {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.reviewerCard[data-review='merged'] {
+  border-top-color: var(--status-ready);
+}

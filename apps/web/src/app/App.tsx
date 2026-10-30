@@ -13,6 +13,7 @@ import {
 } from '@helix/ui';
 import { useHelixSource, type HelixSource } from '../data/useHelixSource';
 import { useRun } from '../data/useRun';
+import { replayStart } from '../data/recordings';
 import { boardCards, relativeTo, type BoardCard } from '../data/describe';
 import { formatDuration, planTree } from '../data/observatory';
 import { StopAll, runningAgents } from './StopAll';
@@ -49,9 +50,15 @@ export function App() {
 }
 
 function Workspace({ events, source }: { events: readonly HelixEvent[]; source: HelixSource }) {
-  const run = useRun(events);
+  const run = useRun(events, {
+    recorded: source.mode !== 'live',
+    speed: source.speed,
+    startAt: Math.max(0, replayStart(events) - 1),
+  });
   const { state, bySeq, current } = run;
-  const [selected, setSelected] = useState<string | null | undefined>(undefined);
+  const [selected, setSelected] = useState<string | null | undefined>(() =>
+    window.matchMedia('(max-width: 1440px), (max-height: 900px)').matches ? null : undefined,
+  );
   const [inspectorTab, setInspectorTab] = useState('summary');
   const [tabOverride, setTab] = useState<SessionTab | null>(null);
   const [page, setPage] = useState<Page>('sessions');
@@ -75,8 +82,8 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     () => planTree(state, run.events, run.index, current.ts),
     [state, run.events, run.index, current.ts],
   );
-  // Concept 3: the plan graph is the main view whenever the run has a plan.
-  const tab: SessionTab = tabOverride ?? (tree ? 'plan' : 'board');
+  // Plan is the primary workspace, including while the orchestrator is preparing it.
+  const tab: SessionTab = tabOverride ?? 'plan';
   const cards = useMemo(() => boardCards(state, bySeq, current.ts), [state, bySeq, current.ts]);
   const activeCount = cards.filter((c) => c.column !== 'archive').length;
   const working = Object.values(state.sessions).filter(
@@ -105,7 +112,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   const live = source.mode === 'live';
   const repoList: readonly Project[] =
     source.projects.length > 0 ? source.projects : [state.project];
-  const mode = live && run.isLive ? 'live' : run.isLive ? 'recording' : 'replaying';
+  const mode = live && run.isLive ? 'live' : run.playing ? 'replaying' : 'paused';
 
   const orch = tree
     ? state.sessions[tree.orchestrator.sessionId as keyof typeof state.sessions]

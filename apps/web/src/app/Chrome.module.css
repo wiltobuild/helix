@@ -535,3 +535,35 @@
     display: none;
   }
 }
+
+/* Keep the work canvas prominent on laptops and short windows. */
+@media (max-width: 1440px), (max-height: 900px) {
+  .sessionHead {
+    gap: 6px;
+    padding: 10px 20px 0;
+  }
+  .crumbs,
+  .subMeta {
+    display: none;
+  }
+  .title {
+    font-size: 20px;
+  }
+  .titleBlock {
+    gap: 4px;
+  }
+  .goal {
+    font-size: var(--text-sm);
+  }
+  .tab {
+    height: 32px;
+  }
+  .tagline {
+    display: none;
+  }
+}
+
+.modeBadge[data-mode='paused'] {
+  background: var(--surface-2);
+  color: var(--text-2);
+}

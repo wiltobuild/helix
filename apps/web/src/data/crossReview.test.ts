@@ -8,7 +8,7 @@ import {
   type HelixEvent,
 } from '@helix/contracts';
 import { boardCards, describeEvent, eventTone, provenance, statusLine } from './describe';
-import { crossReview, reviewerTarget, sessionHistory } from './crossReview';
+import { crossReview, reviewerTarget, sessionHistory, reviewSlot } from './crossReview';
 import { replayPause } from './useDemoStream';
 
 const { crossReviewRun: run, crossReviewIds: ids, crossReviewMilestones: at } = fixtures;
@@ -156,4 +156,37 @@ test('a cross-review change request says where the findings went, not GitHub thr
   const state = projectUpTo(run, at.changesRequested);
   const worker = state.sessions[ids.worker]!;
   expect(statusLine(worker, deriveStatus(worker), state)).toBe('Findings sent back to Codex');
+});
+
+test('review slot follows actual agent verdicts even without a reviewer session object', () => {
+  for (const [seq, expected] of [
+    [requested.seq, 'Claude Code reviewing'],
+    [at.changesRequested, 'Changes requested · 2'],
+    [at.approved, 'Approved by Claude Code'],
+  ] as const) {
+    const state = projectUpTo(run, seq);
+    delete state.sessions[ids.reviewer];
+    expect(reviewSlot(state.sessions[ids.worker]!, state, false).label).toBe(expected);
+  }
+});
+
+test('review slots use PR lifecycle when historical agent reviews are unavailable', () => {
+  const state = projectUpTo(run, requested.seq);
+  const worker = state.sessions[ids.worker]!;
+  delete worker.agentReview;
+  worker.pr!.checks = { total: 1, passed: 0, failed: 0, pending: 1, failingNames: [] };
+  expect(reviewSlot(worker, state, false).label).toBe('Waiting for CI');
+  worker.pr!.checks = { total: 1, passed: 1, failed: 0, pending: 0, failingNames: [] };
+  expect(reviewSlot(worker, state, false).label).toBe('PR ready for review');
+  expect(reviewSlot(worker, state, true).label).toBe('Awaiting reviewer assignment');
+  worker.pr!.state = 'merged';
+  expect(reviewSlot(worker, state, false).label).toBe('PR merged');
+});
+
+test('reviewer target can use the projected worker link without parent or event history', () => {
+  const state = projectUpTo(run, at.approved);
+  delete state.sessions[ids.reviewer]!.session.parentSessionId;
+  expect(
+    reviewerTarget(state.sessions[ids.reviewer]!, state, [], state.lastSeq)?.worker.session.id,
+  ).toBe(ids.worker);
 });

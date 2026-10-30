@@ -24,6 +24,16 @@ export function replayPause(e: HelixEvent): number {
   }
 }
 
+/** Preserve every event while limiting the recorded planning introduction to six seconds at 1×. */
+export function replayDelays(run: readonly HelixEvent[]): number[] {
+  const delays = run.map(replayPause);
+  const plan = run.findIndex((e) => e.type === 'plan.submitted');
+  if (plan <= 0) return delays;
+  const total = delays.slice(0, plan).reduce((sum, delay) => sum + delay, 0);
+  const factor = Math.min(1, 6000 / total);
+  return delays.map((delay, index) => (index < plan ? delay * factor : delay));
+}
+
 /**
  * Demo mode: streams a recorded run as if it were live, so the app works with nothing installed.
  * Starts a few events in and reveals the rest on a timer. Switching to another run (a loaded
@@ -33,6 +43,7 @@ export function useDemoStream(
   run: readonly HelixEvent[] = fixtures.passwordResetRun,
   { startAt = 9, speed = 1 }: { startAt?: number; speed?: number } = {},
 ): readonly HelixEvent[] {
+  const delays = useMemo(() => replayDelays(run), [run]);
   const [state, setState] = useState({ run, count: Math.min(startAt, run.length) });
   // A new run resets the reveal during render, so no frame shows the old run's count.
   const current = state.run === run ? state : { run, count: Math.min(startAt, run.length) };
@@ -41,13 +52,12 @@ export function useDemoStream(
   useEffect(() => {
     if (current.count >= run.length) return;
     // The event just revealed sets how long it stays on screen.
-    const shown = run[current.count - 1];
     const id = window.setTimeout(
       () => setState((s) => (s.run === run ? { run, count: s.count + 1 } : s)),
-      (shown ? replayPause(shown) : 1600) / speed,
+      (delays[current.count - 1] ?? 1600) / speed,
     );
     return () => window.clearTimeout(id);
-  }, [current.count, run, speed]);
+  }, [current.count, run, speed, delays]);
 
   return useMemo(() => run.slice(0, current.count), [run, current.count]);
 }
