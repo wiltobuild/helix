@@ -3,7 +3,10 @@
   gap: 24px;
   max-width: 1560px;
   margin: 0 auto;
-  padding-bottom: 32px;
+  padding: 20px clamp(12px, 2vw, 28px) 32px;
+  min-width: 0;
+  container-type: inline-size;
+  overflow-wrap: anywhere;
 }
 .heading {
   display: flex;
@@ -102,7 +105,7 @@
 }
 .concepts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 16px;
 }
 .concept {
@@ -226,6 +229,7 @@
 }
 .attachment {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   font-size: 12px;
@@ -262,7 +266,8 @@
 }
 .preview {
   width: 100%;
-  min-height: 540px;
+  height: min(60vh, 540px);
+  min-height: 280px;
   border: 1px solid var(--border);
   background: white;
   border-radius: 8px;
@@ -292,7 +297,7 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
-@media (max-width: 1050px) {
+@container (max-width: 850px) {
   .concepts {
     grid-template-columns: 1fr;
   }
@@ -308,7 +313,7 @@
     gap: 12px;
   }
 }
-@media (max-width: 600px) {
+@container (max-width: 600px) {
   .concept {
     display: flex;
   }
@@ -318,7 +323,7 @@
     padding: 16px;
   }
   .preview {
-    min-height: 400px;
+    min-height: 280px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

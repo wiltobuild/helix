@@ -34,16 +34,19 @@ import {
 import { ReviewChip } from './ReviewChip';
 import { identityFor, resolveProjectIdentities, traceLabel } from '../data/identity';
 import s from './PlanView.module.css';
+import { fitGraph, zoomGraph, workingGroupIndex } from './graphViewport';
 
 const CARD_W = 200;
-const CARD_GAP = 14;
+const REVIEW_W = 220;
+const REVIEW_GAP = 24;
+const CARD_GAP = 24;
 const GROUP_GAP = 40;
 const AGENT_W = 330;
 const ORCH_W = 380;
-const ORCH_H = 104;
-const AGENT_H = 104;
+const ORCH_H = 92;
+const AGENT_H = 92;
 const CARD_H = 188;
-const ROW_GAP = 32;
+const ROW_GAP = 24;
 const PAD = 8;
 
 interface PlanViewProps {
@@ -58,9 +61,17 @@ interface PlanViewProps {
   /** Present in live mode. */
   client?: HelixClient;
   isLive?: boolean;
+  onFollowLive?: () => void;
 }
 
-type Group = { agent: WorkerView; x: number; width: number; cardsX: number[] };
+type Group = {
+  agent: WorkerView;
+  x: number;
+  width: number;
+  cardsX: number[];
+  reviewersX: number[];
+  reviewOnLeft: boolean;
+};
 
 function layout(assigned: WorkerView[]) {
   const agents: WorkerView[] = [...assigned];
@@ -80,26 +91,34 @@ function layout(assigned: WorkerView[]) {
       });
   }
   let x = PAD;
-  const groups: Group[] = agents.map((agent) => {
+  const groups: Group[] = agents.map((agent, groupIndex) => {
     const n = Math.max(agent.tasks.length, 1);
-    const cardsWidth = n * CARD_W + (n - 1) * CARD_GAP;
+    const pairWidth = CARD_W + REVIEW_GAP + REVIEW_W;
+    const cardsWidth = n * pairWidth + (n - 1) * CARD_GAP;
     const width = Math.max(AGENT_W, cardsWidth);
     const start = x + (width - cardsWidth) / 2;
+    const reviewOnLeft = groupIndex % 2 === 0;
     const g = {
       agent,
       x,
       width,
-      cardsX: agent.tasks.map((_, i) => start + i * (CARD_W + CARD_GAP)),
+      reviewOnLeft,
+      cardsX: agent.tasks.map(
+        (_, i) => start + i * (pairWidth + CARD_GAP) + (reviewOnLeft ? REVIEW_W + REVIEW_GAP : 0),
+      ),
+      reviewersX: agent.tasks.map(
+        (_, i) => start + i * (pairWidth + CARD_GAP) + (reviewOnLeft ? 0 : CARD_W + REVIEW_GAP),
+      ),
     };
     x += width + GROUP_GAP;
     return g;
   });
   // Room on the right of the orchestrator for the "Review plan" button.
   const width = Math.max(x - GROUP_GAP + PAD, ORCH_W + 2 * 190);
-  const agentY = ORCH_H + ROW_GAP;
+  const agentY = ROW_GAP;
   const cardY = agentY + AGENT_H + ROW_GAP;
   const hasReviews = agents.some((agent) => agent.tasks.length > 0);
-  const height = cardY + CARD_H + PAD + (hasReviews ? 290 : 0);
+  const height = cardY + Math.max(CARD_H, hasReviews ? 210 : 0) + PAD + 40;
   return { groups, width, height, agentY, cardY };
 }
 
@@ -240,6 +259,12 @@ function ReviewerCards({
                   {entry.session.model ? ` · ${entry.session.model}` : ''}
                 </span>
                 <span>{label}</span>
+                {ownReview && !ownReview.stale && target?.worker.agentReview?.review && (
+                  <span>
+                    {target.worker.agentReview.review.findings.length} recorded findings · open
+                    evidence
+                  </span>
+                )}
                 <span className={s.reviewTarget}>
                   {target
                     ? 'Reviewing ' +
@@ -310,6 +335,8 @@ function PlanCanvas({
   events,
   index,
   client,
+  isLive,
+  onFollowLive,
 }: PlanViewProps) {
   const nowIso = events && index !== undefined ? events[index]!.ts : new Date(0).toISOString();
   const tree = useMemo(
@@ -318,21 +345,125 @@ function PlanCanvas({
   );
   const identities = useMemo(() => resolveProjectIdentities(state), [state]);
   const graph = useMemo(() => (tree ? layout(tree.workers) : undefined), [tree]);
+  const graphWidth = graph?.width ?? 0;
+  const graphHeight = graph?.height ?? 0;
   const wrap = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [autoFit, setAutoFit] = useState(false);
+  const [manualZoom, setManualZoom] = useState(false);
+  const [following, setFollowing] = useState(true);
+  const followed = useRef<string | null>(null);
+  const groups = graph?.groups ?? [];
+  const working =
+    groups[
+      workingGroupIndex(
+        groups.map((group) => ({
+          active: group.agent.active,
+          statuses: group.agent.tasks.map((task) => task.status),
+        })),
+      )
+    ];
+  const workingId = working?.agent.id;
+  const workingX = working?.x ?? 0;
+  const completed =
+    tree?.tasks.filter((task) => task.status === 'merged' || task.status === 'archived').length ??
+    0;
+  const blocked = groups.filter((group) =>
+    group.agent.tasks.some((task) => task.status === 'needs_you' || task.status === 'ci_failed'),
+  );
+  const goToWorking = () => {
+    setAutoFit(false);
+    setManualZoom(true);
+    setScale(1);
+    setFollowing(true);
+    followed.current = null;
+    onFollowLive?.();
+    wrap.current?.scrollTo({ left: Math.max(0, workingX - 16), top: 0, behavior: 'instant' });
+  };
+  const [bounds, setBounds] = useState({ width: 0, height: 0 });
+  const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+
+  const fit = () => {
+    const el = wrap.current;
+    if (!el || !graph) return;
+    setScale(
+      fitGraph(
+        el.clientWidth - 32,
+        el.clientHeight - 32,
+        Math.max(graph.width, bounds.width),
+        Math.max(graph.height, bounds.height),
+      ),
+    );
+    el.scrollTo(0, 0);
+  };
+  const zoom = (factor: number) => {
+    setFollowing(false);
+    setManualZoom(true);
+    setAutoFit(false);
+    setScale((value) => zoomGraph(value, factor));
+  };
 
   useLayoutEffect(() => {
     const el = wrap.current;
-    if (!el || !graph) return;
-    const fit = () => {
-      const w = el.clientWidth - 32;
-      const h = el.clientHeight - 32;
-      if (w <= 0 || h <= 0) return;
-      setScale(Math.max(0.85, Math.min(w / graph.width, 1)));
+    if (!el || !graphWidth || !graphHeight) return;
+    const resize = () => {
+      if (manualZoom) return;
+      const width = el.clientWidth - 32;
+      const height = el.clientHeight - 32;
+      if (width <= 0 || height <= 0) return;
+      const fitted = fitGraph(
+        width,
+        height,
+        Math.max(graphWidth, bounds.width),
+        Math.max(graphHeight, bounds.height),
+      );
+      // Readable initial view; only explicit Fit opts into a tiny overview.
+      setScale(autoFit ? fitted : 1);
+      if (autoFit) el.scrollTo(0, 0);
     };
-    fit();
-    const ro = new ResizeObserver(fit);
+    resize();
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(resize);
+    });
     ro.observe(el);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  }, [graphWidth, graphHeight, autoFit, manualZoom, bounds.width, bounds.height]);
+
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    if (!el || !workingId || autoFit || !following) return;
+    const initial = followed.current === null;
+    if (!initial && (!isLive || selected || followed.current === workingId)) return;
+    const focused = document.activeElement;
+    if (
+      document.querySelector('[role="dialog"]') ||
+      (!initial &&
+        focused instanceof HTMLElement &&
+        (el.contains(focused) ||
+          focused.closest('input, textarea, select, [contenteditable="true"]')))
+    )
+      return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTo({ left: Math.max(0, workingX * scale - 16), top: 0, behavior: 'instant' });
+      followed.current = workingId;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [workingId, workingX, scale, autoFit, following, isLive, selected]);
+
+  // Reviewer stacks can grow beyond the nominal layout when a task is reviewed again.
+  useLayoutEffect(() => {
+    const el = canvas.current;
+    if (!el || !graph) return;
+    const measure = () => setBounds({ width: el.scrollWidth, height: el.scrollHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const child of el.querySelectorAll('[data-review]')) ro.observe(child);
     return () => ro.disconnect();
   }, [graph]);
 
@@ -477,206 +608,382 @@ function PlanCanvas({
   }
 
   const { orchestrator: orch, plan } = tree;
-  const orchX = (graph.width - ORCH_W) / 2;
-  const orchCx = graph.width / 2;
+
   const awaiting = plan.status === 'awaiting_approval';
+  const selectedTask = tree.tasks.find(
+    (task) =>
+      task.session?.session.id === selected ||
+      task.session?.agentReview?.reviewerSessionId === selected,
+  );
+  const related = new Set<string>();
+  if (selectedTask) {
+    const visit = (id: string) => {
+      if (related.has(id)) return;
+      related.add(id);
+      for (const dependency of tree.tasks.find((task) => task.node.id === id)?.node.dependsOn ?? [])
+        visit(dependency);
+    };
+    visit(selectedTask.node.id);
+  }
 
   return (
-    <div className={s.view} ref={wrap}>
-      <div className={s.stage} style={{ width: graph.width * scale, height: graph.height * scale }}>
-        <div
-          className={s.canvas}
-          style={{ width: graph.width, height: graph.height, transform: `scale(${scale})` }}
+    <>
+      {/* Orchestrator */}
+      <div className={s.pinnedOrchestrator}>
+        <button
+          type="button"
+          className={cx(s.orch, orch.sessionId === selected && s.selected)}
+          data-motion-key="orchestrator"
+          data-tone={orch.tone}
+          title={orch.sessionId}
+          style={{ width: ORCH_W, height: ORCH_H }}
+          onClick={() => onSelect(orch.sessionId)}
         >
-          <svg className={s.edges} width={graph.width} height={graph.height} aria-hidden>
+          <span className={s.orchHead}>
+            <span className={s.orchIcon} data-active={orch.active || undefined}>
+              <HelixLogo size={20} active={orch.active} />
+            </span>
+            <span className={s.orchName}>
+              <strong>Helix</strong>
+              <span>Plan and coordinate all tasks</span>
+            </span>
+            <span className={s.pill} data-tone={orch.tone}>
+              <span className={s.pillDot} aria-hidden />
+              {orch.statusLabel}
+            </span>
+          </span>
+          <span className={s.stats}>
+            <span>
+              <ListChecks size={13} aria-hidden />
+              {awaiting ? `${orch.total} tasks` : `${orch.merged}/${orch.total} merged`}
+            </span>
+            <span>
+              <Check size={13} aria-hidden />
+              {orch.planLabel}
+            </span>
+            <span>
+              <Clock size={13} aria-hidden />
+              {formatDuration(orch.elapsedMs)}
+            </span>
+          </span>
+        </button>
+        {awaiting && onReviewPlan && (
+          <Button variant="outline" className={s.reviewBtn} onClick={onReviewPlan}>
+            Review plan <ArrowRight size={14} aria-hidden />
+          </Button>
+        )}
+      </div>
+
+      <div className={s.controls} role="group" aria-label="Graph zoom controls">
+        {selectedTask && <span>Selected dependency path · {related.size} tasks</span>}
+        <Button size="sm" onClick={goToWorking}>
+          {client ? 'Back to live' : 'Show active work'}
+        </Button>
+        <span>
+          {following && !selected
+            ? isLive
+              ? 'Following active work'
+              : 'Replay cursor · readable window'
+            : 'Exploring · follow paused'}
+        </span>
+        <Button
+          size="sm"
+          onClick={() => {
+            setFollowing(false);
+            wrap.current?.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+          }}
+        >
+          {completed} completed · history ←
+        </Button>
+        {blocked.length > 0 && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setFollowing(false);
+              wrap.current?.scrollTo({ left: blocked[0]!.x * scale, top: 0, behavior: 'instant' });
+            }}
+          >
+            {blocked.length} need attention
+          </Button>
+        )}
+        <Button
+          size="sm"
+          onClick={() => {
+            setFollowing(false);
+            setManualZoom(false);
+            setAutoFit(true);
+            fit();
+          }}
+        >
+          Fit graph
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            setFollowing(false);
+            setManualZoom(true);
+            setAutoFit(false);
+            setScale(1);
+          }}
+        >
+          Readable 100%
+        </Button>
+        <Button size="sm" aria-label="Zoom out" onClick={() => zoom(1 / 1.2)}>
+          −
+        </Button>
+        <output aria-label="Graph zoom">{Math.round(scale * 100)}%</output>
+        <Button size="sm" aria-label="Zoom in" onClick={() => zoom(1.2)}>
+          +
+        </Button>
+        <span>Scroll or drag background to pan</span>
+      </div>
+      <div
+        className={s.view}
+        ref={wrap}
+        tabIndex={0}
+        role="region"
+        aria-label="Plan graph"
+        onWheel={() => setFollowing(false)}
+        onKeyDown={(event) => {
+          if (
+            event.key.startsWith('Arrow') ||
+            ['Home', 'End', 'PageUp', 'PageDown'].includes(event.key)
+          )
+            setFollowing(false);
+          if (
+            event.target !== event.currentTarget ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey
+          )
+            return;
+          if (event.key === '+' || event.key === '=') zoom(1.2);
+          else if (event.key === '-') zoom(1 / 1.2);
+          else if (event.key === '0') {
+            setFollowing(false);
+            setManualZoom(false);
+            setAutoFit(true);
+            fit();
+          } else return;
+          event.preventDefault();
+        }}
+        onPointerDown={(event) => {
+          setFollowing(false);
+          if (event.button !== 0 || (event.target as HTMLElement).closest('button, a, input'))
+            return;
+          pan.current = {
+            x: event.clientX,
+            y: event.clientY,
+            left: event.currentTarget.scrollLeft,
+            top: event.currentTarget.scrollTop,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (!pan.current) return;
+          event.currentTarget.scrollLeft = pan.current.left + pan.current.x - event.clientX;
+          event.currentTarget.scrollTop = pan.current.top + pan.current.y - event.clientY;
+        }}
+        onPointerUp={() => {
+          pan.current = null;
+        }}
+        onPointerCancel={() => {
+          pan.current = null;
+        }}
+      >
+        <div
+          className={s.stage}
+          style={{
+            width: Math.max(graph.width, bounds.width) * scale,
+            height: Math.max(graph.height, bounds.height) * scale,
+          }}
+        >
+          <div
+            className={s.canvas}
+            ref={canvas}
+            style={{ width: graph.width, height: graph.height, transform: `scale(${scale})` }}
+          >
+            <svg className={s.edges} width={graph.width} height={graph.height} aria-hidden>
+              <path d={`M0 0 H${graph.width}`} className={s.edge} />
+              {selectedTask &&
+                graph.groups.flatMap((group) =>
+                  group.agent.tasks.flatMap((task, taskIndex) => {
+                    if (!related.has(task.node.id)) return [];
+                    const targetX = group.cardsX[taskIndex]! + CARD_W / 2;
+                    return task.node.dependsOn.flatMap((id) => {
+                      const parent = graph.groups.find((candidate) =>
+                        candidate.agent.tasks.some((item) => item.node.id === id),
+                      );
+                      if (!parent) return [];
+                      const parentIndex = parent.agent.tasks.findIndex(
+                        (item) => item.node.id === id,
+                      );
+                      const sourceX = parent.cardsX[parentIndex]! + CARD_W / 2;
+                      const bottom = graph.cardY + CARD_H;
+                      return (
+                        <path
+                          key={id + task.node.id}
+                          d={`M${sourceX} ${bottom} V${bottom + 28} H${targetX} V${bottom}`}
+                          className={s.dependencyEdge}
+                        />
+                      );
+                    });
+                  }),
+                )}
+              {graph.groups.map((g) => {
+                const strand = agentMeta(g.agent.agent).colorVar;
+                const ax = g.x + g.width / 2;
+                const approved = plan.status === 'approved' && g.agent.tasks.length > 0;
+                return (
+                  <g
+                    key={g.agent.id}
+                    className={
+                      selectedTask && !g.agent.tasks.some((task) => related.has(task.node.id))
+                        ? s.unrelatedEdges
+                        : undefined
+                    }
+                    style={{ '--edge-strand': strand } as CSSProperties}
+                  >
+                    <path
+                      d={drop(ax, 0, ax, graph.agentY)}
+                      className={cx(s.edge, approved && s.edgeOn)}
+                    />
+                    {approved && g.agent.active && (
+                      <path d={drop(ax, 0, ax, graph.agentY)} className={s.flow} />
+                    )}
+                    <circle cx={ax} cy={graph.agentY} r={3.5} className={s.joint} />
+                    {g.agent.tasks.map((t, i) => {
+                      const cx2 = g.cardsX[i]! + CARD_W / 2;
+                      const d = drop(ax, graph.agentY + AGENT_H, cx2, graph.cardY);
+                      const on = t.status !== 'pending' || approved;
+                      const flowing = t.status === 'working' || t.status === 'ci_failed';
+                      return (
+                        <g key={t.node.id}>
+                          <path d={d} className={cx(s.edge, on && s.edgeOn)} />
+                          {flowing && <path d={d} className={s.flow} />}
+                          <circle cx={cx2} cy={graph.cardY} r={3.5} className={s.joint} />
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* Agents */}
             {graph.groups.map((g) => {
-              const strand = agentMeta(g.agent.agent).colorVar;
-              const ax = g.x + g.width / 2;
-              const approved = plan.status === 'approved' && g.agent.tasks.length > 0;
+              const a = g.agent;
+              const ax = g.x + (g.width - AGENT_W) / 2;
               return (
-                <g key={g.agent.id} style={{ '--edge-strand': strand } as CSSProperties}>
-                  <path
-                    d={drop(orchCx, ORCH_H, ax, graph.agentY)}
-                    className={cx(s.edge, approved && s.edgeOn)}
-                  />
-                  {approved && g.agent.active && (
-                    <path d={drop(orchCx, ORCH_H, ax, graph.agentY)} className={s.flow} />
-                  )}
-                  <circle cx={ax} cy={graph.agentY} r={3.5} className={s.joint} />
-                  {g.agent.tasks.map((t, i) => {
-                    const cx2 = g.cardsX[i]! + CARD_W / 2;
-                    const d = drop(ax, graph.agentY + AGENT_H, cx2, graph.cardY);
-                    const on = t.status !== 'pending' || approved;
-                    const flowing = t.status === 'working' || t.status === 'ci_failed';
-                    return (
-                      <g key={t.node.id}>
-                        <path d={d} className={cx(s.edge, on && s.edgeOn)} />
-                        {flowing && <path d={d} className={s.flow} />}
-                        <circle cx={cx2} cy={graph.cardY} r={3.5} className={s.joint} />
-                      </g>
-                    );
-                  })}
-                </g>
-              );
-            })}
-          </svg>
-
-          {/* Orchestrator */}
-          <div className={s.orchRow} style={{ left: orchX, top: 0, width: ORCH_W }}>
-            <button
-              type="button"
-              className={cx(s.orch, orch.sessionId === selected && s.selected)}
-              data-motion-key="orchestrator"
-              data-tone={orch.tone}
-              title={orch.sessionId}
-              style={{ width: ORCH_W, height: ORCH_H }}
-              onClick={() => onSelect(orch.sessionId)}
-            >
-              <span className={s.orchHead}>
-                <span className={s.orchIcon} data-active={orch.active || undefined}>
-                  <HelixLogo size={20} active={orch.active} />
-                </span>
-                <span className={s.orchName}>
-                  <strong>Helix</strong>
-                  <span>Plan and coordinate all tasks</span>
-                </span>
-                <span className={s.pill} data-tone={orch.tone}>
-                  <span className={s.pillDot} aria-hidden />
-                  {orch.statusLabel}
-                </span>
-              </span>
-              <span className={s.stats}>
-                <span>
-                  <ListChecks size={13} aria-hidden />
-                  {awaiting ? `${orch.total} tasks` : `${orch.merged}/${orch.total} merged`}
-                </span>
-                <span>
-                  <Check size={13} aria-hidden />
-                  {orch.planLabel}
-                </span>
-                <span>
-                  <Clock size={13} aria-hidden />
-                  {formatDuration(orch.elapsedMs)}
-                </span>
-              </span>
-            </button>
-            {awaiting && onReviewPlan && (
-              <Button variant="outline" className={s.reviewBtn} onClick={onReviewPlan}>
-                Review plan <ArrowRight size={14} aria-hidden />
-              </Button>
-            )}
-          </div>
-
-          {/* Agents */}
-          {graph.groups.map((g) => {
-            const a = g.agent;
-            const ax = g.x + (g.width - AGENT_W) / 2;
-            return (
-              <div
-                key={a.id}
-                className={s.agent}
-                data-motion-key={a.id}
-                data-worker-node={a.tasks.length ? a.id : undefined}
-                data-active={a.active || undefined}
-                style={
-                  {
-                    left: ax,
-                    top: graph.agentY,
-                    width: AGENT_W,
-                    height: AGENT_H,
-                    '--agent': agentMeta(a.agent).colorVar,
-                  } as CSSProperties
-                }
-                title={
-                  a.tasks[0]?.session
-                    ? traceLabel(identities.sessions.get(a.tasks[0].session.session.id)!)
-                    : a.tasks[0]?.node.id
-                }
-                aria-label={`${a.tasks[0] ? identities.nodes.get(a.tasks[0].node.id)?.name : agentLabel(a.agent)}: ${a.title} — ${a.statusLabel}`}
-              >
-                <span className={s.agentHead}>
-                  <AgentEmblem agent={a.agent} active={a.active} size={44} />
-                  <span className={s.agentName}>
-                    <strong>
-                      {a.tasks[0]
-                        ? identities.nodes.get(a.tasks[0].node.id)?.name
-                        : agentLabel(a.agent)}
-                    </strong>
-                    <span title={a.title}>
-                      {agentLabel(a.agent)}
-                      {a.tasks[0]?.session?.session.model
-                        ? ` · ${a.tasks[0].session.session.model}`
-                        : ''}{' '}
-                      · {a.title}
+                <div
+                  key={a.id}
+                  className={s.agent}
+                  data-motion-key={a.id}
+                  data-worker-node={a.tasks.length ? a.id : undefined}
+                  data-active={a.active || undefined}
+                  style={
+                    {
+                      left: ax,
+                      top: graph.agentY,
+                      width: AGENT_W,
+                      height: AGENT_H,
+                      '--agent': agentMeta(a.agent).colorVar,
+                    } as CSSProperties
+                  }
+                  title={
+                    a.tasks[0]?.session
+                      ? traceLabel(identities.sessions.get(a.tasks[0].session.session.id)!)
+                      : a.tasks[0]?.node.id
+                  }
+                  aria-label={`${a.tasks[0] ? identities.nodes.get(a.tasks[0].node.id)?.name : agentLabel(a.agent)}: ${a.title} — ${a.statusLabel}`}
+                >
+                  <span className={s.agentHead}>
+                    <AgentEmblem agent={a.agent} active={a.active} size={44} />
+                    <span className={s.agentName}>
+                      <strong>
+                        {a.tasks[0]
+                          ? identities.nodes.get(a.tasks[0].node.id)?.name
+                          : agentLabel(a.agent)}
+                      </strong>
+                      <span title={a.title}>
+                        {agentLabel(a.agent)}
+                        {a.tasks[0]?.session?.session.model
+                          ? ` · ${a.tasks[0].session.session.model}`
+                          : ''}{' '}
+                        · {a.title}
+                      </span>
+                    </span>
+                    <span className={s.pill} data-tone={agentTone(a)}>
+                      <span className={s.pillDot} aria-hidden />
+                      {a.statusLabel}
                     </span>
                   </span>
-                  <span className={s.pill} data-tone={agentTone(a)}>
-                    <span className={s.pillDot} aria-hidden />
-                    {a.statusLabel}
+                  <span className={s.stats}>
+                    <span>
+                      <ListChecks size={13} aria-hidden />
+                      {a.tasks.length} {a.tasks.length === 1 ? 'task' : 'tasks'}
+                    </span>
+                    <span data-ok={a.ciTotal > 0 && a.ciPassed === a.ciTotal ? '' : undefined}>
+                      <CircleCheck size={13} aria-hidden />
+                      {a.ciTotal > 0 ? `${a.ciPassed}/${a.ciTotal} CI passed` : 'No CI yet'}
+                    </span>
+                    <span>
+                      <Clock size={13} aria-hidden />
+                      {a.elapsedMs ? formatDuration(a.elapsedMs) : '—'}
+                    </span>
                   </span>
-                </span>
-                <span className={s.stats}>
-                  <span>
-                    <ListChecks size={13} aria-hidden />
-                    {a.tasks.length} {a.tasks.length === 1 ? 'task' : 'tasks'}
-                  </span>
-                  <span data-ok={a.ciTotal > 0 && a.ciPassed === a.ciTotal ? '' : undefined}>
-                    <CircleCheck size={13} aria-hidden />
-                    {a.ciTotal > 0 ? `${a.ciPassed}/${a.ciTotal} CI passed` : 'No CI yet'}
-                  </span>
-                  <span>
-                    <Clock size={13} aria-hidden />
-                    {a.elapsedMs ? formatDuration(a.elapsedMs) : '—'}
-                  </span>
-                </span>
-              </div>
-            );
-          })}
+                </div>
+              );
+            })}
 
-          {/* Reviewer slots exist before workers start and become real review cards on assignment. */}
-          {graph.groups.flatMap((g) =>
-            g.agent.tasks.map((task, i) => (
-              <div
-                key={'review-' + task.node.id}
-                className={s.reviewNodePosition}
-                style={{ left: g.cardsX[i], top: graph.cardY + CARD_H + 44, width: CARD_W }}
-              >
-                {task.session ? (
-                  <ReviewerCards
-                    state={state}
-                    selected={selected}
-                    onSelect={onSelect}
-                    workerId={task.session.session.id}
-                    {...(events ? { events } : {})}
-                    {...(index !== undefined ? { index } : {})}
-                    {...(client ? { client } : {})}
-                  />
-                ) : (
-                  <StandbyReviewer
-                    builder={task.node.agent}
-                    motionKey={'standby-review-' + task.node.id}
-                  />
-                )}
-              </div>
-            )),
-          )}
-          {/* Tasks */}
-          {graph.groups.flatMap((g) =>
-            g.agent.tasks.map((t, i) => (
-              <TaskCard
-                key={t.node.id}
-                task={t}
-                state={state}
-                x={g.cardsX[i]!}
-                y={graph.cardY}
-                selected={Boolean(t.session && t.session.session.id === selected)}
-                onSelect={onSelect}
-              />
-            )),
-          )}
+            {/* Reviewer slots exist before workers start and become real review cards on assignment. */}
+            {graph.groups.flatMap((g) =>
+              g.agent.tasks.map((task, i) => (
+                <div
+                  key={'review-' + task.node.id}
+                  className={s.reviewNodePosition}
+                  role="group"
+                  aria-label={'Reviewer for ' + task.node.title}
+                  data-side={g.reviewOnLeft ? 'left' : 'right'}
+                  style={{ left: g.reviewersX[i], top: graph.cardY, width: REVIEW_W }}
+                >
+                  {task.session ? (
+                    <ReviewerCards
+                      state={state}
+                      selected={selected}
+                      onSelect={onSelect}
+                      workerId={task.session.session.id}
+                      {...(events ? { events } : {})}
+                      {...(index !== undefined ? { index } : {})}
+                      {...(client ? { client } : {})}
+                    />
+                  ) : (
+                    <StandbyReviewer
+                      builder={task.node.agent}
+                      motionKey={'standby-review-' + task.node.id}
+                    />
+                  )}
+                </div>
+              )),
+            )}
+            {/* Tasks */}
+            {graph.groups.flatMap((g) =>
+              g.agent.tasks.map((t, i) => (
+                <TaskCard
+                  key={t.node.id}
+                  task={t}
+                  state={state}
+                  x={g.cardsX[i]!}
+                  y={graph.cardY}
+                  selected={Boolean(t.session && t.session.session.id === selected)}
+                  onSelect={onSelect}
+                />
+              )),
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -744,6 +1051,7 @@ function TaskCard({
         onClick={() => sid && onSelect(sid)}
         disabled={!sid}
       >
+        <span className={s.cardTitle}>{t.node.title}</span>
         <span className={s.cardHead}>
           <AgentBadge
             agent={t.session?.session.agent ?? t.node.agent}
@@ -756,13 +1064,18 @@ function TaskCard({
             {t.label}
           </span>
         </span>
-        <span className={s.cardTitle}>{t.node.title}</span>
         <span className={s.cardDesc}>
-          {t.waitsOn.length > 0 && t.status === 'pending'
-            ? `Waits on ${t.waitsOn.join(', ')}`
-            : t.waitingNote
-              ? t.waitingNote
-              : t.node.description || t.node.rationale}
+          {t.status === 'needs_you'
+            ? 'Needs your approval · open task to respond'
+            : t.checks && t.checks.pending > 0
+              ? `Waiting for CI · ${t.checks.pending} pending`
+              : t.waitsOn.length > 0 && t.status === 'pending'
+                ? `Waits on ${t.waitsOn.join(', ')}`
+                : t.waitingNote
+                  ? t.waitingNote
+                  : t.session
+                    ? (statusLine(t.session, deriveStatus(t.session), state) ?? t.label)
+                    : t.node.description || t.node.rationale}
         </span>
         {review && <ReviewChip review={review} />}
         <span className={s.cardFoot}>
@@ -791,7 +1104,13 @@ function TaskCard({
 
 function StatusIcon({ tone }: { tone: TaskView['tone'] }) {
   if (tone === 'done' || tone === 'ready')
-    return <CircleCheck size={16} className={s.iconDone} aria-label="Done" />;
+    return (
+      <CircleCheck
+        size={16}
+        className={s.iconDone}
+        aria-label={tone === 'done' ? 'Done' : 'Ready for review'}
+      />
+    );
   if (tone === 'blocked') return <CircleX size={16} className={s.iconFail} aria-label="Blocked" />;
   if (tone === 'progress')
     return <LoaderCircle size={16} className={s.iconWork} aria-label="In progress" />;
