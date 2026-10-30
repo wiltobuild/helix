@@ -38,15 +38,24 @@ This patch does not change that product policy, and explicitly says that CI is
 not an AI approval. A mandatory successful AI-review gate would require a separate
 contract/UI decision and a supported retry flow.
 
-## Runtime repair boundary
+## Verified runtime repair
 
-The change above fixes Helix's handling; it cannot repair a locked executable in
-the external Codex installation. Preserve the failed run as evidence. Before a
-new real review, restore the affected Codex runtime through its normal maintenance
-flow and verify sandboxed command execution. Do not kill unrelated processes,
-change ACLs manually, share credentials, or switch to unrestricted execution.
-Do not label a fresh review successful until it inspects the requested HEAD and
-submits a real verdict. The original Daybreak run and both live servers were untouched.
+The normal standalone CLI was 0.161.0. Windows Restart Manager confirmed two
+processes held the older app-managed executable. They were left running.
+Disabling the optional browser MCP for a single diagnostic did not fix 0.161.0.
+The already-installed 0.166.0 executable passed the identical workspace-write
+sandbox Git probe; its setup log recorded `errors=[]`.
+
+The supported `codex update` then upgraded the standalone CLI to 0.166.0.
+A real native Codex review of correction commit `731b480` completed using
+`gpt-6-astra`, medium effort, read-only sandbox and `approval_policy=never`.
+It inspected the code and reported no actionable regressions; it did not run
+tests. No process was killed, sandbox weakened, credential changed, or active
+server restarted. The original Daybreak reviews remain failed historical records.
+
+An elevated probe using the full Helix harness with automatic safe-command
+approval was denied before execution. The approved, narrower native read-only
+review verifies runtime recovery, not a new live Helix PR-review submission.
 
 ## Regression coverage
 
@@ -54,3 +63,8 @@ submits a real verdict. The original Daybreak run and both live servers were unt
 ordinary failures that must not trigger abandonment. Existing core reviewer tests
 cover `unknown` abandonment. Reviewer sandbox settings, read/write denials and
 permission-expansion rejection remain covered.
+
+The 16 reviewer tests passed. Repository format, types and lint passed; its broad
+test run had two pre-existing subprocess timeout failures. Both affected files
+passed on a single-worker rerun (46 tests). Production build and architecture
+checks passed. No test timeout or security rule was relaxed.
