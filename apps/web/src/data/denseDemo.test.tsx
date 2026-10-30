@@ -46,6 +46,24 @@ test('every dense replay cursor projects safely with twelve workers and distinct
     </TooltipProvider>,
   );
   expect(html.match(/data-worker-node=/g)).toHaveLength(12);
+  const reviews = [
+    ...html.matchAll(
+      /data-review-node="([^"]+)" style="left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px"/g,
+    ),
+  ];
+  expect(reviews).toHaveLength(12);
+  for (const [, id, left, top, width] of reviews) {
+    const task = html.match(
+      new RegExp(
+        `data-motion-key="${id}" style="left:([\\d.]+)px;top:([\\d.]+)px;width:([\\d.]+)px;height:([\\d.]+)px`,
+      ),
+    );
+    expect(task).not.toBeNull();
+    expect(Number(left) + Number(width) / 2).toBe(Number(task![1]) + Number(task![3]) / 2);
+    expect(Number(top)).toBe(Number(task![2]) + Number(task![4]) + 24);
+  }
+  // Twelve one-task columns no longer reserve lateral review-card space.
+  expect(html).toContain('width:4416px;height:500px');
   expect(html).toContain('Reviewer unavailable');
   expect(html).toMatch(/2(?:<!-- -->)? findings/);
   expect(html).toContain('<summary>Graph options</summary>');

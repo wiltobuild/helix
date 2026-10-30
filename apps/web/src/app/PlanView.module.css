@@ -935,14 +935,10 @@
 .reviewNodePosition::before {
   content: '';
   position: absolute;
-  top: 32px;
-  right: 100%;
-  width: 24px;
-  border-top: 2px dashed var(--status-review);
-}
-.reviewNodePosition[data-side='left']::before {
-  right: auto;
-  left: 100%;
+  bottom: 100%;
+  left: 50%;
+  height: 24px;
+  border-left: 2px dashed var(--status-review);
 }
 .directTask {
   display: grid;

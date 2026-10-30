@@ -72,7 +72,6 @@ type Group = {
   width: number;
   cardsX: number[];
   reviewersX: number[];
-  reviewOnLeft: boolean;
 };
 
 function layout(assigned: WorkerView[]) {
@@ -93,23 +92,21 @@ function layout(assigned: WorkerView[]) {
       });
   }
   let x = PAD;
-  const groups: Group[] = agents.map((agent, groupIndex) => {
+  const groups: Group[] = agents.map((agent) => {
     const n = Math.max(agent.tasks.length, 1);
-    const pairWidth = CARD_W + REVIEW_GAP + REVIEW_W;
+    const pairWidth = Math.max(CARD_W, REVIEW_W);
     const cardsWidth = n * pairWidth + (n - 1) * CARD_GAP;
     const width = Math.max(AGENT_W, cardsWidth);
     const start = x + (width - cardsWidth) / 2;
-    const reviewOnLeft = groupIndex % 2 === 0;
     const g = {
       agent,
       x,
       width,
-      reviewOnLeft,
       cardsX: agent.tasks.map(
-        (_, i) => start + i * (pairWidth + CARD_GAP) + (reviewOnLeft ? REVIEW_W + REVIEW_GAP : 0),
+        (_, i) => start + i * (pairWidth + CARD_GAP) + (pairWidth - CARD_W) / 2,
       ),
       reviewersX: agent.tasks.map(
-        (_, i) => start + i * (pairWidth + CARD_GAP) + (reviewOnLeft ? 0 : CARD_W + REVIEW_GAP),
+        (_, i) => start + i * (pairWidth + CARD_GAP) + (pairWidth - REVIEW_W) / 2,
       ),
     };
     x += width + GROUP_GAP;
@@ -120,8 +117,9 @@ function layout(assigned: WorkerView[]) {
   const agentY = ROW_GAP;
   const cardY = agentY + AGENT_H + ROW_GAP;
   const hasReviews = agents.some((agent) => agent.tasks.length > 0);
-  const height = cardY + Math.max(CARD_H, hasReviews ? 210 : 0) + PAD + 40;
-  return { groups, width, height, agentY, cardY };
+  const reviewY = cardY + CARD_H + REVIEW_GAP;
+  const height = (hasReviews ? reviewY + 100 : cardY + CARD_H) + PAD + 40;
+  return { groups, width, height, agentY, cardY, reviewY };
 }
 
 /** Vertical S-curve from a node's bottom to another node's top. */
@@ -132,7 +130,7 @@ const drop = (x1: number, y1: number, x2: number, y2: number) => {
 
 /**
  * Concept 3 plan view. The orchestrator's plan as a tree: the orchestrator on top (it waits for
- * your approval before anything runs), one node per task subagent, with a lateral reviewer.
+ * your approval before anything runs), one node per task subagent, with a compact reviewer beneath its task.
  * The initial working window stays readable; the overview is an explicit option.
  */
 export function PlanView(props: PlanViewProps) {
@@ -885,11 +883,11 @@ function PlanCanvas({
                         (item) => item.node.id === id,
                       );
                       const sourceX = parent.cardsX[parentIndex]! + CARD_W / 2;
-                      const bottom = graph.cardY + CARD_H;
+                      const top = graph.cardY;
                       return (
                         <path
                           key={id + task.node.id}
-                          d={`M${sourceX} ${bottom} V${bottom + 28} H${targetX} V${bottom}`}
+                          d={`M${sourceX} ${top} V${top - 12} H${targetX} V${top}`}
                           className={s.dependencyEdge}
                         />
                       );
@@ -1002,8 +1000,8 @@ function PlanCanvas({
                   className={s.reviewNodePosition}
                   role="group"
                   aria-label={'Reviewer for ' + task.node.title}
-                  data-side={g.reviewOnLeft ? 'left' : 'right'}
-                  style={{ left: g.reviewersX[i], top: graph.cardY, width: REVIEW_W }}
+                  data-review-node={task.node.id}
+                  style={{ left: g.reviewersX[i], top: graph.reviewY, width: REVIEW_W }}
                 >
                   {task.session ? (
                     <ReviewerCards
