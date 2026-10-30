@@ -301,3 +301,53 @@ it('binds projected approval to a passing exact review revision', () => {
     projectUpTo([...prefix, stale], stale.seq).plans[submitted.payload.plan.id]?.review?.status,
   ).toBe('reviewing');
 });
+
+it('uses submission sequence rather than numeric key order for latest reviewed plan', () => {
+  const run = structuredClone(fixtures.passwordResetRun);
+  const at = run.findIndex((e) => e.type === 'plan.submitted');
+  const original = run[at]!;
+  if (original.type !== 'plan.submitted') throw new Error('Missing plan');
+  const review = {
+    hash: 'a'.repeat(64),
+    attempt: 1,
+    status: 'reviewing',
+    reviewer: 'codex',
+    message: 'Pending',
+  };
+  const first = eventSchemas['plan.submitted'].parse({
+    ...original,
+    payload: { plan: { ...original.payload.plan, id: '2', review } },
+  });
+  const second = eventSchemas['plan.submitted'].parse({
+    ...first,
+    seq: first.seq + 1,
+    payload: { plan: { ...first.payload.plan, id: '1' } },
+  });
+  const prefix = [...run.slice(0, at), first, second];
+  for (const id of ['2', '1']) {
+    const reviewed = eventSchemas['plan.reviewed'].parse({
+      ...second,
+      seq: second.seq + 1,
+      type: 'plan.reviewed',
+      payload: {
+        planId: id,
+        review: {
+          ...review,
+          status: 'passed',
+          result: { verdict: 'passed', summary: 'Pass', findings: [] },
+        },
+      },
+    });
+    const approved = eventSchemas['plan.approved'].parse({
+      ...reviewed,
+      seq: reviewed.seq + 1,
+      type: 'plan.approved',
+      payload: { planId: id, approvedBy: 'human', reviewHash: review.hash },
+    });
+    const state = projectUpTo([...prefix, reviewed, approved], approved.seq);
+    expect(state.plans[first.payload.plan.id]?.status).toBe('awaiting_approval');
+    expect(state.plans[second.payload.plan.id]?.status).toBe(
+      id === '1' ? 'approved' : 'awaiting_approval',
+    );
+  }
+});

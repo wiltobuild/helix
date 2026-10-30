@@ -40,6 +40,7 @@ export type AgentReviewState = {
   review?: AgentReview;
 };
 export type PlanState = Plan & {
+  submittedSeq?: number;
   status: PlanStatus;
   nodeStatus: Record<PlanNodeId, DisplayStatus>;
   waitingNodes: Record<PlanNodeId, 'worker_slot'>;
@@ -162,7 +163,13 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (e.type === 'plan.approved' && plan.review) {
         const latest = Object.values(state.plans)
           .filter((p) => p.orchestratorSessionId === plan.orchestratorSessionId)
-          .at(-1);
+          .reduce<PlanState | undefined>(
+            (latest, candidate) =>
+              !latest || (candidate.submittedSeq ?? 0) > (latest.submittedSeq ?? 0)
+                ? candidate
+                : latest,
+            undefined,
+          );
         if (
           latest?.id !== plan.id ||
           plan.review.status !== 'passed' ||
@@ -370,7 +377,13 @@ function reduceInto(
         if (!node.sessionId && s) node.sessionId = s.session.id;
       }
       Object.defineProperty(next.plans, plan.id, {
-        value: { ...plan, status: 'awaiting_approval', nodeStatus: {}, waitingNodes: {} },
+        value: {
+          ...plan,
+          submittedSeq: e.seq,
+          status: 'awaiting_approval',
+          nodeStatus: {},
+          waitingNodes: {},
+        },
         enumerable: true,
         writable: true,
         configurable: true,
