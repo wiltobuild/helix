@@ -1,3 +1,5 @@
+import type { BuildView } from '@helix/contracts';
+import { BuildStages } from './BuildStages';
 import { useRef, type ReactNode } from 'react';
 import {
   BookOpen,
@@ -123,7 +125,7 @@ export interface SessionSummary {
 
 const NAV: { page: Page; label: string; icon: ReactNode }[] = [
   { page: 'overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
-  { page: 'sessions', label: 'Sessions', icon: <SquareStack size={16} /> },
+  { page: 'sessions', label: 'Builds', icon: <SquareStack size={16} /> },
   { page: 'tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
   { page: 'agents', label: 'Agents', icon: <Bot size={16} /> },
   { page: 'prs', label: 'Pull requests', icon: <GitPullRequest size={16} /> },
@@ -192,7 +194,7 @@ export function NavRail({
 
       {active && (
         <div className={s.navSection}>
-          <span className={s.navHeading}>Active session</span>
+          <span className={s.navHeading}>Selected build</span>
           <button
             type="button"
             className={s.activeCard}
@@ -219,9 +221,9 @@ export function NavRail({
       )}
 
       <div className={s.navSection} data-grow>
-        <span className={s.navHeading}>Recent sessions</span>
+        <span className={s.navHeading}>Recent builds</span>
         {recent.length === 0 ? (
-          <p className={s.navEmpty}>No other sessions in this project yet.</p>
+          <p className={s.navEmpty}>No other builds in this project yet.</p>
         ) : (
           <ul className={s.recent}>
             {recent.map((r) => (
@@ -259,6 +261,7 @@ export function SessionHeader({
   source,
   title,
   goal,
+  build,
   mode,
   elapsedMs,
   timeMode = 'elapsed',
@@ -277,6 +280,7 @@ export function SessionHeader({
   source: HelixSource;
   title: string;
   goal?: string;
+  build?: BuildView;
   mode: 'live' | 'replaying' | 'recording' | 'paused';
   elapsedMs: number;
   timeMode?: 'active' | 'elapsed';
@@ -310,7 +314,7 @@ export function SessionHeader({
         <li aria-hidden>
           <ChevronRight size={12} />
         </li>
-        <li>Sessions</li>
+        <li>Builds</li>
         <li aria-hidden>
           <ChevronRight size={12} />
         </li>
@@ -332,7 +336,12 @@ export function SessionHeader({
                     : 'Recorded run'}
             </span>
           </h1>
-          {goal && <p className={s.goal}>{goal}</p>}
+          {goal && (
+            <p className={s.goal} title={goal}>
+              {goal}
+            </p>
+          )}
+          {build && <BuildStages build={build} />}
           <p className={s.subMeta}>
             {recorded ? `Recorded ${recorded} · ` : source.mode !== 'live' ? 'Example run · ' : ''}
             {formatDuration(elapsedMs)} {timeMode} project history
@@ -380,7 +389,7 @@ export function SessionHeader({
             }
           >
             <MenuItem icon={<Plus size={14} />} shortcut="⌘N" onSelect={onNewTask}>
-              New task
+              New build
             </MenuItem>
             <MenuSeparator />
             <MenuLabel>Repositories</MenuLabel>
@@ -422,7 +431,7 @@ export function SessionTabs({
   counts: Partial<Record<SessionTab, number>>;
 }) {
   return (
-    <div className={s.tabs} role="tablist" aria-label="Session views">
+    <div className={s.tabs} role="tablist" aria-label="Build views">
       {(
         [
           ['board', 'Board'],
