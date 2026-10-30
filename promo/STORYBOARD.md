@@ -1,86 +1,61 @@
-# Helix promo: timed storyboard (v0, provisional)
+# Helix promo: storyboard (final cut v1)
 
-**Timing status: PROVISIONAL.** No narration recording has been supplied, and there is no voice track: the words appear on screen only. Hold times come from a slow reading-pace model (`tools/timeline.mjs`: 0.8 s + 0.4 s per word, plus the bracketed pauses: pause 1.2 s, longer pause 2.0 s, hold 2.8 s). If a narration recording is supplied, it becomes the master timing track and every time below gets re-cut to it.
+**Timing:** there is no voice track; the words are on screen. Hold times come from a slow reading-pace model in `tools/timeline.mjs`: 0.8 s plus 0.4 s per word, plus the bracketed pauses (pause 1.2 s, longer pause 2.0 s, hold 2.8 s). If a narration recording is added later, re-time to it.
 
-| Version                                                            | Phrases | Runtime (provisional) |
-| ------------------------------------------------------------------ | ------- | --------------------- |
-| Baseline script                                                    | 35      | **2:24**              |
-| Baseline + teamwork insert after "That's what Helix helps manage." | 42      | **2:56** (+31 s)      |
+| Version                                                            | Phrases | Runtime  |
+| ------------------------------------------------------------------ | ------- | -------- |
+| Baseline script                                                    | 35      | **2:24** |
+| Baseline + teamwork insert after "That's what Helix helps manage." | 42      | **2:56** |
 
-The baseline edit stays the default until you approve the insert version.
+**Layout:** the app sits in a fixed frame 56–854 px from the top. Some beats split it into a plan pane and an inspector pane, and the store uses three portrait panes. Captions sit in their own band at 884–1034 px, so they never cover the app. The Shaw opening and the closing beats ("You bring the idea." / "Helix brings the team together.") are set as typography in both versions, not as captions.
 
-Frame layout: the app sits in a fixed 1728×798 frame (top 56 px). Captions sit in a separate band beneath it (y 884–1034), so they never cover the app. The Shaw opening is set as full-screen typography, not captions.
+## Footage sources
 
-## Footage sources (verified in this container)
+| Source                                                   | What it is                                                                                                                                                                                                                                                                  | On-screen label                                         |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `dc`: 18 stills from the bundled `discount-codes` replay | A real run recorded 2026-10-28 (wiltobuild/helix-demo-app). Helix (Claude Code) plans "Add discount codes to checkout". Codex builds cart pricing; Claude Code builds the receipt, which depends on the pricing task. A human approves the plan; CI passes; both PRs merge. | "Real Helix replay · recorded store build, Oct 28 2026" |
+| `daybreak`: five storefront design images you supplied   | Daybreak homepage designs showing the product catalogue and "Add to bag" / cart.                                                                                                                                                                                            | "Daybreak storefront designs"                           |
+| Daybreak review record (teamwork insert only)            | Facts quoted from `docs/daybreak-review-failure.md`: Claude Code's catalogue and cart approvals (events 631, 688), and the recorded fallback when the Codex reviewer could not start (events 585–624, 980–999).                                                             | Source line on the card                                 |
 
-| Source                                        | Real?                                                                                | What it contains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discount-codes` recording (bundled, `?demo`) | **Real run**, recorded 2026-10-28, wiltobuild/helix-demo-app                         | Helix orchestrator (Claude Code) plans "Add discount codes to checkout"; 2 tasks: **Codex** "Discount pricing in cart.ts" and **Claude Code** "Discount line on the receipt" (depends on cart). A human approves the plan (#79, `approvedBy: human`). Codex builds; the receipt task **waits on its dependency**; CI passes 1/1; PR #1 merges; the receipt starts "from fetched base … merged prerequisites: cart-discount-pricing (PR #1)" (#158); PR #2 passes CI and merges. 19 human tool approvals. **No AI cross-review happened in this run**: review decision is `none`, and the reviewer cards only say "Standing by / review slot". |
-| `github-ci-repair` recording                  | **Real run** (single Codex worker, sandbox repo)                                     | A CI failure is routed back to the agent and fixed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `cross-review` scenario                       | **Synthetic fixture** (`packages/contracts/src/fixtures/cross-review.ts`, acme-demo) | Codex worker, Claude Code reviewer requests changes, fix, re-review approves. The UI labels it "Example run". The video must label it **SIMULATED**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `laptop` scenario                             | Synthetic, already labelled "Simulated" in the UI                                    | Dense 12-agent graph. Not planned for use.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Daybreak storefront history                   | **Not available here**                                                               | Per `docs/daybreak-review-failure.md`, it holds real Claude Code catalogue and cart **review approvals** (events 631, 688). It lives in the local Helix database on the machine that ran it.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+The cross-review example fixture is not used anywhere.
 
-## Scenes
+## Cut (baseline times)
 
-Times are provisional starts in the baseline cut.
+| Time | Phrase(s)                                             | Picture                                                                                                                                                    |
+| ---- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0:00 | Shaw quote, s01–s05                                   | Kinetic typography. "Why?" is set in teal; "Why not?" is large with a teal-to-coral gradient. George Bernard Shaw is credited, then the DNA mark fades in. |
+| 0:22 | Machines can create now.                              | Agents page: Codex worker (Active) and Claude Code worker (Planned).                                                                                       |
+| 0:26 | Tools like Claude Code and Codex…                     | Plan approved → Codex task "In progress"; the Claude Code task waits on its dependency.                                                                    |
+| 0:31 | But if you want several agents… manage that team.     | Wide plan graph, pushing in on the Helix orchestrator card.                                                                                                |
+| 0:41 | Explain the goal.                                     | Build header with the original request, plus the inspector's Plan summary.                                                                                 |
+| 0:44 | Divide the work.                                      | Two tasks with owners: Task 1 → Codex; Task 2 → Claude Code, after task 1.                                                                                 |
+| 0:47 | Check the results.                                    | Codex card "1/1 CI passed", plus the inspector's CI history (#150 passed 0/0 → #153 running → #155 passed 1/1 → #156 merged).                              |
+| 0:50 | Bring it all together.                                | Why bar #158: "Starting from fetched base … merged prerequisites: cart-discount-pricing (PR #1)", then 2/2 merged.                                         |
+| 0:54 | That's what Helix helps manage.                       | Helix card: Complete · 2/2 merged · plan approved.                                                                                                         |
+| 0:58 | Imagine building an online store.                     | Three Daybreak storefront designs.                                                                                                                         |
+| 1:01 | One agent… catalogue… another… shopping cart.         | Daybreak product grid, with callouts "Product catalogue" and then "Shopping cart · Add to bag".                                                            |
+| 1:10 | Helix organises their assignments,                    | Tasks page: each task's owner agent, status and branch.                                                                                                    |
+| 1:13 | tracks what they need from each other,                | Receipt task: "Waits on Discount pricing in cart.ts".                                                                                                      |
+| 1:17 | …through review and testing.                          | CI running → passed → PR #1 merged.                                                                                                                        |
+| 1:22 | And while they work… see it happening.                | Plan view moving through Codex working → PR opened → CI running.                                                                                           |
+| 1:29 | Who is building.                                      | Codex card "In progress" (teal frame).                                                                                                                     |
+| 1:32 | Who is checking.                                      | CI running on PR #1, task "Waiting for CI" (violet frame).                                                                                                 |
+| 1:35 | What is ready.                                        | Task 1 Done, CI passed, merged.                                                                                                                            |
+| 1:38 | What is waiting.                                      | Claude Code task Waiting on task 1 (coral frame).                                                                                                          |
+| 1:41 | And where your decision can move it forward.          | "Why this plan is blocked … needs your approval" + Approve plan → "You approved this plan at 6:01:36 PM".                                                  |
+| 1:46 | You stay involved in shaping the product,             | Task selected; inspector shows its intent.                                                                                                                 |
+| 1:50 | while Helix handles the coordination                  | Inspector Why: the event chain and its causes.                                                                                                             |
+| 1:54 | …terminals, conversations, half-finished handoffs.    | Tasks page → Pull requests page.                                                                                                                           |
+| 2:00 | As these tools get stronger… ambition…                | Finished plan, pulling back.                                                                                                                               |
+| 2:08 | You bring the idea. / Helix brings the team together. | Two typographic beats, then the DNA mark.                                                                                                                  |
+| 2:16 | Let me show you how it works.                         | End card: DNA mark + HELIX, held for the live demo.                                                                                                        |
 
-### 1. Shaw opening (0:00–0:22), built
+The **teamwork insert** (after "That's what Helix helps manage.") runs:
 
-Dark navy (`--bg #080b11`) with a faint teal/coral glow. Bricolage Grotesque, light weight.
-
-- 0:01.5 "You see things…" → 0:05.1 "and you say, '**Why?**'" (Why? in Codex teal). The stanza clears.
-- 0:08.7 "But I dream things that never were…" → 0:14.7 "and I say…" → 0:18.3 "**'Why not?'**" at 148 px with a teal-to-coral gradient, settling from 1.06× scale.
-- The hold gives "Why not?" about 4 s on screen. "George Bernard Shaw" fades in, then the accepted DNA mark emerges at 55% opacity, drawn with the same geometry as `HelixLogo`. The words stay dominant.
-
-### 2. Machines can create (0:22–0:31), built
-
-- s06 "Machines can **create** now.": Agents page, real replay at #81. Close-up of the two worker identity cards: Discount Pricing Engineer · Worker · Codex (Active) and Discount Line Engineer · Worker · Claude Code (Planned, "Waiting for Discount pricing in cart.ts"). Slow push-in.
-- s07 "Tools like **Claude Code** and **Codex** can build software.": Plan view from #79 to #83, plan approved → Codex worker "In progress" (`plan.node_updated` "No unmet dependencies; worker started"). Callouts: "Codex · building", "Claude Code · waits on its dependency".
-- Every footage frame carries the chip "Replay of a real recorded Helix run · Oct 28, 2026". Agent names appear as product identities only, with no logos beyond those the app already renders and no suggestion of endorsement.
-
-### 3. Manage the team (0:31–0:57), planned. Real discount-codes footage throughout
-
-- s08–s09: pull back to the full plan graph (Helix → two workers → two tasks).
-- **Four beats**, one per line, each a readable close-up:
-  - "Explain the **goal**." → the build header showing the original request (the plan goal text).
-  - "**Divide** the work." → the plan at #72: 2 tasks, owners, file claims, and "After task 1".
-  - "**Check** the results." → PR #1 CI 1/1 passed (#154–155). This is real CI, not an AI review.
-  - "Bring it all **together**." → the receipt starting "from fetched base … merged prerequisites: cart-discount-pricing (PR #1)" (#158) → both PRs merged, "2/2 merged".
-- s14 "That's what **Helix** helps manage.": the Helix orchestrator card, "Complete", with the DNA mark.
-
-### 4. Teamwork insert (insert version only, +31 s), planned. Needs a decision
-
-- "One agent can build. Another can examine its work…" calls for a real author→reviewer pair. **The only real reviews available are in the Daybreak history (Claude Code reviewing the catalogue and cart).** Until that recording is supplied, the only option is the `cross-review` fixture, shown with a persistent **SIMULATED** chip. Builder shots get a teal frame edge; reviewer shots get a violet frame edge (the app's `--status-review`).
-- No adversarial plan-review shots: the build docs say that feature is not shipped ("No synthetic intake, adversarial plan review, Output or acceptance-verifier stage is emitted").
-
-### 5. Online store (≈0:58–1:22), planned. Footage does not fully match the words
-
-- **Mismatch:** the narration says "product **catalogue**… shopping **cart**". The real footage here is cart **pricing** (Codex) and the **receipt** (Claude Code). It's a real store, cart work and a dependency, but there is no catalogue.
-- **Faithful option A (preferred):** export the Daybreak build as a recording and use its real catalogue and cart tasks and reviews. That requires verifying task names and dependencies once it's in hand.
-- **Option B:** keep the discount-codes footage and change the on-screen labels to what's actually shown ("cart pricing" / "receipt"). The narration words stay unchanged, but this needs your approval because the picture won't literally show a catalogue.
-- "organises their assignments": the plan's task owners. "tracks what they need from each other": the receipt card's "Waits on Discount pricing in cart.ts". "review and testing": CI on PR #1/#2 (real). Any AI review shot needs Daybreak or the SIMULATED fixture.
-
-### 6. Watch the work (≈1:22–1:46), planned. One close-up per line
-
-- "Who is **building**." → Codex worker "In progress" (#83). Real.
-- "Who is **checking**." → **Gap:** discount-codes has no reviewer activity. Use Daybreak (real) or the fixture's Claude Code reviewer "Approved by Claude Code" (SIMULATED chip). CI checks running (#152, "CI is running on PR #1") are real, and could stand in if "checking" can be read as testing.
-- "What is **ready**." → task "Done" / CI passed, PR #1 merged. Real.
-- "What is **waiting**." → receipt task "Waiting · Waits on Discount pricing in cart.ts". Real, dependency-blocked.
-- "And where **your decision** can move it forward." → Inspector "Why this plan is blocked: the plan needs your approval…" + **Approve plan**, then "You approved this plan at 6:01:36 PM. Agents started from it." Real human checkpoint (#79). The replay disables the buttons; we show the real recorded transition and don't stage a click.
-
-### 7. Stay involved (≈1:46–2:00), planned
-
-- Select a task card → Inspector Summary / Files / PR & CI / **Why** chain ("caused by #79 plan.approved") → Tasks page → Pull requests page. All real replay.
-- No Output view or conversational intake: neither is shipped (BUILD-WORKFLOW.md), so both are omitted.
-
-### 8. Close (≈2:00–2:24), planned
-
-- "As these tools get stronger… our ambition should grow with them." → the final plan state (2/2 merged), slowly resolving into the DNA mark.
-- "You bring the **idea**." and "Helix brings the **team together**." as two separate typographic beats.
-- End card: **HELIX** wordmark + DNA mark, held about 3 s, leaving room for the live demo.
-
-## Audio
-
-- **No voice.** Per your direction, there's no TTS or scratch voice. The words are on screen.
-- **Music:** `tools/music.py` synthesizes an original temp bed: a quiet D drone under the Shaw opening, air after "Why not?", then Dm(add9)–B♭maj7–Gm7–Asus4 with a soft pulse. It uses no samples and isn't derived from "Time". It's a placeholder until a licensed or cleared track is supplied, and peaks at −10 dBFS to leave room for narration.
+| Phrase(s)                                                      | Picture                                           |
+| -------------------------------------------------------------- | ------------------------------------------------- |
+| "Claude Code and Codex bring different capabilities"           | The worker pair                                   |
+| "one coordinated effort"                                       | The finished plan                                 |
+| "One agent can build"                                          | Codex card, teal frame                            |
+| "Another can examine its work…" through "independent scrutiny" | The Daybreak review-record card, one row per line |
+| "shared result"                                                | The finished plan, 2/2 merged                     |

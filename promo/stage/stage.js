@@ -2,16 +2,37 @@
 // Every visual is a pure function of time, so any frame can be rendered in any order.
 'use strict';
 
-const FRAME = { w: 1728, h: 798 };
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 const easeOut = (x) => 1 - Math.pow(1 - x, 3);
 const ramp = (t, a, b) => clamp((t - a) / (b - a));
 const lerp = (a, b, k) => a + (b - a) * k;
 
+/** Stage rectangles for panes. Captions live below y 862, so no pane reaches them. */
+const RECTS = {
+  full: { x: 96, y: 56, w: 1728, h: 798 },
+  left: { x: 96, y: 56, w: 1060, h: 798 },
+  right: { x: 1180, y: 56, w: 644, h: 798 },
+  third1: { x: 96, y: 56, w: 540, h: 798 },
+  third2: { x: 690, y: 56, w: 540, h: 798 },
+  third3: { x: 1284, y: 56, w: 540, h: 798 },
+};
+const STRAND = {
+  codex: 'var(--codex)',
+  claude: 'var(--claude)',
+  orch: 'var(--orch)',
+  review: 'var(--review)',
+};
+const SOURCES = {
+  dc: { dir: '../footage/stills/dc/', ext: '.jpg', size: { w: 1920, h: 1080 } },
+  daybreak: { dir: '../footage/daybreak/', ext: '.webp', size: null },
+};
+const XFADE = 0.7;
+const STATE_FADE = 0.45;
+
 let TL;
 let OPT;
-const images = new Map();
+const sizes = new Map();
 
 /** The accepted DNA mark: same geometry as packages/ui HelixLogo (teal/rust strands, neutral rungs). */
 function dnaSvg(size, phase) {
@@ -54,8 +75,15 @@ function dnaSvg(size, phase) {
 const dnaPhase = (t) => ((t / 8.726646) * 60) % 60;
 
 const cue = (id) => TL.cues.find((c) => c.id === id);
+/** Segment-local time of a marker: a number, or a cue id (optionally `id+offset`). */
+function localAt(seg, at) {
+  if (typeof at === 'number') return at;
+  const [id, off] = String(at).split('+');
+  const c = cue(id);
+  return c ? c.start - seg.start + Number(off ?? 0) : Infinity;
+}
 
-function shaw(t, seg) {
+function shaw(t) {
   const [c1, c2, c3, c4, c5] = ['s01', 's02', 's03', 's04', 's05'].map(cue);
   const line = (text, top, c, cls = '') => {
     if (!c) return '';
@@ -70,8 +98,7 @@ function shaw(t, seg) {
     let big = '';
     if (c5) {
       const k = easeOut(ramp(t, c5.start, c5.start + 1.6));
-      const s = lerp(1.06, 1, k);
-      big = `<div class="quote big" style="top:520px;opacity:${k};transform:scale(${s})"><span class="whynot">‘Why not?’</span></div>`;
+      big = `<div class="quote big" style="top:520px;opacity:${k};transform:scale(${lerp(1.06, 1, k)})"><span class="whynot">‘Why not?’</span></div>`;
     }
     html += `<div class="layer">${line('But I dream things that never were…', 300, c3)}${line('and I say…', 400, c4)}${big}`;
     if (c5) {
@@ -85,64 +112,119 @@ function shaw(t, seg) {
   return html;
 }
 
-function frameAt(seg, local) {
-  const frames = seg.manifest.frames;
-  const ms = (seg.startMs ?? 0) + local * 1000 * (seg.rate ?? 1);
-  let pick = frames[0];
-  for (const f of frames) if (f.ms <= ms) pick = f;
-  return `../footage/frames/${seg.shot}/${pick.file}`;
+const srcOf = (ref) => {
+  const [source, name] = ref.split('/');
+  const s = SOURCES[source];
+  return { url: s.dir + name + s.ext, size: s.size ?? sizes.get(s.dir + name + s.ext) };
+};
+
+/** One framed window onto real footage: crossfades between states, eases its crop c0 -> c1. */
+function pane(seg, p, t) {
+  const r = typeof p.rect === 'string' ? RECTS[p.rect] : (p.rect ?? RECTS.full);
+  const local = t - seg.start;
+  const k = ease(ramp(t, seg.start, seg.end));
+  const c1 = p.c1 ?? p.c0;
+  const w = lerp(p.c0.w, c1.w, k);
+  const x = lerp(p.c0.x, c1.x, k);
+  const y = lerp(p.c0.y, c1.y, k);
+  const scale = r.w / w;
+  const states = p.states.map((s) => ({ ...s, at: localAt(seg, s.at ?? 0) }));
+  let imgs = '';
+  states.forEach((s, i) => {
+    if (local < s.at) return;
+    const next = states[i + 1];
+    if (next && local >= next.at + STATE_FADE) return;
+    const a = i === 0 ? 1 : easeOut(ramp(local, s.at, s.at + STATE_FADE));
+    const { url, size } = srcOf(s.still);
+    imgs += `<img src="${url}" style="width:${size.w}px;height:${size.h}px;opacity:${a};transform:translate(${-x * scale}px,${-y * scale}px) scale(${scale})">`;
+  });
+  let callouts = '';
+  for (const c of p.callouts ?? []) {
+    const at = localAt(seg, c.at ?? 0);
+    const until = c.until === undefined ? Infinity : localAt(seg, c.until);
+    const a = Math.min(easeOut(ramp(local, at, at + 0.6)), 1 - ramp(local, until - 0.3, until));
+    if (a <= 0) continue;
+    const px = (c.x - x) * scale;
+    const py = (c.y - y) * scale;
+    const anchor =
+      c.align === 'right' ? 'translateX(-100%)' : c.align === 'center' ? 'translateX(-50%)' : '';
+    callouts += `<div class="callout" style="left:${px}px;top:${py}px;opacity:${a};transform:${anchor} translateY(${(1 - a) * 10}px)"><span class="dot" style="background:${STRAND[c.strand] ?? 'var(--text-2)'}"></span>${c.text}</div>`;
+  }
+  const edge = p.edge
+    ? `border-color:${STRAND[p.edge]};box-shadow:0 0 0 1px ${STRAND[p.edge]},0 30px 80px rgb(0 0 0 / 0.55)`
+    : '';
+  const chip = p.chip
+    ? `<div class="chip ${p.chipAt ?? 'tl'}"><span class="dot"></span>${p.chip}</div>`
+    : '';
+  return `<div class="frame" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;${edge}">${imgs}${callouts}${chip}</div>`;
 }
 
 function footage(t, seg) {
+  return seg.panes.map((p) => pane(seg, p, t)).join('');
+}
+
+/** Large typographic beats, one or more lines revealed at their cues. */
+function title(t, seg) {
   const local = t - seg.start;
-  const k = ease(ramp(t, seg.start, seg.end));
-  const w = lerp(seg.c0.w, seg.c1.w, k);
-  const x = lerp(seg.c0.x, seg.c1.x, k);
-  const y = lerp(seg.c0.y, seg.c1.y, k);
-  const scale = FRAME.w / w;
-  const src = frameAt(seg, local);
-  const sim = seg.manifest.simulated;
-  let callouts = '';
-  for (const c of seg.callouts ?? []) {
-    const a = easeOut(ramp(local, c.at, c.at + 0.6));
-    if (a <= 0) continue;
-    const px = (c.x - x) * scale;
-    const py = (c.y - y) * scale - 70;
-    const color =
-      c.strand === 'codex'
-        ? 'var(--codex)'
-        : c.strand === 'claude'
-          ? 'var(--claude)'
-          : 'var(--orch)';
-    const anchor = c.align === 'right' ? 'translateX(-100%)' : '';
-    callouts += `<div class="callout" style="left:${px}px;top:${py}px;opacity:${a};transform:${anchor} translateY(${(1 - a) * 10}px)"><span class="dot" style="background:${color}"></span>${c.text}</div>`;
+  let html = '';
+  for (const l of seg.lines) {
+    const at = localAt(seg, l.at ?? 0);
+    const k = easeOut(ramp(local, at, at + 1.0));
+    const out =
+      l.until === undefined
+        ? 1
+        : 1 - ramp(local, localAt(seg, l.until) - 0.6, localAt(seg, l.until));
+    html += `<div class="quote ${l.cls ?? ''}" style="top:${l.top}px;opacity:${Math.min(k, out)};transform:translateY(${(1 - k) * 18}px)">${l.html}</div>`;
   }
-  const chip = seg.label
-    ? `<div class="chip ${sim ? 'sim' : ''} ${seg.chip ?? 'tl'}"><span class="dot"></span>${sim ? 'SIMULATED · ' : ''}${seg.label}</div>`
-    : '';
-  return `<div class="frame"><img src="${src}" style="transform:translate(${-x * scale}px,${-y * scale}px) scale(${scale})">${callouts}${chip}</div>`;
+  if (seg.mark) {
+    const m =
+      ease(ramp(local, localAt(seg, seg.mark.at), localAt(seg, seg.mark.at) + 1.6)) *
+      (seg.mark.opacity ?? 0.8);
+    html += `<div class="mark" style="top:${seg.mark.top}px;opacity:${m}">${dnaSvg(seg.mark.size ?? 44, dnaPhase(t))}</div>`;
+  }
+  return html;
+}
+
+/** A record card quoting real recorded facts, each row revealed at its cue. */
+function evidence(t, seg) {
+  const local = t - seg.start;
+  const rows = seg.rows
+    .map((row) => {
+      const at = localAt(seg, row.at ?? 0);
+      const a = easeOut(ramp(local, at, at + 0.7));
+      return `<div class="row" style="opacity:${a};transform:translateX(${(1 - a) * 16}px)"><span class="dot" style="background:${STRAND[row.strand] ?? 'var(--text-2)'}"></span><div><div class="what">${row.text}</div><div class="src">${row.source}</div></div></div>`;
+    })
+    .join('');
+  const edge = seg.edge ? `border-color:${STRAND[seg.edge]}` : '';
+  return `<div class="evidence" style="${edge}"><div class="eyebrow">${seg.eyebrow}</div><div class="head">${seg.heading}</div>${rows}<div class="foot">${seg.footnote}</div></div>`;
 }
 
 function endCard(t, seg) {
-  const a = easeOut(ramp(t, seg.start + 0.3, seg.start + 1.6));
-  return `<div class="mark" style="top:470px;opacity:${a}">${dnaSvg(70, dnaPhase(t))}</div>`;
+  const local = t - seg.start;
+  const a = easeOut(ramp(local, 0.3, 1.8));
+  const w = easeOut(ramp(local, 1.0, 2.4));
+  return `<div class="mark" style="top:330px;opacity:${a}">${dnaSvg(80, dnaPhase(t))}</div><div class="wordmark" style="opacity:${w};letter-spacing:${lerp(0.5, 0.32, w)}em">HELIX</div>`;
 }
 
-const RENDER = { shaw, footage, end: endCard };
-const XFADE = 0.7;
+const RENDER = { shaw, footage, title, evidence, end: endCard };
+
+/** Cues set as on-screen typography (Shaw, title beats) are not repeated as captions. */
+function ownedByTitle(c) {
+  const seg = TL.segments.find((s) => c.start >= s.start && c.start < s.end);
+  return seg && (seg.type === 'shaw' || (seg.type === 'title' && !seg.captions));
+}
 
 function captionHtml(t) {
   if (OPT.clean) return '';
-  const i = TL.cues.findIndex((c, n) => {
+  const until = (c, n) => {
     const next = TL.cues[n + 1];
-    const until = c.gap <= 1.0 && next ? next.start - 0.12 : c.end + 0.6;
-    return t >= c.start && t < until;
-  });
+    return c.gap <= 1.0 && next ? next.start - 0.12 : c.end + 0.6;
+  };
+  const i = TL.cues.findIndex((c, n) => t >= c.start && t < until(c, n));
   const c = TL.cues[i];
-  if (!c || c.scene === 1) return ''; // The Shaw opening is set as typography, not captions.
-  const next = TL.cues[i + 1];
-  const until = c.gap <= 1.0 && next ? next.start - 0.12 : c.end + 0.6;
-  const a = Math.min(easeOut(ramp(t, c.start, c.start + 0.3)), 1 - ramp(t, until - 0.25, until));
+  if (!c || ownedByTitle(c)) return '';
+  const end = until(c, i);
+  const a = Math.min(easeOut(ramp(t, c.start, c.start + 0.3)), 1 - ramp(t, end - 0.25, end));
   let text = c.text;
   for (const e of c.emphasis ?? []) {
     const cls = /claude/i.test(e)
@@ -161,16 +243,18 @@ window.load = async (timeline, options = {}) => {
   TL = timeline;
   OPT = options;
   await document.fonts.ready;
-  const srcs = [];
+  const refs = new Set();
   for (const seg of TL.segments)
-    if (seg.manifest)
-      for (const f of seg.manifest.frames) srcs.push(`../footage/frames/${seg.shot}/${f.file}`);
+    for (const p of seg.panes ?? []) for (const s of p.states) refs.add(s.still);
   await Promise.all(
-    srcs.map((src) => {
+    [...refs].map(async (ref) => {
+      const [source, name] = ref.split('/');
+      const s = SOURCES[source];
+      const url = s.dir + name + s.ext;
       const img = new Image();
-      img.src = src;
-      images.set(src, img);
-      return img.decode();
+      img.src = url;
+      await img.decode();
+      if (!s.size) sizes.set(url, { w: img.naturalWidth, h: img.naturalHeight });
     }),
   );
   document.getElementById('proof').textContent = options.watermark ?? '';
@@ -181,7 +265,7 @@ window.renderAt = async (t) => {
   TL.segments.forEach((seg, i) => {
     const prev = TL.segments[i - 1];
     // Each segment fades in over the previous one; the outgoing one stays until covered.
-    if (t < seg.start - (prev ? 0 : 0) || t >= seg.end + XFADE) return;
+    if (t < seg.start || t >= seg.end + XFADE) return;
     const a = prev ? ease(ramp(t, seg.start, seg.start + XFADE)) : 1;
     html += `<div class="layer" style="opacity:${a}">${RENDER[seg.type](t, seg)}</div>`;
   });

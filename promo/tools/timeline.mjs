@@ -43,9 +43,7 @@ for (const s of edit.segments) {
   const cue = byId[s.from];
   if (!cue) continue;
   const start = s.type === 'shaw' ? 0 : Math.max(0, cue.start - edit.lead);
-  const seg = { ...s, start: +start.toFixed(3) };
-  if (s.shot) seg.manifest = read(`footage/frames/${s.shot}/manifest.json`);
-  segments.push(seg);
+  segments.push({ ...s, start: +start.toFixed(3) });
 }
 segments.forEach((s, i) => (s.end = segments[i + 1]?.start ?? total));
 
@@ -75,13 +73,22 @@ fs.writeFileSync(
     .join('\n'),
 );
 const segFor = (c) => segments.find((s) => c.start >= s.start && c.start < s.end);
+/** What a segment shows, for the cue sheet: real replay stills, Daybreak designs or typography. */
+const describe = (s) => {
+  if (!s?.panes) return [s?.type === 'evidence' ? 'recorded facts card' : 'typography', ''];
+  const refs = [...new Set(s.panes.flatMap((p) => p.states.map((x) => x.still)))];
+  const kind = refs.every((r) => r.startsWith('dc/'))
+    ? 'real Helix replay (discount-codes run)'
+    : 'Daybreak storefront design images';
+  return [kind, refs.join(' > ')];
+};
 fs.writeFileSync(
   path.join(out, `cues-${name}.csv`),
-  ['id,scene,start,end,phrase,segment,footage,real_or_simulated']
+  ['id,scene,start,end,phrase,segment,source,footage']
     .concat(
       cues.map((c) => {
         const s = segFor(c);
-        const kind = !s?.shot ? 'title' : s.manifest?.simulated ? 'SIMULATED' : 'real replay';
+        const [kind, refs] = describe(s);
         return [
           c.id,
           c.scene,
@@ -89,8 +96,8 @@ fs.writeFileSync(
           stamp(c.end, '.'),
           JSON.stringify(c.text),
           s?.id ?? '',
-          s?.shot ?? '',
           kind,
+          refs,
         ].join(',');
       }),
     )
