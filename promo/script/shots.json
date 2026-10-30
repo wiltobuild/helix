@@ -1,0 +1,25 @@
+{
+  "note": "Real Helix footage captured from the bundled replay of a real recorded run (discount-codes, 2026-10-28) unless 'simulated' is true. Steps run in order; 'shoot' captures frames while the UI settles.",
+  "base": "http://localhost:5317",
+  "shots": [
+    {
+      "id": "agents-roster",
+      "url": "/?demo",
+      "steps": [{ "milestone": "81" }, { "click": "Agents" }, { "wait": 900 }, { "shoot": 1500 }]
+    },
+    {
+      "id": "plan-approve-to-start",
+      "url": "/?demo",
+      "steps": [
+        { "milestone": "71" },
+        { "wait": 900 },
+        { "shoot": 1200 },
+        { "milestone": "78" },
+        { "shoot": 1200 },
+        { "milestone": "81" },
+        { "shoot": 1500 },
+        { "next": 2, "shootEach": 900 }
+      ]
+    }
+  ]
+}

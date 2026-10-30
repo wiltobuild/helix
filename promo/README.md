@@ -1,0 +1,30 @@
+# Helix promo video project
+
+An editable, code-driven video project. Every frame is a pure function of time, rendered from real Helix UI captures.
+
+| Path                    | What it is                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `script/narration.json` | Approved script split into caption phrases (`insert: true` marks the optional teamwork passage), emphasis words and pause directions. |
+| `script/shots.json`     | Capture recipes: which replay milestones and pages to film.                                                                           |
+| `script/edit.json`      | Edit decision list: segments, source shot, crop/push-in, callouts, "real replay" or SIMULATED chips.                                  |
+| `tools/capture.cjs`     | Films the running web app (Playwright, dark theme, 1920×1080 @2×) into `footage/frames/<shot>/`.                                      |
+| `tools/timeline.mjs`    | Times the phrases and writes `out/timeline-*.json`, `out/cues-*.csv` (cue sheet) and `out/subtitles-*.srt`.                           |
+| `tools/music.py`        | Original synthesized temp music bed (numpy).                                                                                          |
+| `tools/render.cjs`      | Renders a timeline through `stage/stage.html` to H.264 MP4 (`--clean` hides captions).                                                |
+| `STORYBOARD.md`         | Timed storyboard, footage provenance, mismatches and blockers.                                                                        |
+
+## Build
+
+```sh
+pnpm install --config.engine-strict=false   # only the web app is needed
+pnpm --filter @helix/web dev                # serves http://localhost:5317 (demo replay needs no daemon)
+export NODE_PATH=$(npm root -g)             # resolves the preinstalled playwright
+node promo/tools/capture.cjs
+node promo/tools/timeline.mjs baseline --until s07     # or: baseline | insert
+python promo/tools/music.py promo/out/timeline-baseline-until-s07.json promo/audio/temp-music-proof.wav
+node promo/tools/render.cjs promo/out/timeline-baseline-until-s07.json promo/out/proof.mp4 --audio promo/audio/temp-music-proof.wav
+```
+
+Run the tools from `promo/` or the repo root; paths resolve relative to this folder. Rendered media (`out/`, captured frames, audio) is git-ignored and can be regenerated.
+
+To lock picture to a narration recording, replace the reading-pace durations in `tools/timeline.mjs` with measured phrase in/out points, then re-render.

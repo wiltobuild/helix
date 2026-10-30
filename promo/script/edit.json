@@ -1,0 +1,40 @@
+{
+  "note": "Edit decision list. Each segment starts at its `from` phrase (minus lead) and runs until the next segment. Crops are source-pixel rectangles in the 1920x1080 capture; the frame aspect is 1728:798, so h is derived from w. `crop` animates from c0 to c1 across the segment.",
+  "lead": 0.5,
+  "segments": [
+    { "id": "shaw", "from": "s01", "type": "shaw" },
+    {
+      "id": "roster",
+      "from": "s06",
+      "type": "footage",
+      "shot": "agents-roster",
+      "label": "Replay of a real recorded Helix run · Oct 28, 2026",
+      "c0": { "x": 236, "y": 172, "w": 1040 },
+      "c1": { "x": 254, "y": 206, "w": 860 },
+      "chip": "bl"
+    },
+    {
+      "id": "plan-start",
+      "from": "s07",
+      "type": "footage",
+      "shot": "plan-approve-to-start",
+      "startMs": 3400,
+      "rate": 1,
+      "label": "Replay of a real recorded Helix run · Oct 28, 2026",
+      "c0": { "x": 330, "y": 250, "w": 1060 },
+      "c1": { "x": 470, "y": 384, "w": 780 },
+      "callouts": [
+        { "at": 1.0, "text": "Codex · building", "strand": "codex", "x": 540, "y": 404 },
+        {
+          "at": 1.6,
+          "text": "Claude Code · waits on its dependency",
+          "strand": "claude",
+          "x": 1205,
+          "y": 404,
+          "align": "right"
+        }
+      ]
+    },
+    { "id": "end-proof", "from": "s08", "type": "end" }
+  ]
+}

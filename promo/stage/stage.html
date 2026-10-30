@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Helix promo stage</title>
+    <style>
+      @font-face {
+        font-family: 'Bricolage';
+        src: url('../../node_modules/.pnpm/@fontsource-variable+bricolage-grotesque@5.3.0/node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2')
+          format('woff2');
+        font-weight: 200 800;
+      }
+      @font-face {
+        font-family: 'Plex';
+        src: url('../../node_modules/.pnpm/@fontsource+ibm-plex-sans@5.3.0/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-300-normal.woff2')
+          format('woff2');
+        font-weight: 300;
+      }
+      @font-face {
+        font-family: 'Plex';
+        src: url('../../node_modules/.pnpm/@fontsource+ibm-plex-sans@5.3.0/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2')
+          format('woff2');
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: 'Plex';
+        src: url('../../node_modules/.pnpm/@fontsource+ibm-plex-sans@5.3.0/node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2')
+          format('woff2');
+        font-weight: 600;
+      }
+      @font-face {
+        font-family: 'PlexMono';
+        src: url('../../node_modules/.pnpm/@fontsource+ibm-plex-mono@5.3.0/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2')
+          format('woff2');
+      }
+      /* Helix tokens (packages/ui/src/styles/tokens.css, dark). */
+      :root {
+        --bg: #080b11;
+        --surface: #10151e;
+        --border-strong: #2e394a;
+        --text: #e6ebf2;
+        --text-2: #a6b0c0;
+        --text-3: #6f7a8c;
+        --claude: #d97757;
+        --codex: #43c2bb;
+        --orch: #e3a53f;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Plex', sans-serif;
+      }
+      #stage {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .glow {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(900px 520px at 18% 30%, rgb(67 194 187 / 0.07), transparent 70%),
+          radial-gradient(900px 520px at 82% 70%, rgb(217 119 87 / 0.06), transparent 70%);
+      }
+      .layer {
+        position: absolute;
+        inset: 0;
+      }
+      /* Shaw opening */
+      .quote {
+        position: absolute;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-family: 'Bricolage', sans-serif;
+        font-weight: 300;
+        font-size: 64px;
+        letter-spacing: -0.01em;
+        color: var(--text);
+      }
+      .quote em {
+        font-style: normal;
+        font-weight: 600;
+      }
+      .quote.big {
+        font-size: 148px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+      .why {
+        color: var(--codex);
+      }
+      .whynot {
+        background: linear-gradient(90deg, var(--codex), #9fd3c9 48%, var(--claude));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .attrib {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 720px;
+        text-align: center;
+        font-family: 'PlexMono', monospace;
+        font-size: 24px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+      .mark {
+        position: absolute;
+        left: 50%;
+        top: 790px;
+        transform: translateX(-50%);
+      }
+      /* Footage */
+      .frame {
+        position: absolute;
+        left: 96px;
+        top: 56px;
+        width: 1728px;
+        height: 798px;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid var(--border-strong);
+        box-shadow:
+          0 30px 80px rgb(0 0 0 / 0.55),
+          0 0 0 1px rgb(255 255 255 / 0.02) inset;
+        background: #0b0f16;
+      }
+      .frame img {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+        transform-origin: 0 0;
+      }
+      .chip {
+        position: absolute;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgb(8 11 17 / 0.82);
+        border: 1px solid var(--border-strong);
+        font-family: 'PlexMono', monospace;
+        font-size: 17px;
+        color: var(--text-2);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .chip.tl {
+        left: 20px;
+        top: 18px;
+      }
+      .chip.bl {
+        left: 20px;
+        bottom: 18px;
+      }
+      .chip.tr {
+        right: 20px;
+        top: 18px;
+      }
+      .chip .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--codex);
+      }
+      .chip.sim .dot {
+        background: var(--orch);
+      }
+      .chip.sim {
+        color: var(--orch);
+      }
+      .callout {
+        position: absolute;
+        padding: 10px 18px;
+        border-radius: 12px;
+        background: rgb(8 11 17 / 0.9);
+        border: 1px solid var(--border-strong);
+        font-family: 'Plex', sans-serif;
+        font-weight: 600;
+        font-size: 26px;
+        white-space: nowrap;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .callout .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      /* Captions: one consistent band below the footage frame. */
+      .caption {
+        position: absolute;
+        left: 120px;
+        right: 120px;
+        top: 884px;
+        height: 150px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-family: 'Plex', sans-serif;
+        font-weight: 400;
+        font-size: 50px;
+        line-height: 1.25;
+        color: var(--text);
+        text-shadow: 0 2px 12px rgb(0 0 0 / 0.6);
+      }
+      .caption b {
+        font-weight: 600;
+        color: #ffffff;
+      }
+      .caption b.codex {
+        color: var(--codex);
+      }
+      .caption b.claude {
+        color: var(--claude);
+      }
+      .caption b.helix {
+        color: var(--orch);
+      }
+      .proof {
+        position: absolute;
+        right: 22px;
+        top: 14px;
+        font-family: 'PlexMono', monospace;
+        font-size: 15px;
+        letter-spacing: 0.06em;
+        color: rgb(166 176 192 / 0.55);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div class="glow"></div>
+      <div id="layers"></div>
+      <div class="caption" id="caption"></div>
+      <div class="proof" id="proof"></div>
+    </div>
+    <script src="stage.js"></script>
+  </body>
+</html>

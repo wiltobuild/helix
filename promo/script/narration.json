@@ -1,0 +1,299 @@
+{
+  "note": "Approved baseline script split into on-screen caption phrases (no voice). pauseAfter maps bracketed directions: pause 1.2s, longer pause 2.0s, hold 2.8s. Hold times come from a reading-pace model in tools/timeline.mjs and are PROVISIONAL until a narration recording is supplied as the master timing track.",
+  "pauses": {
+    "phrase": 0.55,
+    "sentence": 0.75,
+    "beat": 0.9,
+    "paragraph": 1.3,
+    "pause": 1.2,
+    "longerPause": 2.0,
+    "hold": 2.8
+  },
+  "phrases": [
+    {
+      "id": "s01",
+      "scene": 1,
+      "text": "You see things…",
+      "pause": "pause"
+    },
+    {
+      "id": "s02",
+      "scene": 1,
+      "text": "and you say, ‘Why?’",
+      "speak": "and you say, Why?",
+      "emphasis": ["Why?"],
+      "pause": "pause"
+    },
+    {
+      "id": "s03",
+      "scene": 1,
+      "text": "But I dream things that never were…",
+      "pause": "longerPause"
+    },
+    {
+      "id": "s04",
+      "scene": 1,
+      "text": "and I say…",
+      "pause": "pause"
+    },
+    {
+      "id": "s05",
+      "scene": 1,
+      "text": "‘Why not?’",
+      "speak": "Why not?",
+      "emphasis": ["Why not?"],
+      "pause": "hold"
+    },
+    {
+      "id": "s06",
+      "scene": 2,
+      "text": "Machines can create now.",
+      "emphasis": ["create"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s07",
+      "scene": 2,
+      "text": "Tools like Claude Code and Codex can build software.",
+      "emphasis": ["Claude Code", "Codex"],
+      "pause": "sentence"
+    },
+    {
+      "id": "s08",
+      "scene": 3,
+      "text": "But if you want several agents working together…",
+      "pause": "phrase"
+    },
+    {
+      "id": "s09",
+      "scene": 3,
+      "text": "someone still has to manage that team.",
+      "emphasis": ["manage"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s10",
+      "scene": 3,
+      "text": "Explain the goal.",
+      "emphasis": ["goal"],
+      "pause": "beat"
+    },
+    {
+      "id": "s11",
+      "scene": 3,
+      "text": "Divide the work.",
+      "emphasis": ["Divide"],
+      "pause": "beat"
+    },
+    {
+      "id": "s12",
+      "scene": 3,
+      "text": "Check the results.",
+      "emphasis": ["Check"],
+      "pause": "beat"
+    },
+    {
+      "id": "s13",
+      "scene": 3,
+      "text": "Bring it all together.",
+      "emphasis": ["together"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s14",
+      "scene": 3,
+      "text": "That’s what Helix helps manage.",
+      "emphasis": ["Helix"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "t01",
+      "scene": 4,
+      "insert": true,
+      "text": "Claude Code and Codex bring different capabilities.",
+      "pause": "sentence"
+    },
+    {
+      "id": "t02",
+      "scene": 4,
+      "insert": true,
+      "text": "Helix brings them into one coordinated effort.",
+      "emphasis": ["one coordinated effort"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "t03",
+      "scene": 4,
+      "insert": true,
+      "text": "One agent can build.",
+      "emphasis": ["build"],
+      "pause": "phrase"
+    },
+    {
+      "id": "t04",
+      "scene": 4,
+      "insert": true,
+      "text": "Another can examine its work, challenge its decisions, and identify what needs attention.",
+      "emphasis": ["examine"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "t05",
+      "scene": 4,
+      "insert": true,
+      "text": "An idea gains another perspective.",
+      "pause": "beat"
+    },
+    {
+      "id": "t06",
+      "scene": 4,
+      "insert": true,
+      "text": "An implementation gains independent scrutiny.",
+      "pause": "beat"
+    },
+    {
+      "id": "t07",
+      "scene": 4,
+      "insert": true,
+      "text": "Separate contributions become a shared result.",
+      "emphasis": ["shared result"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s15",
+      "scene": 5,
+      "text": "Imagine building an online store.",
+      "emphasis": ["online store"],
+      "pause": "sentence"
+    },
+    {
+      "id": "s16",
+      "scene": 5,
+      "text": "One agent works on the product catalogue…",
+      "pause": "phrase"
+    },
+    {
+      "id": "s17",
+      "scene": 5,
+      "text": "while another develops the shopping cart.",
+      "pause": "sentence"
+    },
+    {
+      "id": "s18",
+      "scene": 5,
+      "text": "Helix organises their assignments,",
+      "pause": "phrase"
+    },
+    {
+      "id": "s19",
+      "scene": 5,
+      "text": "tracks what they need from each other,",
+      "pause": "phrase"
+    },
+    {
+      "id": "s20",
+      "scene": 5,
+      "text": "and brings their changes through review and testing.",
+      "pause": "paragraph"
+    },
+    {
+      "id": "s21",
+      "scene": 6,
+      "text": "And while they work…",
+      "pause": "phrase"
+    },
+    {
+      "id": "s22",
+      "scene": 6,
+      "text": "you can see it happening.",
+      "emphasis": ["see it"],
+      "pause": "sentence"
+    },
+    {
+      "id": "s23",
+      "scene": 6,
+      "text": "Who is building.",
+      "emphasis": ["building"],
+      "pause": "beat"
+    },
+    {
+      "id": "s24",
+      "scene": 6,
+      "text": "Who is checking.",
+      "emphasis": ["checking"],
+      "pause": "beat"
+    },
+    {
+      "id": "s25",
+      "scene": 6,
+      "text": "What is ready.",
+      "emphasis": ["ready"],
+      "pause": "beat"
+    },
+    {
+      "id": "s26",
+      "scene": 6,
+      "text": "What is waiting.",
+      "emphasis": ["waiting"],
+      "pause": "beat"
+    },
+    {
+      "id": "s27",
+      "scene": 6,
+      "text": "And where your decision can move it forward.",
+      "emphasis": ["your decision"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s28",
+      "scene": 7,
+      "text": "You stay involved in shaping the product,",
+      "pause": "phrase"
+    },
+    {
+      "id": "s29",
+      "scene": 7,
+      "text": "while Helix handles the coordination",
+      "pause": "phrase"
+    },
+    {
+      "id": "s30",
+      "scene": 7,
+      "text": "that would otherwise pull you between terminals, conversations, and half-finished handoffs.",
+      "pause": "paragraph"
+    },
+    {
+      "id": "s31",
+      "scene": 8,
+      "text": "As these tools get stronger…",
+      "pause": "phrase"
+    },
+    {
+      "id": "s32",
+      "scene": 8,
+      "text": "our ambition should grow with them.",
+      "emphasis": ["ambition"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s33",
+      "scene": 8,
+      "text": "You bring the idea.",
+      "emphasis": ["idea"],
+      "pause": "beat"
+    },
+    {
+      "id": "s34",
+      "scene": 8,
+      "text": "Helix brings the team together.",
+      "emphasis": ["team together"],
+      "pause": "paragraph"
+    },
+    {
+      "id": "s35",
+      "scene": 8,
+      "text": "Let me show you how it works.",
+      "pause": "hold"
+    }
+  ]
+}
