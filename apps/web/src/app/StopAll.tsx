@@ -55,7 +55,7 @@ export function StopAll({
   return (
     <>
       <Button
-        variant="secondary"
+        variant="stop"
         icon={<OctagonX size={14} />}
         disabled={!canAct || running === 0}
         title={

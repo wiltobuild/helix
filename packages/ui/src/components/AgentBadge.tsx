@@ -10,6 +10,8 @@ export interface AgentBadgeProps {
   model?: string;
   /** Animates the agent emblem (Codex rotational hex-knot / Claude outward ripple + ray wave) when actively working. */
   active?: boolean;
+  /** Glyph size in px (default 14). */
+  size?: number;
   className?: string;
 }
 
@@ -82,10 +84,14 @@ export function AgentBadge({
   variant = 'short',
   model,
   active = false,
+  size,
   className,
 }: AgentBadgeProps) {
   const meta = agentMeta(agent);
-  const style = { '--agent': meta.colorVar } as CSSProperties;
+  const style = {
+    '--agent': meta.colorVar,
+    ...(size ? { '--glyph-size': `${size}px` } : {}),
+  } as CSSProperties;
   if (variant === 'glyph') {
     return (
       <span
@@ -108,6 +114,38 @@ export function AgentBadge({
       <AgentGlyph agent={agent} />
       <span>{variant === 'full' ? meta.label : meta.short}</span>
       {model && <span className={s.model}>· {model}</span>}
+    </span>
+  );
+}
+
+export interface AgentEmblemProps {
+  agent: AgentKind;
+  /** Animates the logo: Codex knot spins, Claude rays ripple with outward rings. */
+  active?: boolean;
+  /** Tile size in px (default 44). The logo fills about 60% of it. */
+  size?: number;
+  className?: string;
+}
+
+/** The agent's logo, large, in a tinted tile: the Concept 3 agent node mark. */
+export function AgentEmblem({ agent, active = false, size = 44, className }: AgentEmblemProps) {
+  const meta = agentMeta(agent);
+  return (
+    <span
+      className={cx(s.root, s.emblem, className)}
+      style={
+        {
+          '--agent': meta.colorVar,
+          '--glyph-size': `${Math.round(size * 0.62)}px`,
+          width: size,
+          height: size,
+        } as CSSProperties
+      }
+      data-active={active || undefined}
+      role="img"
+      aria-label={`${meta.label}${active ? ' (working)' : ''}`}
+    >
+      <AgentGlyph agent={agent} />
     </span>
   );
 }

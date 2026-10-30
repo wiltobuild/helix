@@ -1,4 +1,5 @@
 .root {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -8,7 +9,9 @@
   display: flex;
   gap: var(--space-4);
   padding: 0 var(--space-4);
+  overflow-x: auto;
   border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
 }
 
 .tab {
@@ -23,6 +26,8 @@
   color: var(--text-3);
   font-size: var(--text-sm);
   font-weight: 500;
+  white-space: nowrap;
+  flex: none;
   cursor: pointer;
   transition: color var(--dur-1) var(--ease-out);
 }

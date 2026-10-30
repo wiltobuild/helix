@@ -11,14 +11,24 @@ export interface DialogProps {
   description?: ReactNode;
   footer?: ReactNode;
   children?: ReactNode;
+  /** Wider dialog for rich content (e.g. the Why chain). */
+  wide?: boolean;
 }
 
-export function Dialog({ open, onOpenChange, title, description, footer, children }: DialogProps) {
+export function Dialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  footer,
+  children,
+  wide,
+}: DialogProps) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className={s.dialogOverlay} />
-        <D.Content className={s.dialog}>
+        <D.Content className={wide ? `${s.dialog} ${s.dialogWide}` : s.dialog}>
           <div className={s.dialogHeader}>
             <D.Title className={s.dialogTitle}>{title}</D.Title>
             {description ? (

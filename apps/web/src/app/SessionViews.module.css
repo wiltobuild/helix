@@ -1,0 +1,139 @@
+.wrap {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  height: 100%;
+  overflow: auto;
+  padding: var(--space-5) var(--space-6);
+}
+
+.summary {
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+.fileCard {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileCard:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.fileCard:disabled {
+  cursor: default;
+}
+
+.fileHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fileHead strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.paths {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 400 var(--text-xs) / 1.5 var(--font-mono);
+  color: var(--text-2);
+}
+
+.paths li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.foot {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  font: 500 var(--text-xs) / 1 var(--font-mono);
+}
+
+.add {
+  color: var(--status-ready);
+}
+
+.del {
+  color: var(--status-failed);
+}
+
+.muted {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+
+.commits {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.commits button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.commits button:hover {
+  background: var(--surface-2);
+}
+
+.sha {
+  color: var(--accent-hover);
+  font: 500 var(--text-xs) / 1 var(--font-mono);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch {
+  color: var(--text-3);
+  font: 400 var(--text-xs) / 1 var(--font-mono);
+}
+
+.merge {
+  color: var(--status-ready);
+}
