@@ -90,6 +90,10 @@ export type ScmEmission = {
   [K in ScmEmissionType]: { type: K; payload: PayloadFor<K> };
 }[ScmEmissionType];
 export interface ScmObserver {
+  /** Refresh an already watched PR now and publish its snapshot through watch, even if unchanged.
+   * Resolves after publication; concurrent calls may coalesce. Unwatched PRs are a no-op.
+   */
+  refresh?(project: Project, prNumber: PullRequestNumber): Promise<void>;
   /** Optional callback makes observed facts available without coupling to EventStore. */
   watch(
     project: Project,

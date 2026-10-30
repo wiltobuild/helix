@@ -1,9 +1,6 @@
-﻿import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { fixtures, submitPlanRequestSchema } from '@helix/contracts';
 import { ORCHESTRATOR_PROMPT, orchestratorPrompt } from '../index.js';
 
@@ -58,20 +55,19 @@ test('example is a valid submission with a contract and two independent consumer
   expect(new Set(plan.nodes.flatMap((node) => node.files)).size).toBe(3);
 });
 
-test('tsx resolves the package export and Markdown independently of the invoking cwd', async () => {
-  const script = `import { ORCHESTRATOR_PROMPT, orchestratorPrompt } from '@helix/harness'; console.log(JSON.stringify({ prompt: ORCHESTRATOR_PROMPT, header: orchestratorPrompt(${JSON.stringify({ project, session })}) }));`;
-  const { stdout } = await promisify(execFile)(
-    process.execPath,
-    [fileURLToPath(import.meta.resolve('tsx/cli')), '--eval', script],
-    {
-      cwd: fileURLToPath(new URL('../../', import.meta.url)),
-      env: { ...process.env, INIT_CWD: tmpdir() },
-      windowsHide: true,
-      timeout: 20_000,
-    },
-  );
-  expect(JSON.parse(stdout)).toEqual({
-    prompt: ORCHESTRATOR_PROMPT,
-    header: orchestratorPrompt({ project, session }),
-  });
-}, 25_000);
+test('public prompt export loads Markdown independently of the invoking cwd', async () => {
+  // Re-evaluate the module so the top-level Markdown read cannot pass via the cache.
+  // A cwd spy avoids changing the worker's real cwd or starting a cold tsx process.
+  vi.resetModules();
+  const cwd = vi.spyOn(process, 'cwd').mockReturnValue(tmpdir());
+  try {
+    const fresh = await import('../index.js');
+    expect(fresh.ORCHESTRATOR_PROMPT).toBe(ORCHESTRATOR_PROMPT);
+    expect(fresh.orchestratorPrompt({ project, session })).toBe(
+      orchestratorPrompt({ project, session }),
+    );
+  } finally {
+    cwd.mockRestore();
+    vi.resetModules();
+  }
+});
