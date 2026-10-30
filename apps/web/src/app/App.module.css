@@ -54,17 +54,13 @@
   }
   .workspaceBar {
     gap: 8px;
+    overflow-x: auto;
   }
   .graphTools {
     gap: 4px;
   }
-  .panelSize input {
-    width: 48px;
-  }
-}
-@media (max-width: 600px) {
-  .workspaceBar {
-    overflow-x: auto;
+  .panelSize {
+    --slider-width: 48px;
   }
 }
 
@@ -76,7 +72,7 @@
 }
 
 .panelSize input {
-  width: 90px;
+  width: var(--slider-width, 90px);
 }
 
 .activityPanel {

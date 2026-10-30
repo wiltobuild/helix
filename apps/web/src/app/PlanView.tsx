@@ -680,7 +680,7 @@ function PlanCanvas({
     <details
       className={s.graphOptions}
       onKeyDown={(event) => {
-        if (event.key === 'Escape') {
+        if (event.key === 'Escape' && event.currentTarget.open) {
           event.preventDefault();
           event.stopPropagation();
           event.currentTarget.open = false;
