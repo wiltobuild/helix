@@ -22,6 +22,13 @@ type Handlers = { [K in HttpName]: (input: Input<K>) => Promise<z.output<Routes[
 
 export function createDispatch(core: SetupCore) {
   const handlers: Handlers = {
+    projectIntake: ({ params }) =>
+      core.projectIntake ? core.projectIntake(params.id) : Promise.resolve({ draft: null }),
+    changeIntake: ({ params, body }) => {
+      if (!core.changeIntake)
+        throw new HelixError('HARNESS_UNAVAILABLE', 'Guided intake is unavailable');
+      return core.changeIntake(params.id, body);
+    },
     sessionDesign: ({ params }) =>
       core.sessionDesign ? core.sessionDesign(params.id) : Promise.resolve({ design: null }),
     changeDesign: ({ params, body }) => {

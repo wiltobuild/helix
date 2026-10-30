@@ -215,6 +215,11 @@ export type FeedbackMessageBuilder = (input: {
 
 /** The domain API the daemon exposes. Implemented by @helix/core; every method maps 1:1 to a route. */
 export interface HelixCore {
+  projectIntake?(id: ProjectId): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
+  changeIntake?(
+    id: ProjectId,
+    request: import('./intake.js').IntakeRequest,
+  ): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
   sessionDesign?(
     id: SessionId,
   ): Promise<{ design: import('./visual-design.js').VisualDesign | null }>;

@@ -36,6 +36,12 @@ const planBody = {
   nodes: plan.nodes,
 };
 const cases = [
+  { name: 'projectIntake', method: 'projectIntake' },
+  {
+    name: 'changeIntake',
+    method: 'changeIntake',
+    payload: { action: 'new', mode: 'direct', id: 'new', revision: 0, requestId: 'intake-command' },
+  },
   { name: 'sessionDesign', method: 'sessionDesign' },
   {
     name: 'changeDesign',
@@ -106,7 +112,9 @@ describe('contract routes', () => {
             ? approval.id
             : item.name === 'decidePlan'
               ? plan.id
-              : item.name === 'projectEvents' ||
+              : item.name === 'projectIntake' ||
+                  item.name === 'changeIntake' ||
+                  item.name === 'projectEvents' ||
                   item.name === 'createSession' ||
                   item.name === 'stopProjectAgents'
                 ? project.id
