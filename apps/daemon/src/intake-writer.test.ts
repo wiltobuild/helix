@@ -90,6 +90,32 @@ test('cancelled writer never starts an agent', async () => {
   }
 });
 
+test('failed restricted Codex turn stops brief writing promptly', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'intake-failed-turn-'));
+  let emit!: (e: HarnessEmission) => void;
+  const handle: HarnessSession = {
+    send: vi.fn(async () => {
+      emit({ type: 'activity.changed', payload: { activity: 'active' } });
+      emit({ type: 'activity.changed', payload: { activity: 'unknown' } });
+    }),
+    onEvent: (cb) => {
+      emit = cb;
+      return vi.fn();
+    },
+    stop: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => {}),
+  };
+  const harness = { start: vi.fn(async () => handle) } as unknown as AgentHarness;
+  try {
+    await expect(
+      createIntakeWriter(harness, dir).generate(draft, new AbortController().signal),
+    ).rejects.toThrow('Brief writer stopped');
+    expect(handle.stop).toHaveBeenCalledTimes(1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 2000);
+
 test('conversation prompt requests useful reflection and treats references as untrusted', () => {
   const prompt = intakePrompt(draft);
   expect(prompt).toContain('reflects');

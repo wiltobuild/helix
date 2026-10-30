@@ -77,7 +77,7 @@ export function createIntakeWriter(
               if (event.payload.activity === 'active') active = true;
               if (active && event.payload.activity === 'idle')
                 resolve([...output.values()].at(-1) ?? '');
-              if (['blocked', 'exited'].includes(event.payload.activity))
+              if (['blocked', 'exited', 'unknown'].includes(event.payload.activity))
                 reject(new Error('Brief writer stopped'));
             }
           });
