@@ -814,6 +814,13 @@
   right: 12px;
   z-index: 2;
 }
+@media (max-width: 600px) {
+  .graphOptions[open] > .controls {
+    position: fixed;
+    top: 150px;
+    right: 12px;
+  }
+}
 
 .controls output {
   min-width: 4ch;
