@@ -36,6 +36,7 @@ test('example and custom recordings keep their URL meanings', () => {
 
 test('scenario control offers three choices and selects Cross review', () => {
   const source: HelixSource = {
+    sourceId: 'demo:cross-review',
     mode: 'demo',
     events: fixtures.crossReviewRun,
     projects: [],
