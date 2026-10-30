@@ -16,6 +16,12 @@ export type EventTone =
 
 export function eventTone(e: HelixEvent): EventTone {
   switch (e.type) {
+    case 'design.updated':
+      return e.payload.design.status === 'approved'
+        ? 'done'
+        : e.payload.design.status === 'pending'
+          ? 'work'
+          : 'needs';
     case 'scheduling.changed':
       return e.payload.paused ? 'needs' : 'work';
     case 'plan.submitted':
@@ -126,6 +132,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
   switch (e.type) {
     case 'project.added':
       return `Added project ${e.payload.project.name}.`;
+    case 'design.updated':
+      return `Visual design revision ${e.payload.design.revision}: ${e.payload.design.status}.`;
     case 'scheduling.changed':
       return e.payload.paused
         ? 'You stopped all agents; scheduling is paused.'

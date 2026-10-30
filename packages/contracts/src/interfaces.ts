@@ -90,6 +90,10 @@ export type ScmEmission = {
   [K in ScmEmissionType]: { type: K; payload: PayloadFor<K> };
 }[ScmEmissionType];
 export interface ScmObserver {
+  /** Refresh an already watched PR now and publish its snapshot through watch, even if unchanged.
+   * Resolves after publication; concurrent calls may coalesce. Unwatched PRs are a no-op.
+   */
+  refresh?(project: Project, prNumber: PullRequestNumber): Promise<void>;
   /** Optional callback makes observed facts available without coupling to EventStore. */
   watch(
     project: Project,
@@ -211,6 +215,13 @@ export type FeedbackMessageBuilder = (input: {
 
 /** The domain API the daemon exposes. Implemented by @helix/core; every method maps 1:1 to a route. */
 export interface HelixCore {
+  sessionDesign?(
+    id: SessionId,
+  ): Promise<{ design: import('./visual-design.js').VisualDesign | null }>;
+  changeDesign?(
+    id: SessionId,
+    request: import('./visual-design.js').VisualDesignRequest,
+  ): Promise<{ design: import('./visual-design.js').VisualDesign | null }>;
   readonly events: EventStore;
   readonly terminals: TerminalHost;
   start(): Promise<void>;

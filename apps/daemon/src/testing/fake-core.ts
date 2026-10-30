@@ -1,3 +1,5 @@
+import type { SetupCore } from '../setup.js';
+import { setupResponse } from './setup-fixture.js';
 import { vi } from 'vitest';
 import {
   fixtures,
@@ -114,6 +116,13 @@ export function createFakeCore() {
     list: () => [session.id],
   } satisfies TerminalHost;
   const core = {
+    sessionDesign: vi
+      .fn<NonNullable<HelixCore['sessionDesign']>>()
+      .mockResolvedValue({ design: null }),
+    changeDesign: vi
+      .fn<NonNullable<HelixCore['changeDesign']>>()
+      .mockResolvedValue({ design: null }),
+    setup: vi.fn<NonNullable<SetupCore['setup']>>().mockResolvedValue(setupResponse),
     events,
     terminals,
     start: vi.fn<HelixCore['start']>().mockResolvedValue(undefined),
@@ -148,6 +157,6 @@ export function createFakeCore() {
     importRecording: vi
       .fn<HelixCore['importRecording']>()
       .mockResolvedValue({ project, eventCount: 0, lastSeq: 0 }),
-  } satisfies HelixCore;
+  } satisfies SetupCore;
   return { core, attachment, outputs };
 }

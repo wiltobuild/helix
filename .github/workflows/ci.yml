@@ -15,8 +15,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     # Healthy runs take 2–4 minutes. Fail a hung job fast instead of waiting out GitHub's
-    # 6-hour default (seen with the intermittent Windows harness hang, #12).
-    timeout-minutes: 20
+    # 6-hour default (seen with the intermittent Windows Turbo hang, #12).
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
       - uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
@@ -25,12 +25,27 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-        # Fail the step before the job-level 20-minute cancel so the process dumps below still
-        # run and show what a hung job was waiting on (#12).
-        timeout-minutes: 15
+      # Keep these steps in sync with package.json's check script. Step timeouts
+      # leave room for process dumps before the job deadline. Flags are CI-only.
+      - name: Format
+        run: pnpm format:check
+        timeout-minutes: 2
+      # Debug logs timestamp task/process lifecycle events. Stream task output
+      # immediately rather than buffering until a task finishes (#12).
+      - name: Typecheck
+        run: pnpm typecheck --log-order=stream --output-logs=full --log-prefix=task --verbosity=2 ${{ runner.os == 'Windows' && '--concurrency=2' || '' }}
+        timeout-minutes: 5
+      - name: Lint
+        run: pnpm lint --log-order=stream --output-logs=full --log-prefix=task --verbosity=2
+        timeout-minutes: 3
+      - name: Test
+        run: pnpm test --log-order=stream --output-logs=full --log-prefix=task --verbosity=2
+        timeout-minutes: 7
         env:
           HELIX_DEBUG_PROCESS: '1'
+      - name: Boundaries
+        run: pnpm boundaries
+        timeout-minutes: 2
       - name: Dump Windows processes on failure or timeout
         if: (failure() || cancelled()) && runner.os == 'Windows'
         shell: pwsh

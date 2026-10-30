@@ -1,4 +1,14 @@
 import path from 'node:path';
+import {
+  needsVisualDesign,
+  newVisualDesign,
+  changeVisualDesign,
+  completeVisualRound,
+  approvedVisualContext,
+  visualPrompts,
+  type VisualImageProvider,
+} from './visual-design.js';
+import type { VisualDesign } from '@helix/contracts';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolveExecutable, reviewerPrompt as defaultReviewerPrompt } from '@helix/harness';
@@ -61,6 +71,7 @@ import { validateFileOwnership } from './plan-validation.js';
 
 export type CoreLog = { error(message: string, error?: unknown): void };
 export type CoreDeps = {
+  visualImages?: VisualImageProvider;
   store: HelixStore;
   harnesses: Record<AgentKind, AgentHarness>;
   worktrees: GitService;
@@ -120,6 +131,12 @@ type Context = {
   causedBy?: EventSeq;
 };
 type Reason = PayloadFor<'feedback.routed'>['reason'];
+type Recheck = {
+  cause: EventSeq;
+  attempts: number;
+  resolved?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+};
 const RESUME_SCOPE = 'helix:core:resume:v1';
 const DELIVERY_SCOPE = 'helix:core:delivered:v1';
 const MESSAGE_SCOPE = 'helix:core:message:v1';
@@ -138,9 +155,16 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (!Number.isSafeInteger(value) || value <= 0)
       throw new HelixError('INVALID_REQUEST', `${name} must be a positive integer`);
   const states = new Map<ProjectId, ProjectState>();
+  const visualJobs = new Map<string, AbortController>();
   const history = new Map<ProjectId, HelixEvent[]>();
   const runtimes = new Map<SessionId, Runtime>();
   const watchers = new Map<SessionId, Unsubscribe>();
+  const rechecks = new Map<SessionId, Recheck>();
+  const refreshing = new Map<SessionId, Promise<void>>();
+  const mergeBatches = new Map<
+    ProjectId,
+    { merges: HelixEvent<'pr.merged'>[]; timer: ReturnType<typeof setTimeout> }
+  >();
   const held = new Map<SessionId, Delivery[]>();
   const resumes = new Map<SessionId, string>();
   const seenFeedback = new Set<string>();
@@ -165,6 +189,72 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     deps.detectHarnesses ??
     (() => Promise.all(Object.values(deps.harnesses).map((h) => h.detect())));
 
+  function designFor(s: Session): VisualDesign | undefined {
+    return session(s.parentSessionId ?? s.id).design;
+  }
+  async function saveDesign(s: Session, design: VisualDesign) {
+    return emit('design.updated', { design }, context(s));
+  }
+  function startVisualJob(s: Session, design: VisualDesign): void {
+    const round = design.rounds.at(-1)!;
+    if (!deps.visualImages || design.status !== 'pending' || visualJobs.has(round.jobId)) return;
+    const controller = new AbortController();
+    visualJobs.set(round.jobId, controller);
+    void Promise.resolve()
+      .then(() =>
+        deps.visualImages!.generate({
+          jobId: round.jobId,
+          prompts: visualPrompts(design),
+          references: design.references,
+          signal: controller.signal,
+        }),
+      )
+      .then(
+        (concepts) =>
+          enqueue(async () => {
+            const current = session(s.id).design;
+            if (
+              !current ||
+              current.status !== 'pending' ||
+              current.rounds.at(-1)?.jobId !== round.jobId ||
+              controller.signal.aborted
+            )
+              return;
+            try {
+              await saveDesign(s, completeVisualRound(current, concepts));
+            } catch {
+              await saveDesign(s, {
+                ...current,
+                status: 'failed',
+                blocker:
+                  'Image provider did not return three valid, distinct raster concepts. Retry or reconnect a supported provider.',
+              });
+            }
+          }),
+        (error: unknown) =>
+          enqueue(async () => {
+            const current = session(s.id).design;
+            if (
+              current?.status === 'pending' &&
+              current.rounds.at(-1)?.jobId === round.jobId &&
+              !controller.signal.aborted
+            )
+              await saveDesign(s, {
+                ...current,
+                status:
+                  isHelixError(error) && error.code === 'HARNESS_UNAVAILABLE'
+                    ? 'unavailable'
+                    : 'failed',
+                blocker:
+                  isHelixError(error) && error.code === 'HARNESS_UNAVAILABLE'
+                    ? 'Codex image generation is unavailable. Update/sign in to a supported Codex installation, then retry. No images were generated.'
+                    : 'Image generation failed. Check the authorized image provider and retry.',
+              });
+          }),
+      )
+      .catch((error) => deps.log.error('Visual generation update failed', error))
+      .finally(() => visualJobs.delete(round.jobId));
+  }
   function armWatchdog(id: SessionId): void {
     const rt = runtimes.get(id)!;
     clearTimeout(rt.watchdog);
@@ -218,7 +308,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       }
     });
   }
-  function background(sessionId: SessionId, work: () => Promise<void>): void {
+  function background(sessionId: SessionId, work: () => void | Promise<void>): void {
     if (closing) return;
     void enqueue(async () => {
       if (closing) return;
@@ -435,7 +525,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     held.set(id, queue);
   }
   function blocked(s: SessionState): boolean {
-    return s.pendingApprovalIds.length > 0 || s.activity === 'blocked';
+    return visualBlocked(s.session) || s.pendingApprovalIds.length > 0 || s.activity === 'blocked';
   }
   async function saveResume(id: SessionId): Promise<void> {
     const token = runtimes.get(id)?.handle?.resumeToken;
@@ -444,8 +534,41 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       resumes.set(id, token);
     }
   }
+  function nodeNeedsDesign(plan: Plan, node: PlanNode, seen = new Set<string>()): boolean {
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    if (
+      needsVisualDesign([node.title, node.description, ...node.files].join(' ')) ||
+      node.files.some((file) =>
+        /(?:\.(?:tsx|jsx|css|scss|html)(?:$|\b)|(?:^|\/)(?:web|ui|frontend|components|pages)\/)/i.test(
+          file,
+        ),
+      )
+    )
+      return true;
+    return node.dependsOn.some((id) => {
+      const ancestor = plan.nodes.find((n) => n.id === id);
+      return !!ancestor && nodeNeedsDesign(plan, ancestor, seen);
+    });
+  }
+  function visualBlocked(s: Session): boolean {
+    const d = designFor(s);
+    if (!d || s.role !== 'worker' || d.status === 'approved') return false;
+    if (!s.parentSessionId) return true;
+    const node = Object.values(project(s.projectId).plans)
+      .flatMap((p) => p.nodes)
+      .find((n) => n.id === s.planNodeId);
+    const plan = Object.values(project(s.projectId).plans).find((p) =>
+      p.nodes.some((n) => n.id === node?.id),
+    );
+    return !node || !plan || nodeNeedsDesign(plan, node);
+  }
   async function deliver(id: SessionId, delivery: Delivery): Promise<void> {
     const s = session(id);
+    if (visualBlocked(s.session)) {
+      hold(id, delivery);
+      return;
+    }
     const runtime = runtimes.get(id);
     if (s.session.role === 'reviewer') {
       const trigger = eventsFor(s.session).find((e) => e.seq === delivery.cause);
@@ -601,9 +724,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     return deps.sessionEnv?.({ project: project(s.projectId).project, session: s });
   }
   function initialPrompt(s: Session): string {
+    const visual = designFor(s);
+    const suffix = visual ? approvedVisualContext(visual) : '';
     return s.role === 'orchestrator' && deps.orchestratorPrompt
       ? `${deps.orchestratorPrompt({ project: project(s.projectId).project, session: s })}\n\n${s.prompt}`
-      : s.prompt;
+      : s.prompt + suffix;
   }
   function pendingReview(reviewer: Session) {
     const worker = reviewer.parentSessionId ? findSession(reviewer.parentSessionId) : undefined;
@@ -993,6 +1118,23 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       throw new HelixError('INVALID_REQUEST', 'Harness approval has the wrong session');
     const e = await emit(emission.type, emission.payload, context(before.session, cause));
     await saveResume(id);
+    if (
+      before.session.role === 'orchestrator' &&
+      emission.type === 'chat.item' &&
+      emission.payload.item.kind === 'message' &&
+      emission.payload.item.role === 'assistant'
+    ) {
+      const d = session(id).design;
+      const text = emission.payload.item.text.trim().slice(0, 24000);
+      if (d && text)
+        await saveDesign(before.session, {
+          ...d,
+          conversation: [
+            ...d.conversation,
+            { role: 'helix', text, revision: d.revision, references: [] },
+          ],
+        });
+    }
     if (emission.type === 'activity.changed') {
       if (
         before.session.role === 'reviewer' &&
@@ -1111,6 +1253,84 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     const opened = await emit('pr.opened', { pr }, context(s.session, cause));
     watch(id, opened.seq);
   }
+  function cancelRecheck(id: SessionId): void {
+    clearTimeout(rechecks.get(id)?.timer);
+    rechecks.delete(id);
+  }
+  function canRecheck(id: SessionId): boolean {
+    const s = session(id);
+    return (
+      !closing &&
+      !shutdownRequested &&
+      watchers.has(id) &&
+      !s.session.archivedAt &&
+      s.pr?.state === 'open'
+    );
+  }
+  function refreshPr(id: SessionId, job: Recheck): void {
+    if (rechecks.get(id) !== job) return;
+    if (!canRecheck(id) || job.resolved) {
+      cancelRecheck(id);
+      return;
+    }
+    job.attempts++;
+    const s = session(id);
+    // Keep network I/O outside the writer queue so shutdown can unsubscribe and abort it.
+    // A later merge must get a read started after that merge, even if an older refresh is slow.
+    const pending = Promise.resolve(refreshing.get(id))
+      .then(() => {
+        if (canRecheck(id) && rechecks.get(id) === job)
+          return deps.scm!.refresh!(project(s.session.projectId).project, s.pr!.number);
+      })
+      .catch((error: unknown) => deps.log.error('Post-merge PR refresh failed', error));
+    refreshing.set(id, pending);
+    void pending.finally(() => {
+      if (refreshing.get(id) === pending) refreshing.delete(id);
+      background(id, () => {
+        if (rechecks.get(id) !== job) return;
+        if (!canRecheck(id) || job.resolved || job.attempts >= 4) {
+          cancelRecheck(id);
+          return;
+        }
+        // Watch callbacks are queued before refresh resolves; inspect their latest result.
+        job.timer = setTimeout(() => refreshPr(id, job), 20_000);
+        job.timer.unref();
+      });
+    });
+  }
+  function recheckAfterMerge(merged: HelixEvent<'pr.merged'>): void {
+    if (!deps.scm?.refresh || closing || shutdownRequested) return;
+    const pending = mergeBatches.get(merged.projectId);
+    if (pending) {
+      pending.merges.push(merged);
+      return;
+    }
+    const merges = [merged];
+    const timer = setTimeout(() => {
+      background(merged.sessionId!, async () => {
+        mergeBatches.delete(merged.projectId);
+        if (closing || shutdownRequested) return;
+        const latest = merges.at(-1)!;
+        for (const s of Object.values(project(merged.projectId).sessions)) {
+          const id = s.session.id;
+          if (!canRecheck(id)) continue;
+          cancelRecheck(id);
+          const note = await emit(
+            'explain.note',
+            {
+              text: `Re-checking PR #${s.pr!.number} after ${merges.map((e) => `PR #${e.payload.prNumber} merged (event #${e.seq})`).join(', ')}.`,
+            },
+            context(s.session, latest.seq),
+          );
+          const job: Recheck = { cause: note.seq, attempts: 0 };
+          rechecks.set(id, job);
+          refreshPr(id, job);
+        }
+      });
+    }, 250);
+    timer.unref();
+    mergeBatches.set(merged.projectId, { merges, timer });
+  }
   function watch(id: SessionId, cause?: EventSeq): void {
     const s = session(id);
     const needsMerge =
@@ -1127,8 +1347,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       id,
       deps.scm.watch(project(s.session.projectId).project, s.pr.number, (emission) => {
         const copy = structuredClone(emission);
+        const observationCause =
+          emission.type === 'pr.updated' ? (rechecks.get(id)?.cause ?? cause) : cause;
         background(id, async () => {
-          await onScm(id, copy, cause);
+          await onScm(id, copy, observationCause);
         });
       }),
     );
@@ -1149,13 +1371,20 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (number !== s.pr.number)
       throw new HelixError('INVALID_REQUEST', 'SCM update has the wrong PR');
     const e = await emit(emission.type, emission.payload, context(s.session, cause));
+    const recheck = rechecks.get(id);
+    if (emission.type === 'pr.updated' && recheck && recheck.cause === cause)
+      recheck.resolved =
+        emission.payload.pr.state !== 'open' || emission.payload.pr.mergeable !== 'unknown';
     if (session(id).pr?.state !== 'open')
       await stopReviewers(s.session, 'The worker PR was closed or merged.', e.seq);
     if (emission.type === 'pr.merged') {
+      cancelRecheck(id);
       watchers.get(id)?.();
       watchers.delete(id);
+      recheckAfterMerge(e as HelixEvent<'pr.merged'>);
       await schedule(s.session.projectId, e.seq);
     } else if (emission.type === 'pr.updated' && emission.payload.pr.state === 'closed') {
+      cancelRecheck(id);
       watchers.get(id)?.();
       watchers.delete(id);
     } else if (emission.type === 'ci.updated' && emission.payload.checks.failed > 0) {
@@ -1223,6 +1452,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     parent?: SessionId,
     cause?: EventSeq,
     prerequisites: string[] = [],
+    existing?: Session,
   ): Promise<Session> {
     const scope = `helix:create-session:${p.id}`;
     const hash = fingerprint({
@@ -1234,7 +1464,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (completed) return validate(sessionSchema, completed);
     const reserved = await deps.store.recall(scope, key, hash);
     let s: Session;
-    if (reserved) s = validate(sessionSchema, reserved);
+    if (existing) s = existing;
+    else if (reserved) s = validate(sessionSchema, reserved);
     else {
       if (request.interface === 'chat') harnessFor(request.agent);
       s = {
@@ -1256,6 +1487,20 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     }
     let creation = eventsFor(s).find((e) => e.type === 'session.created');
     creation ??= await emit('session.created', { session: s }, context(s, cause));
+    if (!parent && needsVisualDesign(s.prompt) && !session(s.id).design) {
+      const design = newVisualDesign(s.id, s.prompt, !!deps.visualImages);
+      await saveDesign(s, design);
+      startVisualJob(s, design);
+    }
+    if (
+      !parent &&
+      s.role === 'worker' &&
+      session(s.id).design?.status !== undefined &&
+      session(s.id).design?.status !== 'approved'
+    ) {
+      await emit('activity.changed', { activity: 'waiting_input' }, context(s, creation.seq));
+      return s;
+    }
     if (!session(s.id).worktree) {
       // Every task starts from the remote's default branch: the user's local branch may be behind
       // merges made on GitHub (including merges from earlier Helix tasks).
@@ -1329,6 +1574,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         (e) => e.type === 'plan.approved' && e.payload.planId === plan.id,
       );
       for (const node of plan.nodes) {
+        const visual = session(plan.orchestratorSessionId).design;
+        const visuallyAffected = nodeNeedsDesign(plan, node);
+        if (visual && visuallyAffected && visual.status !== 'approved') continue;
         if (
           node.sessionId &&
           (session(node.sessionId).worktree ||
@@ -1445,6 +1693,17 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         for (const p of states.values())
           for (const s of Object.values(p.sessions)) {
             if (s.session.archivedAt) continue;
+            if (s.design?.status === 'pending') {
+              // A process restart cannot establish whether an external request executed. Never
+              // blindly reissue: expose recovery and require an explicit idempotent retry.
+              await saveDesign(s.session, {
+                ...s.design,
+                status: 'failed',
+                blocker:
+                  'Generation was interrupted by daemon restart. Check the provider job before retrying; no automatic duplicate was submitted.',
+              });
+            }
+            if (visualBlocked(s.session)) continue;
             if (s.activity !== 'exited' && !runtimes.has(s.session.id)) {
               const last = eventsFor(s.session).at(-1)!;
               if (s.session.role === 'reviewer') {
@@ -1503,9 +1762,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     shutdown: () => {
       // Suppress scheduling even for exit callbacks already ahead of shutdown in the queue.
       shutdownRequested = true;
+      for (const batch of mergeBatches.values()) clearTimeout(batch.timer);
+      mergeBatches.clear();
+      for (const id of rechecks.keys()) cancelRecheck(id);
       return enqueue(async () => {
         if (closing) return;
         closing = true;
+        for (const controller of visualJobs.values()) controller.abort();
         for (const off of watchers.values()) off();
         watchers.clear();
         exitOff?.();
@@ -1588,6 +1851,106 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           throw new HelixError('INVALID_REQUEST', 'Invalid event cursor or limit');
         const events = await deps.store.read(id, since, limit);
         return { events, lastSeq: events.at(-1)?.seq ?? since };
+      }),
+    sessionDesign: (id) =>
+      command(() => Promise.resolve({ design: structuredClone(session(id).design ?? null) })),
+    changeDesign: (id, request) =>
+      command(async () => {
+        const s = session(id).session;
+        const previous = session(id).design;
+        if (!previous) throw new HelixError('NOT_FOUND', 'No visual design for this session');
+        const checkpoint =
+          request.action === 'checkpoint'
+            ? request.checkpoint
+            : request.action === 'approve'
+              ? previous.checkpoint
+              : undefined;
+        // Check once before committing a decision. Revision guards protect against newer design
+        // rounds; worktree HEAD guards protect against code changing beneath the same preview.
+        if (checkpoint && !previous.receipts.some((r) => r.requestId === request.requestId)) {
+          const worker = session(checkpoint.workerSessionId);
+          if (
+            worker.session.projectId !== s.projectId ||
+            (worker.session.id !== id && worker.session.parentSessionId !== id) ||
+            !worker.worktree
+          )
+            throw new HelixError('CONFLICT', 'Preview worker does not belong to this design');
+          if ((await deps.worktrees.status(worker.worktree.path)).dirty)
+            throw new HelixError(
+              'CONFLICT',
+              'Preview requires a clean committed worktree; wait for Helix to record the worker turn',
+            );
+          if ((await deps.worktrees.headSha(worker.worktree.path)) !== checkpoint.headSha)
+            throw new HelixError(
+              'CONFLICT',
+              'Preview commit is stale; publish a current checkpoint',
+            );
+        }
+        const next = changeVisualDesign(previous, request, !!deps.visualImages);
+        if (next === previous) return { design: structuredClone(previous) };
+        if (
+          next.status !== 'pending' ||
+          next.rounds.at(-1)?.jobId !== previous.rounds.at(-1)?.jobId
+        )
+          visualJobs.get(previous.rounds.at(-1)!.jobId)?.abort();
+        const event = await saveDesign(s, next);
+        if (next.status !== 'approved') {
+          for (const child of Object.values(project(s.projectId).sessions)) {
+            if (
+              (child.session.id === id || child.session.parentSessionId === id) &&
+              visualBlocked(child.session)
+            ) {
+              const rt = runtimes.get(child.session.id);
+              if (rt?.handle && rt.turnOpen) await rt.handle.interrupt();
+            }
+          }
+        }
+        startVisualJob(s, next);
+        if (s.role === 'orchestrator' && ['comment', 'regenerate'].includes(request.action)) {
+          await deliver(s.id, {
+            text:
+              'Human visual-design feedback for revision ' +
+              next.revision +
+              ': ' +
+              (request.text ?? request.action) +
+              '. Respond conversationally, discuss tradeoffs and constraints, and preserve the human design gate. Do not approve or choose for the human.',
+            mode: 'queue',
+            cause: event.seq,
+          });
+        }
+        if (next.status === 'approved') {
+          const resumeDirect = s.role === 'worker' && !!session(id).worktree;
+          if (s.role === 'worker' && !session(id).worktree)
+            await create(
+              project(s.projectId).project,
+              { title: s.title, prompt: s.prompt, agent: s.agent, interface: s.interface },
+              'design-approved:' + id,
+              undefined,
+              undefined,
+              event.seq,
+              [],
+              s,
+            );
+          for (const child of Object.values(project(s.projectId).sessions)) {
+            if (
+              child.session.role === 'worker' &&
+              (child.session.parentSessionId === id || (resumeDirect && child.session.id === id)) &&
+              !visualBlocked(child.session) &&
+              !child.session.archivedAt &&
+              child.activity !== 'exited'
+            ) {
+              if (!runtimes.has(child.session.id) && child.worktree)
+                await launch(child.session, event.seq, true, false);
+              await deliver(child.session.id, {
+                text: approvedVisualContext(next),
+                mode: 'queue',
+                cause: event.seq,
+              });
+            }
+          }
+          await schedule(s.projectId, event.seq);
+        }
+        return { design: structuredClone(next) };
       }),
     createSession: (id, request, key) =>
       command(async () => {
@@ -1720,6 +2083,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     merge: (id) =>
       command(async () => {
         const s = session(id);
+        if (visualBlocked(s.session))
+          throw new HelixError('MERGE_BLOCKED', 'Visual design approval is pending');
         if (!deps.scm || !project(s.session.projectId).project.github)
           throw new HelixError('MERGE_BLOCKED', 'GitHub integration is not configured');
         if (!s.pr || deriveStatus(s) !== 'ready_to_merge')

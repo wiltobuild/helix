@@ -1,22 +1,16 @@
+import type { SetupCore } from './setup.js';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import staticFiles from '@fastify/static';
 import { stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import {
-  apiErrorSchema,
-  HelixError,
-  isHelixError,
-  routes,
-  type HelixCore,
-  type ErrorCode,
-} from '@helix/contracts';
+import { apiErrorSchema, HelixError, isHelixError, routes, type ErrorCode } from '@helix/contracts';
 import { createDispatch } from './dispatch.js';
 import { openEventStream, openTerminal } from './streams.js';
 
-export type ServerOptions = { core: HelixCore; port?: number; webDist?: string };
+export type ServerOptions = { core: SetupCore; port?: number; webDist?: string };
 export const DEFAULT_PORT = 4317;
 export function parsePort(value: string | number | undefined): number {
   const port = value === undefined ? DEFAULT_PORT : Number(value);
@@ -66,7 +60,12 @@ export async function createServer(options: ServerOptions) {
     const domain = isHelixError(error)
       ? error
       : badRequest
-        ? new HelixError('INVALID_REQUEST', 'Invalid request')
+        ? new HelixError(
+            'INVALID_REQUEST',
+            error.statusCode === 413
+              ? 'Reference upload exceeds the request limit (32 MiB for design changes). Remove images or reduce their size.'
+              : 'Invalid request',
+          )
         : new HelixError('INTERNAL_ERROR', 'Internal server error');
     const status = errorStatus[domain.code] ?? 500;
     // Error details are untrusted and can contain stacks, paths or process output.
@@ -129,6 +128,7 @@ export async function createServer(options: ServerOptions) {
     app.route({
       method: route.method,
       url: route.path,
+      ...(name === 'changeDesign' ? { bodyLimit: 32 * 1024 * 1024 } : {}),
       handler: async (request, reply) => {
         const params = parseRequest('params' in route ? route.params : empty, request.params ?? {});
         const query = parseRequest('query' in route ? route.query : empty, request.query ?? {});
@@ -158,7 +158,22 @@ export async function createServer(options: ServerOptions) {
   const hasUi = await stat(resolve(webDist, 'index.html'))
     .then((s) => s.isFile())
     .catch(() => false);
-  if (hasUi) await app.register(staticFiles, { root: webDist, wildcard: false });
+  if (hasUi)
+    await app.register(staticFiles, {
+      root: webDist,
+      wildcard: false,
+      setHeaders(response, path) {
+        const local = relative(webDist, path).split(sep).join('/');
+        response.header(
+          'Cache-Control',
+          local === 'index.html'
+            ? 'no-cache'
+            : /^assets\/.*-[A-Za-z0-9_-]{8,}\.[^/]+$/.test(local)
+              ? 'public, max-age=31536000, immutable'
+              : 'no-cache',
+        );
+      },
+    });
   app.setNotFoundHandler((request, reply) => {
     const pathname = request.url.split('?')[0] ?? '';
     if (
