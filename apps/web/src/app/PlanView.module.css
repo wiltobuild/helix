@@ -798,9 +798,9 @@
   border-radius: var(--radius-md);
 }
 .graphOptions[open] > .controls {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
+  top: var(--graph-menu-top, 150px);
+  right: var(--graph-menu-right, 12px);
   width: min(300px, 80vw);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -813,13 +813,6 @@
   top: 8px;
   right: 12px;
   z-index: 2;
-}
-@media (max-width: 1100px) {
-  .graphOptions[open] > .controls {
-    position: fixed;
-    top: 150px;
-    right: 12px;
-  }
 }
 
 .controls output {

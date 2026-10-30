@@ -679,6 +679,15 @@ function PlanCanvas({
   const controls = (
     <details
       className={s.graphOptions}
+      onToggle={(event) => {
+        if (!event.currentTarget.open) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        event.currentTarget.style.setProperty('--graph-menu-top', `${bounds.bottom + 4}px`);
+        event.currentTarget.style.setProperty(
+          '--graph-menu-right',
+          `${Math.max(12, window.innerWidth - bounds.right)}px`,
+        );
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && event.currentTarget.open) {
           event.preventDefault();

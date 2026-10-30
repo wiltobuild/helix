@@ -35,6 +35,7 @@
   gap: 16px;
   min-width: 0;
   padding: 0 12px;
+  overflow-x: auto;
   border-bottom: 1px solid var(--border);
 }
 .graphTools {
@@ -54,7 +55,6 @@
   }
   .workspaceBar {
     gap: 8px;
-    overflow-x: auto;
   }
   .graphTools {
     gap: 4px;
