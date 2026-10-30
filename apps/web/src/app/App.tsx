@@ -57,7 +57,8 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   const run = useRun(events, {
     recorded: source.mode !== 'live',
     speed: source.speed,
-    startAt: Math.max(0, replayStart(events) - 1),
+    startAt:
+      source.demoPreset === 'laptop' ? events.length - 1 : Math.max(0, replayStart(events) - 1),
     sourceId: source.sourceId,
     connected: source.mode === 'live' && source.stream === 'live',
   });
@@ -76,6 +77,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   const [page, setPage] = useState<Page>('sessions');
   const [dockExpanded, setDockExpanded] = useState(false);
   const [graphFocus, setGraphFocus] = useState(false);
+  const [graphControls, setGraphControls] = useState<HTMLDivElement | null>(null);
   const [inspectorHidden, setInspectorHidden] = useState(false);
   const [activityHidden, setActivityHidden] = useState(
     () => window.matchMedia('(max-width: 1440px), (max-height: 900px)').matches,
@@ -386,6 +388,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
               />
             </label>
           )}
+          <div ref={setGraphControls} />
           {graphFocus && stopAll}
           {fullscreenNotice && <span role="status">{fullscreenNotice}</span>}
         </div>
@@ -440,6 +443,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
               )}
               {tab === 'plan' && (
                 <PlanView
+                  controlsContainer={graphControls}
                   state={state}
                   onFollowLive={() => {
                     setSelected(null);

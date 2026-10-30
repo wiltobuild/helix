@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowRight,
@@ -34,7 +35,7 @@ import {
 import { ReviewChip } from './ReviewChip';
 import { identityFor, resolveProjectIdentities, traceLabel } from '../data/identity';
 import s from './PlanView.module.css';
-import { fitGraph, zoomGraph, workingGroupIndex } from './graphViewport';
+import { fitGraph, zoomGraph, workingGroupIndex, orchestratorBranches } from './graphViewport';
 
 const CARD_W = 200;
 const REVIEW_W = 220;
@@ -62,6 +63,7 @@ interface PlanViewProps {
   client?: HelixClient;
   isLive?: boolean;
   onFollowLive?: () => void;
+  controlsContainer?: HTMLElement | null;
 }
 
 type Group = {
@@ -130,8 +132,8 @@ const drop = (x1: number, y1: number, x2: number, y2: number) => {
 
 /**
  * Concept 3 plan view. The orchestrator's plan as a tree: the orchestrator on top (it waits for
- * your approval before anything runs), one node per task subagent, with its task and reviewer below. Edges carry
- * the agent's strand color and flow while work is moving along them. The graph scales to fit.
+ * your approval before anything runs), one node per task subagent, with a lateral reviewer.
+ * The initial working window stays readable; the overview is an explicit option.
  */
 export function PlanView(props: PlanViewProps) {
   const root = useRef<HTMLDivElement>(null);
@@ -230,7 +232,11 @@ function ReviewerCards({
                 event.sessionId === entry.session.id && event.type === 'agent_review.abandoned',
             )
             .at(-1);
-          const label = ownReview?.label ?? (last ? 'Review stopped' : 'Waiting for review');
+          const stoppedLabel =
+            last?.type === 'agent_review.abandoned' && /unavailable/i.test(last.payload.reason)
+              ? 'Reviewer unavailable'
+              : 'Review stopped';
+          const label = ownReview?.label ?? (last ? stoppedLabel : 'Waiting for review');
           const active = ownReview?.status === 'reviewing' && entry.activity === 'active';
           return (
             <button
@@ -254,15 +260,14 @@ function ReviewerCards({
                 <strong title={entry.session.id}>
                   {identityFor(state, entry.session.id)?.name}
                 </strong>
-                <span>
+                <span className={s.reviewerMeta}>
                   {agentLabel(entry.session.agent)}
                   {entry.session.model ? ` · ${entry.session.model}` : ''}
                 </span>
                 <span>{label}</span>
                 {ownReview && !ownReview.stale && target?.worker.agentReview?.review && (
                   <span>
-                    {target.worker.agentReview.review.findings.length} recorded findings · open
-                    evidence
+                    {target.worker.agentReview.review.findings.length} findings · open review
                   </span>
                 )}
                 <span className={s.reviewTarget}>
@@ -337,6 +342,7 @@ function PlanCanvas({
   client,
   isLive,
   onFollowLive,
+  controlsContainer,
 }: PlanViewProps) {
   const nowIso = events && index !== undefined ? events[index]!.ts : new Date(0).toISOString();
   const tree = useMemo(
@@ -349,6 +355,9 @@ function PlanCanvas({
   const graphHeight = graph?.height ?? 0;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  const pinned = useRef<HTMLButtonElement>(null);
+  const [branches, setBranches] = useState('');
   const [scale, setScale] = useState(1);
   const [autoFit, setAutoFit] = useState(false);
   const [manualZoom, setManualZoom] = useState(false);
@@ -466,6 +475,49 @@ function PlanCanvas({
     for (const child of el.querySelectorAll('[data-review]')) ro.observe(child);
     return () => ro.disconnect();
   }, [graph]);
+
+  // Read actual viewport anchors after layout, zoom, resize and native scrolling.
+  // One shared branch avoids crossing curves; offscreen agent heads have no fake endpoint.
+  useLayoutEffect(() => {
+    const region = wrap.current;
+    const host = surface.current;
+    const orchestrator = pinned.current;
+    if (!region || !host || !orchestrator || !graph) return;
+    let frame = 0;
+    const measure = () => {
+      const origin = host.getBoundingClientRect();
+      const head = orchestrator.getBoundingClientRect();
+      const view = region.getBoundingClientRect();
+      const next = orchestratorBranches(
+        { x: head.left + head.width / 2 - origin.left, y: head.bottom - origin.top },
+        {
+          left: view.left - origin.left,
+          right: view.right - origin.left,
+          top: view.top - origin.top,
+          bottom: view.bottom - origin.top,
+        },
+        Array.from(region.querySelectorAll('[data-worker-node]'), (node) => {
+          const rect = node.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2 - origin.left, y: rect.top - origin.top };
+        }),
+      );
+      setBranches((previous) => (previous === next ? previous : next));
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    measure();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(region);
+    observer.observe(orchestrator);
+    region.addEventListener('scroll', schedule, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      region.removeEventListener('scroll', schedule);
+    };
+  }, [graph, scale, bounds]);
 
   if (!tree || !graph) {
     const orchestrator = Object.values(state.sessions)
@@ -626,12 +678,86 @@ function PlanCanvas({
     visit(selectedTask.node.id);
   }
 
+  const controls = (
+    <details
+      className={s.graphOptions}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector('summary')?.focus();
+        }
+      }}
+    >
+      <summary>Graph options</summary>
+      <div className={s.controls} role="group" aria-label="Graph controls">
+        {selectedTask && <span>Selected dependency path · {related.size} tasks</span>}
+        <Button size="sm" onClick={goToWorking}>
+          {client ? 'Resume live' : 'Go to current work'}
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            setFollowing(false);
+            wrap.current?.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+          }}
+        >
+          History ({completed} completed)
+        </Button>
+        {blocked.length > 0 && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setFollowing(false);
+              wrap.current?.scrollTo({ left: blocked[0]!.x * scale, top: 0, behavior: 'instant' });
+            }}
+          >
+            {blocked.length} need attention
+          </Button>
+        )}
+        <Button
+          size="sm"
+          onClick={() => {
+            setFollowing(false);
+            setManualZoom(false);
+            setAutoFit(true);
+            fit();
+          }}
+        >
+          Overview
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            setFollowing(false);
+            setManualZoom(true);
+            setAutoFit(false);
+            setScale(1);
+          }}
+        >
+          Reset zoom
+        </Button>
+        <Button size="sm" aria-label="Zoom out" onClick={() => zoom(1 / 1.2)}>
+          −
+        </Button>
+        <output aria-label="Graph zoom">{Math.round(scale * 100)}%</output>
+        <Button size="sm" aria-label="Zoom in" onClick={() => zoom(1.2)}>
+          +
+        </Button>
+        <span>Scroll or drag background to pan</span>
+      </div>
+    </details>
+  );
+
   return (
-    <>
+    <div className={s.connectedGraph} ref={surface}>
+      {controlsContainer ? createPortal(controls, controlsContainer) : controls}
       {/* Orchestrator */}
       <div className={s.pinnedOrchestrator}>
         <button
           type="button"
+          ref={pinned}
           className={cx(s.orch, orch.sessionId === selected && s.selected)}
           data-motion-key="orchestrator"
           data-tone={orch.tone}
@@ -645,7 +771,11 @@ function PlanCanvas({
             </span>
             <span className={s.orchName}>
               <strong>Helix</strong>
-              <span>Plan and coordinate all tasks</span>
+              <span>
+                {plan.goal.startsWith('SIMULATED')
+                  ? 'Simulated plan · no live jobs'
+                  : 'Plan and coordinate all tasks'}
+              </span>
             </span>
             <span className={s.pill} data-tone={orch.tone}>
               <span className={s.pillDot} aria-hidden />
@@ -674,69 +804,6 @@ function PlanCanvas({
         )}
       </div>
 
-      <div className={s.controls} role="group" aria-label="Graph zoom controls">
-        {selectedTask && <span>Selected dependency path · {related.size} tasks</span>}
-        <Button size="sm" onClick={goToWorking}>
-          {client ? 'Back to live' : 'Show active work'}
-        </Button>
-        <span>
-          {following && !selected
-            ? isLive
-              ? 'Following active work'
-              : 'Replay cursor · readable window'
-            : 'Exploring · follow paused'}
-        </span>
-        <Button
-          size="sm"
-          onClick={() => {
-            setFollowing(false);
-            wrap.current?.scrollTo({ left: 0, top: 0, behavior: 'instant' });
-          }}
-        >
-          {completed} completed · history ←
-        </Button>
-        {blocked.length > 0 && (
-          <Button
-            size="sm"
-            onClick={() => {
-              setFollowing(false);
-              wrap.current?.scrollTo({ left: blocked[0]!.x * scale, top: 0, behavior: 'instant' });
-            }}
-          >
-            {blocked.length} need attention
-          </Button>
-        )}
-        <Button
-          size="sm"
-          onClick={() => {
-            setFollowing(false);
-            setManualZoom(false);
-            setAutoFit(true);
-            fit();
-          }}
-        >
-          Fit graph
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => {
-            setFollowing(false);
-            setManualZoom(true);
-            setAutoFit(false);
-            setScale(1);
-          }}
-        >
-          Readable 100%
-        </Button>
-        <Button size="sm" aria-label="Zoom out" onClick={() => zoom(1 / 1.2)}>
-          −
-        </Button>
-        <output aria-label="Graph zoom">{Math.round(scale * 100)}%</output>
-        <Button size="sm" aria-label="Zoom in" onClick={() => zoom(1.2)}>
-          +
-        </Button>
-        <span>Scroll or drag background to pan</span>
-      </div>
       <div
         className={s.view}
         ref={wrap}
@@ -804,7 +871,6 @@ function PlanCanvas({
             style={{ width: graph.width, height: graph.height, transform: `scale(${scale})` }}
           >
             <svg className={s.edges} width={graph.width} height={graph.height} aria-hidden>
-              <path d={`M0 0 H${graph.width}`} className={s.edge} />
               {selectedTask &&
                 graph.groups.flatMap((group) =>
                   group.agent.tasks.flatMap((task, taskIndex) => {
@@ -844,14 +910,6 @@ function PlanCanvas({
                     }
                     style={{ '--edge-strand': strand } as CSSProperties}
                   >
-                    <path
-                      d={drop(ax, 0, ax, graph.agentY)}
-                      className={cx(s.edge, approved && s.edgeOn)}
-                    />
-                    {approved && g.agent.active && (
-                      <path d={drop(ax, 0, ax, graph.agentY)} className={s.flow} />
-                    )}
-                    <circle cx={ax} cy={graph.agentY} r={3.5} className={s.joint} />
                     {g.agent.tasks.map((t, i) => {
                       const cx2 = g.cardsX[i]! + CARD_W / 2;
                       const d = drop(ax, graph.agentY + AGENT_H, cx2, graph.cardY);
@@ -983,7 +1041,10 @@ function PlanCanvas({
           </div>
         </div>
       </div>
-    </>
+      <svg className={s.orchestratorEdges} aria-hidden>
+        <path d={branches} />
+      </svg>
+    </div>
   );
 }
 
