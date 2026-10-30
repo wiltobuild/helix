@@ -136,6 +136,19 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (Object.hasOwn(state.plans, e.payload.plan.id)) throw new Error('Plan already submitted');
       sessionFor(state, e.payload.plan.orchestratorSessionId);
       break;
+    case 'plan.reviewed': {
+      const plan = state.plans[e.payload.planId];
+      if (
+        !plan ||
+        e.sessionId !== plan.orchestratorSessionId ||
+        plan.review?.hash !== e.payload.review.hash ||
+        plan.review.status !== 'reviewing'
+      )
+        throw new Error('Stale plan review');
+      if (e.payload.review.status === 'passed' && e.payload.review.result?.verdict !== 'passed')
+        throw new Error('Missing passing verdict');
+      break;
+    }
     case 'plan.approved':
     case 'plan.rejected': {
       const plan = Object.hasOwn(state.plans, e.payload.planId)
@@ -145,6 +158,17 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (e.sessionId !== undefined && e.sessionId !== plan.orchestratorSessionId)
         throw new Error('Plan decision session mismatch');
       if (plan.status !== 'awaiting_approval') throw new Error('Plan already decided');
+      if (e.type === 'plan.approved' && plan.review) {
+        const latest = Object.values(state.plans)
+          .filter((p) => p.orchestratorSessionId === plan.orchestratorSessionId)
+          .at(-1);
+        if (
+          latest?.id !== plan.id ||
+          plan.review.status !== 'passed' ||
+          e.payload.reviewHash !== plan.review.hash
+        )
+          throw new Error('Plan approval requires the latest reviewed revision');
+      }
       break;
     }
     case 'plan.node_updated': {
@@ -355,6 +379,9 @@ function reduceInto(
       s.lastEventSeq = e.seq;
       break;
     }
+    case 'plan.reviewed':
+      next.plans[e.payload.planId]!.review = structuredClone(e.payload.review);
+      break;
     case 'plan.approved':
     case 'plan.rejected': {
       const plan = next.plans[e.payload.planId]!;

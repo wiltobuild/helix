@@ -1,3 +1,4 @@
+import { planReviewSchema } from './plan-review.js';
 import { z } from 'zod';
 import {
   approvalIdSchema,
@@ -179,6 +180,7 @@ export const planSchema = z.strictObject({
   orchestratorSessionId: sessionIdSchema,
   goal: z.string().min(1),
   nodes: recordedPlanNodesSchema,
+  review: planReviewSchema.optional(),
   createdAt: timestampSchema,
 });
 export type Plan = z.infer<typeof planSchema>;

@@ -39,6 +39,8 @@ export function eventTone(e: HelixEvent): EventTone {
         : e.payload.checks.pending > 0
           ? 'quiet'
           : 'done';
+    case 'plan.reviewed':
+      return e.payload.review.status === 'passed' ? 'review' : 'needs';
     case 'feedback.routed':
       return 'feedback';
     case 'agent_review.requested':
@@ -173,6 +175,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
       return `${who} asked to ${lowerFirst(e.payload.approval.summary)}.`;
     case 'approval.decided':
       return `You ${e.payload.decision === 'approved' ? 'approved' : e.payload.decision === 'rejected' ? 'rejected' : 'requested changes to'} the request.`;
+    case 'plan.reviewed':
+      return `Codex plan review: ${e.payload.review.status}. ${e.payload.review.message}`;
     case 'plan.submitted':
       return `Helix split “${e.payload.plan.goal}” into ${e.payload.plan.nodes.length} tasks.`;
     case 'plan.approved':

@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  projectUpTo,
   eventSchemas,
   fixtures,
   isEventOf,
@@ -75,7 +76,22 @@ samples['design.updated'] = eventSchemas['design.updated'].parse({
     },
   },
 });
+samples['plan.reviewed'] = eventSchemas['plan.reviewed'].parse({
+  ...base,
+  type: 'plan.reviewed',
+  payload: {
+    planId: fixtures.passwordResetPlan.id,
+    review: {
+      hash: 'a'.repeat(64),
+      attempt: 1,
+      status: 'failed',
+      reviewer: 'codex',
+      message: 'Unavailable',
+    },
+  },
+});
 const invalid: Record<EventType, unknown> = {
+  'plan.reviewed': { planId: '', review: {} },
   'design.updated': { design: { revision: -1 } },
   'project.added': { project: { ...fixtures.passwordResetProject, id: '' } },
   'scheduling.changed': { paused: 'true' },
@@ -212,4 +228,62 @@ it('rejects invalid plan graphs and inconsistent check counts', () => {
     checkSummarySchema.safeParse({ total: 3, passed: 3, failed: 1, pending: 0, failingNames: [] })
       .success,
   ).toBe(false);
+});
+
+it('preserves legacy plan approval without review metadata', () => {
+  const state = projectUpTo(fixtures.passwordResetRun, fixtures.passwordResetRun.at(-1)!.seq);
+  expect(state.plans[fixtures.passwordResetPlan.id]?.status).toBe('approved');
+});
+
+it('binds projected approval to a passing exact review revision', () => {
+  const run = structuredClone(fixtures.passwordResetRun);
+  const at = run.findIndex((e) => e.type === 'plan.submitted');
+  const submitted = run[at]!;
+  if (submitted.type !== 'plan.submitted') throw new Error('Missing plan');
+  const review = {
+    hash: 'a'.repeat(64),
+    attempt: 1,
+    status: 'reviewing' as const,
+    reviewer: 'codex' as const,
+    message: 'Pending',
+  };
+  submitted.payload.plan.review = review;
+  const prefix = run.slice(0, at + 1);
+  const reviewed = eventSchemas['plan.reviewed'].parse({
+    ...submitted,
+    seq: submitted.seq + 1,
+    type: 'plan.reviewed',
+    payload: {
+      planId: submitted.payload.plan.id,
+      review: {
+        ...review,
+        status: 'passed',
+        result: { verdict: 'passed', summary: 'Pass', findings: [] },
+      },
+    },
+  });
+  const approved = eventSchemas['plan.approved'].parse({
+    ...submitted,
+    seq: submitted.seq + 2,
+    type: 'plan.approved',
+    payload: { planId: submitted.payload.plan.id, approvedBy: 'human', reviewHash: review.hash },
+  });
+  const events = [...prefix, reviewed, approved];
+  expect(projectUpTo(events, approved.seq).plans[submitted.payload.plan.id]?.status).toBe(
+    'approved',
+  );
+  const wrong = structuredClone(events);
+  const decision = wrong.at(-1)!;
+  if (decision.type !== 'plan.approved') throw new Error('Missing approval');
+  decision.payload.reviewHash = 'b'.repeat(64);
+  expect(projectUpTo(wrong, decision.seq).plans[submitted.payload.plan.id]?.status).toBe(
+    'awaiting_approval',
+  );
+  const stale = {
+    ...reviewed,
+    payload: { ...reviewed.payload, review: { ...reviewed.payload.review, hash: 'b'.repeat(64) } },
+  };
+  expect(
+    projectUpTo([...prefix, stale], stale.seq).plans[submitted.payload.plan.id]?.review?.status,
+  ).toBe('reviewing');
 });
