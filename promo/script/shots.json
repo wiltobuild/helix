@@ -1,24 +1,92 @@
 {
-  "note": "Real Helix footage captured from the bundled replay of a real recorded run (discount-codes, 2026-10-28) unless 'simulated' is true. Steps run in order; 'shoot' captures frames while the UI settles.",
+  "note": "Named stills of real Helix UI states. Source `dc` = bundled replay of the real discount-codes run recorded 2026-10-28. The Daybreak recording will be added as another source once supplied. Steps run in order; `still` saves the current screen.",
   "base": "http://localhost:5317",
+  "sources": {
+    "dc": {
+      "url": "/?demo",
+      "simulated": false
+    }
+  },
   "shots": [
     {
-      "id": "agents-roster",
-      "url": "/?demo",
-      "steps": [{ "milestone": "81" }, { "click": "Agents" }, { "wait": 900 }, { "shoot": 1500 }]
-    },
-    {
-      "id": "plan-approve-to-start",
-      "url": "/?demo",
+      "source": "dc",
       "steps": [
-        { "milestone": "71" },
-        { "wait": 900 },
-        { "shoot": 1200 },
-        { "milestone": "78" },
-        { "shoot": 1200 },
-        { "milestone": "81" },
-        { "shoot": 1500 },
-        { "next": 2, "shootEach": 900 }
+        {
+          "milestone": "71",
+          "still": "plan-ready"
+        },
+        {
+          "milestone": "78",
+          "still": "plan-approved"
+        },
+        {
+          "milestone": "81",
+          "still": "codex-start"
+        },
+        {
+          "next": 2,
+          "still": "codex-working"
+        },
+        {
+          "click": "Agents",
+          "still": "agents"
+        },
+        {
+          "click": "Builds",
+          "milestone": "147",
+          "still": "pr1-open"
+        },
+        {
+          "milestone": "152",
+          "still": "ci-running"
+        },
+        {
+          "milestone": "154",
+          "still": "ci-passed"
+        },
+        {
+          "milestone": "155",
+          "still": "pr1-merged"
+        },
+        {
+          "next": 2,
+          "still": "receipt-from-merged"
+        },
+        {
+          "milestone": "159",
+          "still": "receipt-working"
+        },
+        {
+          "milestone": "214",
+          "still": "ci2-passed"
+        },
+        {
+          "milestone": "215",
+          "still": "complete"
+        },
+        {
+          "text": "Discount pricing in cart.ts",
+          "within": "main",
+          "still": "task-selected"
+        },
+        {
+          "click": "Why",
+          "role": "tab",
+          "still": "task-why"
+        },
+        {
+          "click": "PR & CI",
+          "role": "tab",
+          "still": "task-prci"
+        },
+        {
+          "click": "Tasks",
+          "still": "tasks-page"
+        },
+        {
+          "click": "Pull requests",
+          "still": "prs-page"
+        }
       ]
     }
   ]
