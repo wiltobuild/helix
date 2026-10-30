@@ -31,25 +31,33 @@ const toolbar = elements.find((element) =>
 test('activity controls are unconditional siblings of page content and the Dock', () => {
   expect(toolbar).toBeDefined();
   expect(ts.isJsxElement(toolbar.parent)).toBe(true);
-  expect((toolbar.parent as ts.JsxElement).openingElement.tagName.getText(source)).toBe('main');
-  const activity = elements.find((element) =>
-    element.children.some(
-      (child) =>
-        ts.isJsxExpression(child) && child.expression?.getText(source).includes("'Show activity'"),
-    ),
+  expect(ts.isJsxElement(toolbar.parent.parent)).toBe(true);
+  expect((toolbar.parent.parent as ts.JsxElement).openingElement.tagName.getText(source)).toBe(
+    'main',
+  );
+  const activity = elements.find(
+    (element) =>
+      element.openingElement.tagName.getText(source) === 'Button' &&
+      element.openingElement.attributes.getText(source).includes('setActivityHidden'),
   );
   expect(activity?.parent).toBe(toolbar);
 });
 
+test('session tabs share the controls row without becoming action-group children', () => {
+  const row = toolbar.parent as ts.JsxElement;
+  expect(
+    row.children.some(
+      (child) => ts.isJsxExpression(child) && child.getText(source).includes('<SessionTabs'),
+    ),
+  ).toBe(true);
+  expect(toolbar.getText(source)).not.toContain('<SessionTabs');
+  const header = source.getText().match(/<SessionHeader[\s\S]*?\/>/);
+  expect(header?.[0]).toContain('hideTabs');
+});
+
 test('focus exit remains reachable regardless of the current page or tab', () => {
-  const focus = elements.find(
-    (element) =>
-      element.openingElement.tagName.getText(source) === 'Button' &&
-      element.children.some(
-        (child) =>
-          ts.isJsxExpression(child) &&
-          child.expression?.getText(source).includes("'Exit focus (Esc)'"),
-      ),
+  const focus = elements.find((element) =>
+    element.openingElement.attributes.getText(source).includes('ref={focusButton}'),
   )!;
   expect(focus).toBeDefined();
   const branch = focus.parent.parent.parent;

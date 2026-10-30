@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { FolderPlus, LayoutGrid, Network, Plus } from 'lucide-react';
+import {
+  FolderPlus,
+  LayoutGrid,
+  Network,
+  Plus,
+  Focus,
+  Maximize,
+  PanelBottom,
+  PanelRight,
+} from 'lucide-react';
 import { deriveStatus, type HarnessInfo, type HelixEvent, type Project } from '@helix/contracts';
 import {
   AgentBadge,
@@ -23,6 +32,7 @@ import {
   DemoStopAll,
   NavRail,
   SessionHeader,
+  SessionTabs,
   TopBar,
   type Page,
   type SessionSummary,
@@ -57,7 +67,8 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   const run = useRun(events, {
     recorded: source.mode !== 'live',
     speed: source.speed,
-    startAt: Math.max(0, replayStart(events) - 1),
+    startAt:
+      source.demoPreset === 'laptop' ? events.length - 1 : Math.max(0, replayStart(events) - 1),
     sourceId: source.sourceId,
     connected: source.mode === 'live' && source.stream === 'live',
   });
@@ -76,6 +87,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   const [page, setPage] = useState<Page>('sessions');
   const [dockExpanded, setDockExpanded] = useState(false);
   const [graphFocus, setGraphFocus] = useState(false);
+  const [graphControls, setGraphControls] = useState<HTMLDivElement | null>(null);
   const [inspectorHidden, setInspectorHidden] = useState(false);
   const [activityHidden, setActivityHidden] = useState(
     () => window.matchMedia('(max-width: 1440px), (max-height: 900px)').matches,
@@ -315,6 +327,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
         {page === 'sessions' && (
           <div className={s.sessionChrome}>
             <SessionHeader
+              hideTabs
               state={state}
               source={source}
               title={sessionTitle}
@@ -337,57 +350,90 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
             />
           </div>
         )}
-        {/* Shared by every view: hidden activity and focus must always have a visible exit. */}
-        <div className={s.graphTools} role="group" aria-label="Workspace display controls">
-          {(graphFocus || (page === 'sessions' && (tab === 'plan' || tab === 'visual'))) && (
-            <>
-              <Button size="sm" ref={focusButton} onClick={graphFocus ? exitFocus : enterFocus}>
-                {graphFocus
-                  ? 'Exit focus (Esc)'
-                  : tab === 'visual'
-                    ? 'Focus design'
-                    : 'Focus graph'}
-              </Button>
-              <Button size="sm" onClick={() => void enterFullscreen()}>
-                Fullscreen workspace
-              </Button>
-            </>
+        <div className={s.workspaceBar}>
+          {page === 'sessions' && !graphFocus && (
+            <SessionTabs tab={tab} onTab={setTab} counts={{ board: activeCount }} />
           )}
-          {selectedSession && !(page === 'sessions' && tab === 'visual') && (
+          {/* Shared by every view: hidden activity and focus must always have a visible exit. */}
+          <div className={s.graphTools} role="group" aria-label="Workspace display controls">
+            {(graphFocus || (page === 'sessions' && (tab === 'plan' || tab === 'visual'))) && (
+              <>
+                <Button
+                  size="sm"
+                  ref={focusButton}
+                  onClick={graphFocus ? exitFocus : enterFocus}
+                  aria-label={
+                    graphFocus
+                      ? 'Exit focus (Esc)'
+                      : tab === 'visual'
+                        ? 'Focus design'
+                        : 'Focus graph'
+                  }
+                  icon={<Focus size={14} aria-hidden />}
+                >
+                  <span className={s.controlLabel}>
+                    {graphFocus
+                      ? 'Exit focus (Esc)'
+                      : tab === 'visual'
+                        ? 'Focus design'
+                        : 'Focus graph'}
+                  </span>
+                </Button>
+                <Button
+                  size="sm"
+                  aria-label="Fullscreen workspace"
+                  icon={<Maximize size={14} aria-hidden />}
+                  onClick={() => void enterFullscreen()}
+                >
+                  <span className={s.controlLabel}>Fullscreen workspace</span>
+                </Button>
+              </>
+            )}
+            {selectedSession && !(page === 'sessions' && tab === 'visual') && (
+              <Button
+                size="sm"
+                aria-label={inspectorHidden ? 'Show selected agent' : 'Hide inspector'}
+                icon={<PanelRight size={14} aria-hidden />}
+                aria-pressed={!inspectorHidden}
+                onClick={() => setInspectorHidden((hidden) => !hidden)}
+              >
+                <span className={s.controlLabel}>
+                  {inspectorHidden ? 'Show selected agent' : 'Hide inspector'}
+                </span>
+              </Button>
+            )}
             <Button
               size="sm"
-              aria-pressed={!inspectorHidden}
-              onClick={() => setInspectorHidden((hidden) => !hidden)}
+              aria-label={activityHidden ? 'Show activity' : 'Hide activity'}
+              icon={<PanelBottom size={14} aria-hidden />}
+              aria-pressed={!activityHidden}
+              onClick={() => setActivityHidden((hidden) => !hidden)}
             >
-              {inspectorHidden ? 'Show selected agent' : 'Hide inspector'}
+              <span className={s.controlLabel}>
+                {activityHidden ? 'Show activity' : 'Hide activity'}
+              </span>
             </Button>
-          )}
-          <Button
-            size="sm"
-            aria-pressed={!activityHidden}
-            onClick={() => setActivityHidden((hidden) => !hidden)}
-          >
-            {activityHidden ? 'Show activity' : 'Hide activity'}
-          </Button>
-          {!activityHidden && (
-            <label className={s.panelSize}>
-              Activity height
-              <input
-                aria-label="Activity height"
-                type="range"
-                min="120"
-                max="400"
-                step="20"
-                value={activityHeight}
-                onChange={(event) => {
-                  setActivityHeight(Number(event.target.value));
-                  setDockExpanded(false);
-                }}
-              />
-            </label>
-          )}
-          {graphFocus && stopAll}
-          {fullscreenNotice && <span role="status">{fullscreenNotice}</span>}
+            {!activityHidden && (
+              <label className={s.panelSize}>
+                <span className={s.controlLabel}>Activity height</span>
+                <input
+                  aria-label="Activity height"
+                  type="range"
+                  min="120"
+                  max="400"
+                  step="20"
+                  value={activityHeight}
+                  onChange={(event) => {
+                    setActivityHeight(Number(event.target.value));
+                    setDockExpanded(false);
+                  }}
+                />
+              </label>
+            )}
+            <div ref={setGraphControls} />
+            {graphFocus && stopAll}
+            {fullscreenNotice && <span role="status">{fullscreenNotice}</span>}
+          </div>
         </div>
         {page === 'sessions' ? (
           <>
@@ -440,6 +486,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
               )}
               {tab === 'plan' && (
                 <PlanView
+                  controlsContainer={graphControls}
                   state={state}
                   onFollowLive={() => {
                     setSelected(null);

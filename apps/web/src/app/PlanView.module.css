@@ -756,10 +756,65 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 12px;
   flex: none;
-  border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
+}
+
+.connectedGraph {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.connectedGraph > .view {
+  flex: 1;
+  display: block;
+  height: auto;
+}
+.orchestratorEdges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+.orchestratorEdges path {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1.5;
+}
+.graphOptions {
+  position: relative;
+  font-size: var(--text-xs);
+}
+.graphOptions summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.graphOptions[open] > .controls {
+  position: fixed;
+  top: var(--graph-menu-top, 150px);
+  right: var(--graph-menu-right, 12px);
+  width: min(300px, 80vw);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  z-index: var(--z-popover, 30);
+}
+.connectedGraph > .graphOptions {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 2;
 }
 
 .controls output {
@@ -834,9 +889,11 @@
   position: absolute;
 }
 .reviewNodePosition .reviewerCard {
-  padding: 12px;
-  gap: 6px;
-  border-radius: 10px;
+  padding: 8px 10px;
+  gap: 0;
+  border-top-width: 1px;
+  border-left: 3px solid var(--status-review);
+  border-radius: 6px;
 }
 .reviewNodePosition .reviewSeal,
 .reviewNodePosition .reviewerCard > [role='img'] {
@@ -845,6 +902,16 @@
 .reviewNodePosition .reviewerCopy {
   font-size: 12px;
   line-height: 1.4;
+  gap: 2px;
+}
+.reviewNodePosition .reviewerMeta,
+.reviewNodePosition .reviewTarget {
+  display: none;
+}
+.reviewNodePosition .reviewerTag {
+  font-size: 10px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 .unrelatedEdges {
   opacity: 0.45;
@@ -870,14 +937,10 @@
 .reviewNodePosition::before {
   content: '';
   position: absolute;
-  top: 94px;
-  right: 100%;
-  width: 24px;
-  border-top: 2px dashed var(--status-review);
-}
-.reviewNodePosition[data-side='left']::before {
-  right: auto;
-  left: 100%;
+  bottom: 100%;
+  left: 50%;
+  height: 24px;
+  border-left: 2px dashed var(--status-review);
 }
 .directTask {
   display: grid;

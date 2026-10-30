@@ -271,6 +271,7 @@ export function SessionHeader({
   stopAll,
   repos,
   activeCount,
+  hideTabs = false,
 }: {
   state: ProjectState;
   source: HelixSource;
@@ -288,6 +289,7 @@ export function SessionHeader({
   stopAll: ReactNode;
   repos: readonly Project[];
   activeCount: number;
+  hideTabs?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const p = state.project;
@@ -298,7 +300,7 @@ export function SessionHeader({
       })
     : undefined;
   return (
-    <div className={s.sessionHead}>
+    <div className={s.sessionHead} data-tabs-hidden={hideTabs || undefined}>
       <ol className={s.crumbs} aria-label="Breadcrumbs">
         <li>helix</li>
         <li aria-hidden>/</li>
@@ -404,29 +406,44 @@ export function SessionHeader({
         </div>
       </div>
 
-      <div className={s.tabs} role="tablist" aria-label="Session views">
-        {(
-          [
-            ['board', 'Board'],
-            ['plan', 'Plan'],
-            ['visual', 'Design'],
-            ['files', 'Files'],
-            ['commits', 'Commits'],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            className={cx(s.tab, tab === value && s.tabActive)}
-            onClick={() => onTab(value)}
-          >
-            {label}
-            {counts[value] ? <span className={s.tabCount}>{counts[value]}</span> : null}
-          </button>
-        ))}
-      </div>
+      {!hideTabs && <SessionTabs tab={tab} onTab={onTab} counts={counts} />}
+    </div>
+  );
+}
+
+/** Session navigation stays a tablist; workspace actions are separate sibling controls. */
+export function SessionTabs({
+  tab,
+  onTab,
+  counts,
+}: {
+  tab: SessionTab;
+  onTab: (tab: SessionTab) => void;
+  counts: Partial<Record<SessionTab, number>>;
+}) {
+  return (
+    <div className={s.tabs} role="tablist" aria-label="Session views">
+      {(
+        [
+          ['board', 'Board'],
+          ['plan', 'Plan'],
+          ['visual', 'Design'],
+          ['files', 'Files'],
+          ['commits', 'Commits'],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={tab === value}
+          className={cx(s.tab, tab === value && s.tabActive)}
+          onClick={() => onTab(value)}
+        >
+          {label}
+          {counts[value] ? <span className={s.tabCount}>{counts[value]}</span> : null}
+        </button>
+      ))}
     </div>
   );
 }

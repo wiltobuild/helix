@@ -28,14 +28,40 @@
   flex: none;
 }
 
+.workspaceBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 0 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
 .graphTools {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 3px 0;
+}
+.graphTools > * {
+  flex-shrink: 0;
+}
+@media (max-width: 1100px) {
+  .controlLabel {
+    display: none;
+  }
+  .workspaceBar {
+    gap: 8px;
+  }
+  .graphTools {
+    gap: 4px;
+  }
+  .panelSize {
+    --slider-width: 48px;
+  }
 }
 
 .panelSize {
@@ -46,7 +72,7 @@
 }
 
 .panelSize input {
-  width: 90px;
+  width: var(--slider-width, 90px);
 }
 
 .activityPanel {
