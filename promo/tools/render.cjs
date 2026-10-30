@@ -49,7 +49,7 @@ const audio = flag('--audio');
       '-framerate',
       String(fps),
       '-c:v',
-      'png',
+      'mjpeg',
       '-i',
       '-',
       ...(audio ? ['-i', audio] : []),
@@ -74,7 +74,8 @@ const audio = flag('--audio');
   );
   for (let f = 0; f < total; f++) {
     await page.evaluate((s) => window.renderAt(s), f / fps);
-    const buf = await page.screenshot({ type: 'png' });
+    // JPEG at q95 is ~5x faster to encode than PNG and visually lossless before x264.
+    const buf = await page.screenshot({ type: 'jpeg', quality: 95 });
     if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
     if (f % 150 === 0) process.stdout.write(`frame ${f}/${total}\n`);
   }
