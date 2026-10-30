@@ -13,7 +13,7 @@ import { Dock } from './Dock';
 
 const noop = () => {};
 const render = (node: ReactNode) => renderToStaticMarkup(<TooltipProvider>{node}</TooltipProvider>);
-const helixMark = 'data-helix="dotted"';
+const helixMark = 'data-helix="dna"';
 
 function runAt(events: readonly HelixEvent[], seq: number): RunView {
   const identities = indexIdentities(events);

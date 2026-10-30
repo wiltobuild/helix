@@ -143,7 +143,7 @@ test('every orchestrator is exactly Helix with distinct trace IDs and the canoni
     const html = render(<ActorBadge {...identity} name="Helix 2" title={identity.sessionId} />);
     expect(html).toContain('>Helix</span>');
     expect(html).not.toContain('Helix 2');
-    expect(html).toContain('data-helix="dotted"');
+    expect(html).toContain('data-helix="dna"');
     expect(html).toContain(identity.sessionId);
   }
 });

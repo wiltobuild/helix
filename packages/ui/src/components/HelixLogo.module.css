@@ -2,7 +2,6 @@
   flex: none;
   display: inline-block;
   vertical-align: middle;
-  overflow: visible;
 }
 .tile {
   fill: var(--surface);
@@ -10,17 +9,8 @@
 }
 .rung {
   stroke: var(--border-strong);
-  stroke-width: 0.7;
-  opacity: 0.65;
-  transform-origin: center;
-  transform: scaleY(var(--height));
-}
-.teal,
-.rust {
-  transform: translateY(var(--y));
-  opacity: var(--depth);
-  r: var(--radius);
-  visibility: var(--visibility);
+  stroke-width: 1;
+  opacity: 0.8;
 }
 .teal {
   fill: var(--strand-codex);
@@ -28,194 +18,32 @@
 .rust {
   fill: var(--strand-claude);
 }
-/* Sixteen samples of the PRD sine/depth equations, interpolated linearly. */
-@keyframes strand {
-  0% {
-    transform: translateY(0px);
-    opacity: 0.9;
-    r: 1.9px;
-  }
-  6.25% {
-    transform: translateY(3.8268px);
-    opacity: 0.8791;
-    r: 1.8543px;
-  }
-  12.5% {
-    transform: translateY(7.0711px);
-    opacity: 0.8195;
-    r: 1.7243px;
-  }
-  18.75% {
-    transform: translateY(9.2388px);
-    opacity: 0.7302;
-    r: 1.5296px;
-  }
-  25% {
-    transform: translateY(10px);
-    opacity: 0.625;
-    r: 1.3px;
-  }
-  31.25% {
-    transform: translateY(9.2388px);
-    opacity: 0.5198;
-    r: 1.0704px;
-  }
-  37.5% {
-    transform: translateY(7.0711px);
-    opacity: 0.4305;
-    r: 0.8757px;
-  }
-  43.75% {
-    transform: translateY(3.8268px);
-    opacity: 0.3709;
-    r: 0.7457px;
-  }
-  50% {
-    transform: translateY(0px);
-    opacity: 0.35;
-    r: 0.7px;
-  }
-  56.25% {
-    transform: translateY(-3.8268px);
-    opacity: 0.3709;
-    r: 0.7457px;
-  }
-  62.5% {
-    transform: translateY(-7.0711px);
-    opacity: 0.4305;
-    r: 0.8757px;
-  }
-  68.75% {
-    transform: translateY(-9.2388px);
-    opacity: 0.5198;
-    r: 1.0704px;
-  }
-  75% {
-    transform: translateY(-10px);
-    opacity: 0.625;
-    r: 1.3px;
-  }
-  81.25% {
-    transform: translateY(-9.2388px);
-    opacity: 0.7302;
-    r: 1.5296px;
-  }
-  87.5% {
-    transform: translateY(-7.0711px);
-    opacity: 0.8195;
-    r: 1.7243px;
-  }
-  93.75% {
-    transform: translateY(-3.8268px);
-    opacity: 0.8791;
-    r: 1.8543px;
-  }
-  100% {
-    transform: translateY(0px);
-    opacity: 0.9;
-    r: 1.9px;
+.tealRail,
+.rustRail {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.tealRail {
+  stroke: var(--strand-codex);
+}
+.rustRail {
+  stroke: var(--strand-claude);
+}
+.strands {
+  transform: translateX(0);
+}
+/* Translation is linear and the final frame is geometrically identical to the first. */
+@keyframes flow {
+  to {
+    transform: translateX(-60px);
   }
 }
-@keyframes rung {
-  0% {
-    transform: scaleY(0);
-  }
-  6.25% {
-    transform: scaleY(0.3827);
-  }
-  12.5% {
-    transform: scaleY(0.7071);
-  }
-  18.75% {
-    transform: scaleY(0.9239);
-  }
-  25% {
-    transform: scaleY(1);
-  }
-  31.25% {
-    transform: scaleY(0.9239);
-  }
-  37.5% {
-    transform: scaleY(0.7071);
-  }
-  43.75% {
-    transform: scaleY(0.3827);
-  }
-  50% {
-    transform: scaleY(0);
-  }
-  56.25% {
-    transform: scaleY(0.3827);
-  }
-  62.5% {
-    transform: scaleY(0.7071);
-  }
-  68.75% {
-    transform: scaleY(0.9239);
-  }
-  75% {
-    transform: scaleY(1);
-  }
-  81.25% {
-    transform: scaleY(0.9239);
-  }
-  87.5% {
-    transform: scaleY(0.7071);
-  }
-  93.75% {
-    transform: scaleY(0.3827);
-  }
-  100% {
-    transform: scaleY(0);
-  }
-}
-.logo[data-active] .teal,
-.logo[data-active] .rust {
-  animation: strand var(--period) linear var(--delay) infinite;
-}
-.logo[data-active] .rung {
-  animation: rung 8.726646s linear var(--delay) infinite;
-}
-
-/* Paint the near strand last, as in the PRD. Switch layers at the separated wave peaks. */
-@keyframes front {
-  0%,
-  100% {
-    visibility: visible;
-  }
-  25% {
-    visibility: hidden;
-  }
-  75% {
-    visibility: visible;
-  }
-}
-@keyframes back {
-  0%,
-  100% {
-    visibility: hidden;
-  }
-  25% {
-    visibility: visible;
-  }
-  75% {
-    visibility: hidden;
-  }
-}
-.logo[data-active] .front {
-  animation:
-    strand var(--period) linear var(--delay) infinite,
-    front var(--period) step-end var(--delay) infinite;
-}
-.logo[data-active] .back {
-  animation:
-    strand var(--period) linear var(--delay) infinite,
-    back var(--period) step-end var(--delay) infinite;
+.logo[data-active] .strands {
+  animation: flow 8.726646s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .logo[data-active] .teal,
-  .logo[data-active] .rust,
-  .logo[data-active] .rung {
+  .logo[data-active] .strands {
     animation: none;
   }
 }
