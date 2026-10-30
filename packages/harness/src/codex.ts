@@ -352,7 +352,10 @@ export class CodexSession extends ProcessSession {
       else
         await this.write({
           id,
-          error: { code: -32601, message: 'Text-only discovery cannot request tools or user input' },
+          error: {
+            code: -32601,
+            message: 'Text-only discovery cannot request tools or user input',
+          },
         });
       this.fail('Text-only discovery attempted a forbidden tool or permission request');
       return;
