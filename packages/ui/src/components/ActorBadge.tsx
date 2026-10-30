@@ -46,18 +46,19 @@ export function ActorBadge({
       style={style}
       data-role={role}
       data-active={active || undefined}
-      {...(title ? { title } : {})}
+      title={[role === 'orchestrator' ? 'Helix' : name, model, title].filter(Boolean).join(' · ')}
     >
       {role === 'orchestrator' ? (
         <HelixLogo size={15} active={active} className={s.symbol} />
       ) : (
         <AgentBadge agent={agent} variant="glyph" active={active} className={s.symbol} />
       )}
-      <span className={s.name}>{role === 'orchestrator' ? 'Helix' : name}</span>
-      <span className={s.meta}>
-        {role === 'reviewer' && <span className={s.tag}>reviews</span>}
-        <span className={s.provider}>{meta.short}</span>
-        {model && <span className={s.model}>· {model}</span>}
+      <span className={s.copy}>
+        <span className={s.name}>{role === 'orchestrator' ? 'Helix' : name}</span>
+        <span className={s.meta}>
+          {role === 'reviewer' && <span className={s.tag}>reviews</span>}
+          <span className={s.provider}>{meta.short}</span>
+        </span>
       </span>
     </span>
   );

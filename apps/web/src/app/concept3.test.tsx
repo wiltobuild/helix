@@ -6,19 +6,18 @@ import { PlanView } from './PlanView';
 
 const { passwordResetRun: run } = fixtures;
 
-test('HelixLogo renders two-strand DNA crossover with 4 base-pair rungs and active state', () => {
+test('HelixLogo renders the horizontal dotted PRD strands with neutral rungs and active state', () => {
   const idleHtml = renderToStaticMarkup(<HelixLogo size={24} />);
   expect(idleHtml).not.toContain('data-active="true"');
-  expect(idleHtml).toContain('width="24"');
+  expect(idleHtml).toContain('width="48"');
   expect(idleHtml).toContain('height="24"');
-  // 4 base-pair rungs + 2 strand paths + 4 endpoint nodes
-  expect(idleHtml.match(/<line /g)?.length).toBe(4);
-  expect(idleHtml.match(/<path /g)?.length).toBe(2);
-  expect(idleHtml.match(/<circle /g)?.length).toBe(4);
+  expect(idleHtml.match(/<line /g)?.length).toBe(10);
+  expect(idleHtml).not.toContain('<path ');
+  expect(idleHtml.match(/<circle /g)?.length).toBe(76);
 
   const activeBadgeHtml = renderToStaticMarkup(<HelixLogo size={38} active variant="badge" />);
   expect(activeBadgeHtml).toContain('data-active="true"');
-  expect(activeBadgeHtml).toContain('width="38"');
+  expect(activeBadgeHtml).toContain('width="76"');
   expect(activeBadgeHtml).toContain('<rect ');
 });
 

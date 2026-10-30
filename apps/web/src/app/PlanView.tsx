@@ -45,7 +45,7 @@ const GROUP_GAP = 40;
 const AGENT_W = 330;
 const ORCH_W = 380;
 const ORCH_H = 92;
-const AGENT_H = 92;
+const AGENT_H = 120;
 const CARD_H = 188;
 const ROW_GAP = 24;
 const PAD = 8;
@@ -638,11 +638,7 @@ function PlanCanvas({
                             ? identities.sessions.get(worker.session.id)?.name
                             : agentLabel(agent)}
                         </strong>
-                        <span>
-                          {assigned.length
-                            ? agentLabel(agent) + ' · ' + assigned[0]!.session.title
-                            : 'Awaiting assignment'}
-                        </span>
+                        <span>{assigned.length ? agentLabel(agent) : 'Awaiting assignment'}</span>
                       </span>
                       <span className={s.pill} data-tone={working ? 'working' : 'idle'}>
                         {working ? 'Working' : assigned.length ? 'Assigned' : 'Standing by'}
@@ -1014,19 +1010,19 @@ function PlanCanvas({
                   aria-label={`${a.tasks[0] ? identities.nodes.get(a.tasks[0].node.id)?.name : agentLabel(a.agent)}: ${a.title} — ${a.statusLabel}`}
                 >
                   <span className={s.agentHead}>
-                    <AgentEmblem agent={a.agent} active={a.active} size={44} />
+                    <AgentEmblem agent={a.agent} active={a.active} size={32} />
                     <span className={s.agentName}>
                       <strong>
                         {a.tasks[0]
                           ? identities.nodes.get(a.tasks[0].node.id)?.name
                           : agentLabel(a.agent)}
                       </strong>
-                      <span title={a.title}>
+                      <span
+                        title={[a.title, a.tasks[0]?.session?.session.model]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      >
                         {agentLabel(a.agent)}
-                        {a.tasks[0]?.session?.session.model
-                          ? ` · ${a.tasks[0].session.session.model}`
-                          : ''}{' '}
-                        · {a.title}
                       </span>
                     </span>
                     <span className={s.pill} data-tone={agentTone(a)}>

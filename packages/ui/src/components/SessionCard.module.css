@@ -110,6 +110,15 @@
   overflow-wrap: anywhere;
 }
 
+.head {
+  overflow: visible;
+  align-items: flex-start;
+}
+
+.time {
+  flex: none;
+}
+
 .time {
   color: var(--text-3);
   font: var(--text-2xs) / 1 var(--font-mono);
