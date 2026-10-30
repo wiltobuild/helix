@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fixtures } from '@helix/contracts';
+import { fixtures, type HelixEvent } from '@helix/contracts';
 import { createSseParser, subscribeEvents, type SseFrame, type EventStreamStatus } from './sse.js';
 
 afterEach(() => vi.useRealTimers());
@@ -42,8 +42,12 @@ it('every possible two-chunk split has the same framing', () => {
 
 const event = fixtures.passwordResetRun[0];
 if (!event) throw new Error('No fixture');
-function frame(seq: number) {
-  return `id: ${seq}\nevent: helix\ndata: ${JSON.stringify({ ...event, seq })}\n\n`;
+function frame(seq: number, changes: Record<string, unknown> = {}) {
+  return `id: ${seq}\nevent: helix\ndata: ${JSON.stringify({ ...event, seq, ...changes })}\n\n`;
+}
+function requestUrl(input: Parameters<typeof fetch>[0] | undefined): URL {
+  if (input === undefined) throw new Error('Missing fetch request');
+  return new URL(input instanceof Request ? input.url : input);
 }
 function stream(text: string) {
   const bytes = new TextEncoder().encode(text);
@@ -57,7 +61,7 @@ function stream(text: string) {
     { headers: { 'content-type': 'text/event-stream' } },
   );
 }
-it('resumes with headers, ignores duplicate sequences, and close cancels reconnect', async () => {
+it('resumes with headers, ignores exact replay duplicates, and close cancels reconnect', async () => {
   vi.useFakeTimers();
   const fetcher = vi
     .fn<typeof fetch>()
@@ -78,6 +82,139 @@ it('resumes with headers, ignores duplicate sequences, and close cancels reconne
   await vi.advanceTimersByTimeAsync(30_000);
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(statuses.at(-1)).toBe('closed');
+});
+
+it('delivers 10 then unseen 9, suppresses exact 9 retries, retains conflicts, and resumes at 10', async () => {
+  vi.useFakeTimers();
+  const changedTs = '2026-10-01T10:00:00.000Z';
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(stream(frame(10) + frame(9) + frame(9) + frame(9, { ts: changedTs })))
+    .mockResolvedValueOnce(stream(frame(9) + frame(9, { ts: changedTs }) + frame(12)));
+  const received: HelixEvent[] = [];
+  const subscription = subscribeEvents({
+    baseUrl: 'http://localhost:4317',
+    fetch: fetcher,
+    projectId: event.projectId,
+    onEvent: (value) => received.push(value),
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.map((value) => value.seq)).toEqual([10, 9, 9]);
+    expect(received.map((value) => value.ts)).toEqual([event.ts, event.ts, changedTs]);
+    await vi.advanceTimersByTimeAsync(350);
+    expect(received.map((value) => value.seq)).toEqual([10, 9, 9, 12]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(requestUrl(fetcher.mock.calls[1]?.[0]).searchParams.get('since')).toBe('10');
+    expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ 'Last-Event-ID': '10' });
+  } finally {
+    subscription.close();
+  }
+});
+
+it('honors the initial since boundary without treating legitimate project sequence gaps as missing data', async () => {
+  vi.useFakeTimers();
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      stream(
+        frame(9) + frame(8) + frame(9, { ts: '2026-10-01T10:00:00.000Z' }) + frame(20) + frame(10),
+      ),
+    );
+  const received: number[] = [];
+  const subscription = subscribeEvents({
+    baseUrl: 'http://localhost:4317',
+    since: 9,
+    fetch: fetcher,
+    projectId: event.projectId,
+    onEvent: (value) => received.push(value.seq),
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received).toEqual([20, 10]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(requestUrl(fetcher.mock.calls[0]?.[0]).searchParams.get('since')).toBe('9');
+    expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ 'Last-Event-ID': '9' });
+  } finally {
+    subscription.close();
+  }
+});
+
+it('rejects wrong-project late frames without advancing the resume high-water mark', async () => {
+  vi.useFakeTimers();
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(stream(frame(10) + frame(9, { projectId: 'wrong-project' }) + frame(11)))
+    .mockResolvedValueOnce(stream(frame(10) + frame(11)));
+  const received: HelixEvent[] = [];
+  const subscription = subscribeEvents({
+    baseUrl: 'http://localhost:4317',
+    fetch: fetcher,
+    projectId: event.projectId,
+    onEvent: (value) => received.push(value),
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.map((value) => value.seq)).toEqual([10]);
+    await vi.advanceTimersByTimeAsync(350);
+    expect(received.map((value) => value.seq)).toEqual([10, 11]);
+    expect(received.every((value) => value.projectId === event.projectId)).toBe(true);
+    expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ 'Last-Event-ID': '10' });
+  } finally {
+    subscription.close();
+  }
+});
+
+it('close inside onEvent aborts the stream and prevents callbacks for remaining frames', async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(stream(frame(10) + frame(9)));
+  const received: number[] = [];
+  const statuses: EventStreamStatus[] = [];
+  const subscription = subscribeEvents({
+    baseUrl: 'http://localhost:4317',
+    fetch: fetcher,
+    onEvent: (value) => {
+      received.push(value.seq);
+      subscription.close();
+    },
+    onStatus: (value) => statuses.push(value),
+  });
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(received).toEqual([10]);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  expect(statuses).toEqual(['connecting', 'live', 'closed']);
+});
+
+it('a pending read that completes after close cannot deliver events or restart retries', async () => {
+  vi.useFakeTimers();
+  let sink: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        sink = controller;
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response);
+  const onEvent = vi.fn();
+  const statuses: EventStreamStatus[] = [];
+  const subscription = subscribeEvents({
+    baseUrl: 'http://localhost:4317',
+    fetch: fetcher,
+    onEvent,
+    onStatus: (value) => statuses.push(value),
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  subscription.close();
+  sink!.enqueue(new TextEncoder().encode(frame(10) + frame(9)));
+  sink!.close();
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(onEvent).not.toHaveBeenCalled();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  expect(statuses).toEqual(['connecting', 'live', 'closed']);
 });
 it('uses bounded exponential backoff for unsuccessful connections', async () => {
   vi.useFakeTimers();
