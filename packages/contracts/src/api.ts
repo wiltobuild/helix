@@ -35,6 +35,37 @@ export const healthResponseSchema = z.strictObject({
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export const harnessesResponseSchema = z.array(harnessInfoSchema);
 export type HarnessesResponse = z.infer<typeof harnessesResponseSchema>;
+export const setupRequestSchema = z.strictObject({});
+export const setupCheckSchema = z.strictObject({
+  ok: z.boolean(),
+  detail: z.string(),
+  fix: z.string().optional(),
+});
+export const setupAgentSchema = setupCheckSchema.extend({
+  installed: z.boolean(),
+  version: z.string().optional(),
+  signedIn: z.union([z.boolean(), z.literal('unknown')]),
+});
+export const setupToolSchema = setupCheckSchema.extend({ version: z.string().optional() });
+export const setupResponseSchema = z.strictObject({
+  agents: z.strictObject({ codex: setupAgentSchema, 'claude-code': setupAgentSchema }),
+  github: setupCheckSchema.extend({
+    status: z.enum(['on', 'off', 'unavailable']),
+    tokenResolved: z.boolean(),
+    login: z.string().optional(),
+  }),
+  tools: z.strictObject({ git: setupToolSchema, node: setupToolSchema, pnpm: setupToolSchema }),
+  config: setupCheckSchema.extend({
+    reviewer: z.boolean().optional(),
+    autoApprove: z.boolean().optional(),
+    maxWorkers: z.number().int().positive().optional(),
+    maxTurns: z.number().int().positive().optional(),
+    codexModel: z.string().nullable().optional(),
+    codexEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).nullable().optional(),
+  }),
+});
+export type SetupResponse = z.infer<typeof setupResponseSchema>;
+export type SetupRequest = z.infer<typeof setupRequestSchema>;
 export const projectsResponseSchema = z.array(projectSchema);
 export type ProjectsResponse = z.infer<typeof projectsResponseSchema>;
 export const createProjectRequestSchema = z.strictObject({
@@ -235,6 +266,13 @@ export const routes = {
     path: '/api/harnesses',
     request: empty,
     response: harnessesResponseSchema,
+    status: 200,
+  },
+  setup: {
+    method: 'GET',
+    path: '/api/setup',
+    request: setupRequestSchema,
+    response: setupResponseSchema,
     status: 200,
   },
   projects: {

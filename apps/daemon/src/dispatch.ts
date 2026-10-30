@@ -1,4 +1,5 @@
-import { backfill, routes, type HelixCore, type RouteName } from '@helix/contracts';
+import { createSetupChecks, type SetupCore } from './setup.js';
+import { backfill, routes, type RouteName } from '@helix/contracts';
 import type { z } from 'zod';
 
 type Routes = typeof routes;
@@ -18,8 +19,9 @@ type Input<K extends HttpName> = {
 };
 type Handlers = { [K in HttpName]: (input: Input<K>) => Promise<z.output<Routes[K]['response']>> };
 
-export function createDispatch(core: HelixCore) {
+export function createDispatch(core: SetupCore) {
   const handlers: Handlers = {
+    setup: core.setup ?? createSetupChecks(),
     health: () => core.health(),
     harnesses: () => core.harnesses(),
     projects: () => core.listProjects(),
