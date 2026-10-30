@@ -142,6 +142,7 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
         !plan ||
         e.sessionId !== plan.orchestratorSessionId ||
         plan.review?.hash !== e.payload.review.hash ||
+        plan.review.attempt !== e.payload.review.attempt ||
         plan.review.status !== 'reviewing'
       )
         throw new Error('Stale plan review');

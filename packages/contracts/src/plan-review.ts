@@ -20,12 +20,17 @@ export const planReviewResultSchema = z
     'Verdict must match findings',
   );
 export type PlanReviewResult = z.infer<typeof planReviewResultSchema>;
-export const planReviewSchema = z.strictObject({
-  hash: z.string().regex(/^[a-f0-9]{64}$/),
-  attempt: z.number().int().min(1).max(3),
-  status: z.enum(['reviewing', 'passed', 'changes_requested', 'failed', 'cancelled']),
-  reviewer: z.literal('codex'),
-  message: z.string().max(4000),
-  result: planReviewResultSchema.optional(),
-});
+export const planReviewSchema = z
+  .strictObject({
+    hash: z.string().regex(/^[a-f0-9]{64}$/),
+    attempt: z.number().int().min(1).max(3),
+    status: z.enum(['reviewing', 'passed', 'changes_requested', 'failed', 'cancelled']),
+    reviewer: z.literal('codex'),
+    message: z.string().max(4000),
+    result: planReviewResultSchema.optional(),
+  })
+  .refine(
+    (review) => review.status !== 'passed' || review.result?.verdict === 'passed',
+    'Passing status requires a passing result',
+  );
 export type PlanReview = z.infer<typeof planReviewSchema>;

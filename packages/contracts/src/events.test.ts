@@ -268,6 +268,20 @@ it('binds projected approval to a passing exact review revision', () => {
     type: 'plan.approved',
     payload: { planId: submitted.payload.plan.id, approvedBy: 'human', reviewHash: review.hash },
   });
+  expect(
+    eventSchemas['plan.submitted'].safeParse({
+      ...submitted,
+      payload: { plan: { ...submitted.payload.plan, review: { ...review, status: 'passed' } } },
+    }).success,
+  ).toBe(false);
+  const priorAttempt = {
+    ...reviewed,
+    payload: { ...reviewed.payload, review: { ...reviewed.payload.review, attempt: 2 } },
+  };
+  expect(
+    projectUpTo([...prefix, priorAttempt], priorAttempt.seq).plans[submitted.payload.plan.id]
+      ?.review?.status,
+  ).toBe('reviewing');
   const events = [...prefix, reviewed, approved];
   expect(projectUpTo(events, approved.seq).plans[submitted.payload.plan.id]?.status).toBe(
     'approved',
