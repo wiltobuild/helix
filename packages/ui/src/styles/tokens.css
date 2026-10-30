@@ -61,68 +61,83 @@
   --z-dialog: 50;
   --z-toast: 60;
 
-  /* ---- color: dark (default) ---- */
+  /* ---- color: dark (default) ----
+   * Concept 3 "Flow Observatory": deep navy surfaces, blue interactive accent, the two agent
+   * strands (Claude coral, Codex teal) carry identity, green is reserved for "go" actions. */
   color-scheme: dark;
-  --bg: #0b1110;
-  --bg-sunk: #080d0c;
-  --surface: #111917;
-  --surface-2: #16201e;
-  --surface-3: #1c2826;
-  --border: #22302d;
-  --border-strong: #2f403c;
-  --text: #e4ecea;
-  --text-2: #a9b8b4;
-  --text-3: #75857f;
-  --text-on-accent: #04201e;
+  --bg: #0b0f16;
+  --bg-sunk: #080b11;
+  --surface: #10151e;
+  --surface-2: #151b26;
+  --surface-3: #1b2330;
+  --border: #212a38;
+  --border-strong: #2e394a;
+  --text: #e6ebf2;
+  --text-2: #a6b0c0;
+  --text-3: #6f7a8c;
+  --text-on-accent: #ffffff;
 
-  --accent: #43c2bb;
-  --accent-hover: #5fd1ca;
-  --accent-soft: rgb(67 194 187 / 0.14);
-  --focus: #43c2bb;
+  --accent: #4d8dff;
+  --accent-hover: #6aa0ff;
+  --accent-soft: rgb(77 141 255 / 0.14);
+  --focus: #6aa0ff;
 
-  --strand-claude: #d97757;
+  --go: #23a55a;
+  --go-hover: #2bbb68;
+  --stop: #d93a3a;
+  --stop-hover: #e85050;
+
+  --strand-claude: #e07b55;
   --strand-codex: #43c2bb;
+  --strand-orchestrator: #e3a53f;
 
-  --status-pending: #8a9894;
-  --status-working: #6e9cf2;
-  --status-needs: #e3a53f;
-  --status-failed: #f06b55;
-  --status-review: #ae8cf5;
-  --status-ready: #55c487;
-  --status-merged: #7fb59a;
+  --status-pending: #8792a4;
+  --status-working: #5b9bff;
+  --status-needs: #f0a93b;
+  --status-failed: #f0604d;
+  --status-review: #a98cf7;
+  --status-ready: #3fc47e;
+  --status-merged: #71b896;
 
-  --status-pending-soft: rgb(138 152 148 / 0.14);
-  --status-working-soft: rgb(110 156 242 / 0.14);
-  --status-needs-soft: rgb(227 165 63 / 0.15);
-  --status-failed-soft: rgb(240 107 85 / 0.14);
-  --status-review-soft: rgb(174 140 245 / 0.14);
-  --status-ready-soft: rgb(85 196 135 / 0.14);
-  --status-merged-soft: rgb(127 181 154 / 0.12);
+  --status-pending-soft: rgb(135 146 164 / 0.14);
+  --status-working-soft: rgb(91 155 255 / 0.15);
+  --status-needs-soft: rgb(240 169 59 / 0.15);
+  --status-failed-soft: rgb(240 96 77 / 0.15);
+  --status-review-soft: rgb(169 140 247 / 0.15);
+  --status-ready-soft: rgb(63 196 126 / 0.15);
+  --status-merged-soft: rgb(113 184 150 / 0.13);
 
-  --overlay: rgb(3 7 6 / 0.6);
-  --shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.65), 0 0 0 1px var(--border-strong);
-  --shadow-card-hover: 0 6px 18px -10px rgb(0 0 0 / 0.7);
+  --overlay: rgb(3 6 11 / 0.66);
+  --shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px var(--border-strong);
+  --shadow-card-hover: 0 6px 18px -10px rgb(0 0 0 / 0.75);
+  --grid-dot: rgb(255 255 255 / 0.045);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     color-scheme: light;
-    --bg: #f4f7f6;
-    --bg-sunk: #ebf0ee;
+    --bg: #f5f7fa;
+    --bg-sunk: #eceff4;
     --surface: #ffffff;
-    --surface-2: #f6f9f8;
-    --surface-3: #e7efec;
-    --border: #dbe3e0;
-    --border-strong: #c3d0cb;
-    --text: #13201e;
-    --text-2: #4a5b56;
-    --text-3: #74847e;
+    --surface-2: #f7f9fc;
+    --surface-3: #e8edf4;
+    --border: #dce2ea;
+    --border-strong: #c3ccd8;
+    --text: #121a26;
+    --text-2: #4a5568;
+    --text-3: #717d8f;
     --text-on-accent: #ffffff;
 
-    --accent: #0e7672;
-    --accent-hover: #0b625f;
-    --accent-soft: rgb(14 118 114 / 0.1);
-    --focus: #0e7672;
+    --accent: #2563d9;
+    --accent-hover: #1d52b8;
+    --accent-soft: rgb(37 99 217 / 0.1);
+    --focus: #2563d9;
+    --go: #1b8a4a;
+    --go-hover: #16773f;
+    --stop: #c42f2f;
+    --stop-hover: #a92626;
+    --strand-orchestrator: #a86a10;
+    --grid-dot: rgb(19 32 50 / 0.07);
 
     --strand-claude: #c96442;
     --strand-codex: #0e7672;
@@ -151,22 +166,28 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f4f7f6;
-  --bg-sunk: #ebf0ee;
+  --bg: #f5f7fa;
+  --bg-sunk: #eceff4;
   --surface: #ffffff;
-  --surface-2: #f6f9f8;
-  --surface-3: #e7efec;
-  --border: #dbe3e0;
-  --border-strong: #c3d0cb;
-  --text: #13201e;
-  --text-2: #4a5b56;
-  --text-3: #74847e;
+  --surface-2: #f7f9fc;
+  --surface-3: #e8edf4;
+  --border: #dce2ea;
+  --border-strong: #c3ccd8;
+  --text: #121a26;
+  --text-2: #4a5568;
+  --text-3: #717d8f;
   --text-on-accent: #ffffff;
 
-  --accent: #0e7672;
-  --accent-hover: #0b625f;
-  --accent-soft: rgb(14 118 114 / 0.1);
-  --focus: #0e7672;
+  --accent: #2563d9;
+  --accent-hover: #1d52b8;
+  --accent-soft: rgb(37 99 217 / 0.1);
+  --focus: #2563d9;
+  --go: #1b8a4a;
+  --go-hover: #16773f;
+  --stop: #c42f2f;
+  --stop-hover: #a92626;
+  --strand-orchestrator: #a86a10;
+  --grid-dot: rgb(19 32 50 / 0.07);
 
   --strand-claude: #c96442;
   --strand-codex: #0e7672;

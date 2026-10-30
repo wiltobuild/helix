@@ -3,6 +3,7 @@ import type { HelixClient } from '@helix/api-client';
 import type { AgentKind, Project } from '@helix/contracts';
 import { AgentBadge, Button, Dialog, Segmented, Switch, TextArea, TextField } from '@helix/ui';
 import s from './NewTaskDialog.module.css';
+import { handleTaskSubmitShortcut } from './keyboardShortcuts';
 
 /** Claude Code plans every orchestrated goal; the plan assigns each task to Codex or Claude Code. */
 const ORCHESTRATOR_AGENT: AgentKind = 'claude-code';
@@ -32,7 +33,7 @@ export function NewTaskDialog({
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (demo || !title.trim() || !prompt.trim()) return;
+    if (busy || demo || !title.trim() || !prompt.trim()) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -89,7 +90,7 @@ export function NewTaskDialog({
         className={s.form}
         onSubmit={(e) => void submit(e)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit();
+          handleTaskSubmitShortcut(e, () => void submit());
         }}
       >
         <TextField

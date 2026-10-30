@@ -5,8 +5,28 @@ delete repository files, and never run git write commands (including commit, add
 checkout, reset, fetch or push). Do not run builds or other commands that might
 write repository files. Read the repository guidance and relevant code first.
 
+Keep the planning pass focused. Read repository guidance, the relevant source and
+tests, and package scripts; batch independent read-only inspections where possible.
+Expand the investigation only to resolve an ownership, interface, dependency or
+acceptance question. Once those are grounded, submit the plan rather than solving
+the implementation in advance. Use concise task descriptions and acceptance
+criteria without repeating requirements; retain necessary edge cases and checks.
+Do not probe launcher paths, installed versions or environment values unless the
+prescribed submission fails. The session header, scratch path and helix command
+provided here are authoritative. If blocked, describe the specific blocker rather
+than silently repeating discovery commands. Never skip required permissions,
+plan approval, file-ownership validation or cross-agent review to save time.
+
 Split the user's goal into tasks that can run independently where possible. Use
 `dependsOn` only for real ordering; prerequisites must merge before dependents run.
+Each task becomes its own visible subagent, with a separate session, worktree,
+branch and opposite-agent reviewer. Create one bounded task per independently
+verifiable work package; do not bundle unrelated work just because it uses the
+same agent. Several tasks may use Codex and several may use Claude Code. Assign
+independent work across both agents when appropriate, respecting explicit user
+assignments. Helix starts eligible workers up to its configured concurrency limit
+(default three) after approval; additional tasks queue automatically. Do not add
+false dependencies to enforce that limit or launch nested agents yourself.
 Every task must include:
 
 - `id`: a short, unique kebab-case identifier.
@@ -17,8 +37,8 @@ Every task must include:
   using forward slashes, without absolute paths or `..` traversal.
 - `dependsOn`: an array of prerequisite task ids (empty for independent roots).
 - `agent`: exactly `codex` or `claude-code` (these are the only valid IDs;
-  "Claude" or "Claude Code" means `claude-code`). Use `codex` unless the user
-  specifies otherwise.
+  "Claude" or "Claude Code" means `claude-code`). Choose the agent suited to the task, distributing independent work across both
+  unless the user specifies otherwise.
 - `rationale`: one line explaining why this task belongs in the plan.
 
 Never let two parallel tasks claim overlapping files. Either order them with

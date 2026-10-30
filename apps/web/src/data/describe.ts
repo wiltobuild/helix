@@ -340,7 +340,7 @@ export function statusLine(
   }
   if (status === 'pending') {
     if (s.session.planNodeId) {
-      const plan = Object.values(state.plans).find((p) =>
+      const plan = Object.values(state.plans).findLast((p) =>
         p.nodes.some((n) => n.id === s.session.planNodeId),
       );
       const node = plan?.nodes.find((n) => n.id === s.session.planNodeId);
@@ -372,7 +372,7 @@ export function boardCards(
     const rawStatus = deriveStatus(s);
     const isOrchestrator = s.session.role === 'orchestrator';
     const orchPlan = isOrchestrator
-      ? plans.find((p) => p.orchestratorSessionId === s.session.id)
+      ? plans.findLast((p) => p.orchestratorSessionId === s.session.id)
       : undefined;
     const planNeedsReview = orchPlan?.status === 'awaiting_approval';
     const status: DisplayStatus = planNeedsReview ? 'needs_you' : rawStatus;

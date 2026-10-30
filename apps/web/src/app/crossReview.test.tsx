@@ -1,3 +1,6 @@
+import { createHelixClient } from '@helix/api-client';
+import { readFileSync } from 'node:fs';
+import { readRecording } from '../data/recordings';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
 import { deriveStatus, fixtures, projectUpTo, type ProjectState } from '@helix/contracts';
@@ -157,4 +160,69 @@ test.each([
   const html = render(<PlanView state={state} selected={null} onSelect={noop} />);
   expect(html).toContain(label);
   expect(html).toContain('aria-label="Claude Code"');
+});
+
+test.each([
+  [requested, 'Claude Code reviewing'],
+  [at.changesRequested, 'Changes requested · 2'],
+  [pushed, 'Claude Code review pending · new head'],
+  [at.approved, 'Approved by Claude Code'],
+] as const)('reviewers have distinct cards even without a plan at %i', (seq, label) => {
+  const state = projectUpTo(run, seq);
+  const index = run.findIndex((event) => event.seq === seq);
+  const html = render(
+    <PlanView state={state} selected={null} onSelect={noop} events={run} index={index} />,
+  );
+  expect(html).toContain('aria-label="Cross-agent reviewers"');
+  expect(html).toContain('Code reviewer');
+  expect(html).toContain(label);
+  expect(html).toContain('PR #7');
+});
+
+test.each(['discount-codes', 'github-ci-repair'])(
+  'recorded scenario %s keeps coordination and honest review cards visible',
+  (name) => {
+    const { events } = readRecording(
+      name,
+      readFileSync(new URL(`../../public/recordings/${name}.helixlog`, import.meta.url), 'utf8'),
+    );
+    const state = projectUpTo(events, events.at(-1)!.seq);
+    const html = render(
+      <PlanView
+        state={state}
+        selected={null}
+        onSelect={noop}
+        events={events}
+        index={events.length - 1}
+      />,
+    );
+    expect(html).toContain('Orchestrator');
+    expect(html).toContain('Code reviewer');
+    expect(html).toContain('PR merged');
+    expect(html).not.toContain('No agent review recorded');
+    expect(html).not.toContain('Approved by Claude Code');
+    if (name === 'github-ci-repair') expect(html).toContain('No orchestrator session in this run');
+  },
+);
+
+test('live plan uses the same in-canvas reviewer cards and live assignment language', () => {
+  const reviewerCreated = run.find(
+    (event) => event.type === 'session.created' && event.payload.session.role === 'reviewer',
+  )!.seq;
+  const state = projectUpTo(run, reviewerCreated - 1);
+  const html = render(
+    <PlanView
+      state={state}
+      selected={null}
+      onSelect={noop}
+      events={run}
+      index={run.findIndex((event) => event.seq === reviewerCreated) - 1}
+      client={createHelixClient({ baseUrl: 'http://127.0.0.1:4317' })}
+      isLive
+    />,
+  );
+  expect(html).toContain('Code reviewer');
+  expect(html).toContain('Awaiting reviewer assignment');
+  expect(html).not.toContain('No agent review recorded');
+  expect(html).not.toContain('Independent review');
 });

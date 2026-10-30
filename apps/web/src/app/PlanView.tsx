@@ -1,396 +1,774 @@
-import { useMemo, useState, type CSSProperties } from 'react';
-import { Check, Sparkles, X } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  ArrowRight,
+  Check,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  Clock,
+  FileText,
+  GitPullRequest,
+  ListChecks,
+  LoaderCircle,
+  Workflow,
+  ShieldCheck,
+  ScanEye,
+} from 'lucide-react';
 import type { HelixClient } from '@helix/api-client';
 import {
+  crossReviewerFor,
   deriveStatus,
-  type DisplayStatus,
-  type Plan,
-  type PlanNode,
-  type PlanNodeId,
-  type PlanState,
+  type HelixEvent,
   type ProjectState,
 } from '@helix/contracts';
+import { AgentEmblem, AgentBadge, Button, Tooltip, agentMeta, cx } from '@helix/ui';
+import { describeEvent, provenanceLabel, statusLine } from '../data/describe';
+import { crossReview, reviewerTarget, reviewSlot } from '../data/crossReview';
 import {
-  AgentBadge,
-  Button,
-  EmptyState,
-  HelixLogo,
-  StatusDot,
-  StatusPill,
-  TextField,
-  Tooltip,
-  agentMeta,
-  cx,
-  statusMeta,
-  toneVar,
-} from '@helix/ui';
-import { provenanceLabel, slotWaitNote } from '../data/describe';
-import { crossReview } from '../data/crossReview';
+  agentLabel,
+  formatDuration,
+  planTree,
+  type AgentView,
+  type WorkerView,
+  type TaskView,
+} from '../data/observatory';
 import { ReviewChip } from './ReviewChip';
 import s from './PlanView.module.css';
 
-const NODE_W = 248;
-const NODE_H = 104;
-const COL_GAP = 96;
-const ROW_GAP = 28;
-const ROOT_W = 220;
-
-type Placed = { node: PlanNode; x: number; y: number; depth: number };
-
-/** Longest-path layering: a node sits one column right of its deepest dependency. */
-function layout(
-  plan: Plan,
-  nodeHeight: number,
-): { placed: Placed[]; width: number; height: number } {
-  const byId = new Map(plan.nodes.map((n) => [n.id, n]));
-  const depth = new Map<PlanNodeId, number>();
-  const visit = (id: PlanNodeId, stack = new Set<PlanNodeId>()): number => {
-    if (depth.has(id)) return depth.get(id)!;
-    if (stack.has(id)) return 0; // cycles are rejected by the core; stay safe anyway
-    stack.add(id);
-    const deps = byId.get(id)?.dependsOn ?? [];
-    const d = deps.length ? Math.max(...deps.map((dep) => visit(dep, stack) + 1)) : 0;
-    depth.set(id, d);
-    return d;
-  };
-  plan.nodes.forEach((n) => visit(n.id));
-
-  const columns: PlanNode[][] = [];
-  for (const n of plan.nodes) (columns[depth.get(n.id)!] ??= []).push(n);
-  const tallest = Math.max(...columns.map((c) => c.length));
-  const height = tallest * nodeHeight + (tallest - 1) * ROW_GAP;
-
-  const placed: Placed[] = [];
-  columns.forEach((col, ci) => {
-    const colHeight = col.length * nodeHeight + (col.length - 1) * ROW_GAP;
-    const top = (height - colHeight) / 2;
-    col.forEach((node, ri) =>
-      placed.push({
-        node,
-        depth: ci,
-        x: ROOT_W + COL_GAP + ci * (NODE_W + COL_GAP),
-        y: top + ri * (nodeHeight + ROW_GAP),
-      }),
-    );
-  });
-  const width = ROOT_W + COL_GAP + columns.length * (NODE_W + COL_GAP) - COL_GAP;
-  return { placed, width, height };
-}
-
-const curve = (x1: number, y1: number, x2: number, y2: number) => {
-  const mid = (x1 + x2) / 2;
-  return `M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}`;
-};
+const CARD_W = 200;
+const CARD_GAP = 14;
+const GROUP_GAP = 40;
+const AGENT_W = 330;
+const ORCH_W = 380;
+const ORCH_H = 104;
+const AGENT_H = 104;
+const CARD_H = 188;
+const ROW_GAP = 32;
+const PAD = 8;
 
 interface PlanViewProps {
   state: ProjectState;
   selected: string | null;
   onSelect: (sessionId: string) => void;
-  /** Present in live mode. Decisions are enabled only while viewing the live moment. */
+  /** Opens the orchestrator in the inspector, on its plan. */
+  onReviewPlan?: () => void;
+  /** Event log and cursor, for elapsed times. Optional so the view renders from state alone. */
+  events?: readonly HelixEvent[];
+  index?: number;
+  /** Present in live mode. */
   client?: HelixClient;
   isLive?: boolean;
 }
 
-/** The plan's approval state. Nothing should run until a human approves. */
-function DecisionBar({
-  plan,
-  client,
-  isLive,
-}: {
-  plan: PlanState;
-  client?: HelixClient | undefined;
-  isLive?: boolean | undefined;
-}) {
-  const [busy, setBusy] = useState<'approve' | 'reject'>();
-  const [rejecting, setRejecting] = useState(false);
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string>();
-  const canAct = Boolean(client && isLive);
+type Group = { agent: WorkerView; x: number; width: number; cardsX: number[] };
 
-  if (plan.status === 'approved')
-    return (
-      <div className={s.decision} data-state="approved" role="status">
-        <Check size={14} aria-hidden /> You approved this plan.
-      </div>
-    );
-  if (plan.status === 'rejected')
-    return (
-      <div className={s.decision} data-state="rejected" role="status">
-        <X size={14} aria-hidden /> You rejected this plan
-        {plan.rejectionReason ? `: ${plan.rejectionReason}` : '.'}
-      </div>
-    );
-
-  const decide = async (decision: 'approve' | 'reject') => {
-    setBusy(decision);
-    setError(undefined);
-    try {
-      await client!.decidePlan(plan.id, {
-        decision,
-        ...(decision === 'reject' && reason.trim() ? { reason: reason.trim() } : {}),
+function layout(assigned: WorkerView[]) {
+  const agents: WorkerView[] = [...assigned];
+  for (const agent of ['codex', 'claude-code'] as const) {
+    if (!agents.some((entry) => entry.agent === agent))
+      agents.push({
+        id: `standby-${agent}`,
+        title: 'Awaiting assignment',
+        agent,
+        tasks: [],
+        active: false,
+        statusLabel: 'Standing by',
+        ciPassed: 0,
+        ciTotal: 0,
+        elapsedMs: 0,
+        role: 'Awaiting assignment',
       });
-      setRejecting(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'That decision failed.');
-    } finally {
-      setBusy(undefined);
-    }
-  };
+  }
+  let x = PAD;
+  const groups: Group[] = agents.map((agent) => {
+    const n = Math.max(agent.tasks.length, 1);
+    const cardsWidth = n * CARD_W + (n - 1) * CARD_GAP;
+    const width = Math.max(AGENT_W, cardsWidth);
+    const start = x + (width - cardsWidth) / 2;
+    const g = {
+      agent,
+      x,
+      width,
+      cardsX: agent.tasks.map((_, i) => start + i * (CARD_W + CARD_GAP)),
+    };
+    x += width + GROUP_GAP;
+    return g;
+  });
+  // Room on the right of the orchestrator for the "Review plan" button.
+  const width = Math.max(x - GROUP_GAP + PAD, ORCH_W + 2 * 190);
+  const agentY = ORCH_H + ROW_GAP;
+  const cardY = agentY + AGENT_H + ROW_GAP;
+  const hasReviews = agents.some((agent) => agent.tasks.length > 0);
+  const height = cardY + CARD_H + PAD + (hasReviews ? 290 : 0);
+  return { groups, width, height, agentY, cardY };
+}
 
+/** Vertical S-curve from a node's bottom to another node's top. */
+const drop = (x1: number, y1: number, x2: number, y2: number) => {
+  const mid = (y1 + y2) / 2;
+  return `M${x1} ${y1} C${x1} ${mid} ${x2} ${mid} ${x2} ${y2}`;
+};
+
+/**
+ * Concept 3 plan view. The orchestrator's plan as a tree: the orchestrator on top (it waits for
+ * your approval before anything runs), one node per task subagent, with its task and reviewer below. Edges carry
+ * the agent's strand color and flow while work is moving along them. The graph scales to fit.
+ */
+export function PlanView(props: PlanViewProps) {
+  const root = useRef<HTMLDivElement>(null);
+  const entered = useRef(new WeakSet<HTMLElement>());
+  useLayoutEffect(() => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    root.current?.querySelectorAll<HTMLElement>('[data-motion-key]').forEach((element) => {
+      if (entered.current.has(element)) return;
+      entered.current.add(element);
+      // Replay changes status frequently. Animate only a newly mounted card, never
+      // its measured position: measurements include scrolling and in-flight transforms.
+      element.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: reduced ? 120 : 220,
+        easing: 'ease-out',
+      });
+    });
+  });
   return (
-    <div className={s.decision} data-state="pending">
-      <div className={s.decisionText}>
-        <strong>This plan is waiting for your approval.</strong>
-        <span>
-          {client
-            ? 'Nothing runs until you approve it. Review the tasks below first.'
-            : 'In a live run, you approve the plan here before any agent starts.'}
-        </span>
-        {client && !isLive && <span>Go back to live to decide.</span>}
-        {error && (
-          <span className={s.decisionError} role="alert">
-            {error}
-          </span>
-        )}
-      </div>
-      {client && (
-        <div className={s.decisionActions}>
-          {rejecting ? (
-            <form
-              className={s.rejectForm}
-              onSubmit={(e) => {
-                e.preventDefault();
-                void decide('reject');
-              }}
-            >
-              <TextField
-                id="plan-reject-reason"
-                label="Why are you rejecting it? (optional)"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                autoFocus
-              />
-              <Button type="button" variant="ghost" size="sm" onClick={() => setRejecting(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={!canAct} loading={busy === 'reject'}>
-                Reject plan
-              </Button>
-            </form>
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!canAct || Boolean(busy)}
-                onClick={() => setRejecting(true)}
-              >
-                Reject
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<Check size={14} />}
-                disabled={!canAct || Boolean(busy)}
-                loading={busy === 'approve'}
-                onClick={() => void decide('approve')}
-              >
-                Approve plan
-              </Button>
-            </>
-          )}
-        </div>
-      )}
+    <div className={s.workspace} ref={root}>
+      <PlanCanvas {...props} />
     </div>
   );
 }
 
-export function PlanView({ state, selected, onSelect, client, isLive }: PlanViewProps) {
-  const plan = Object.values(state.plans).at(-1);
-  const nodeHeight = plan?.nodes.some(
-    (n) => n.sessionId && state.sessions[n.sessionId]?.agentReview,
-  )
-    ? 156
-    : NODE_H;
-  const graph = useMemo(() => (plan ? layout(plan, nodeHeight) : undefined), [plan, nodeHeight]);
+function StandbyReviewer({ builder, motionKey }: { builder: string; motionKey: string }) {
+  const reviewer = crossReviewerFor(builder) ?? 'reviewer';
+  return (
+    <div
+      className={s.reviewerCard}
+      data-review="standby"
+      data-motion-key={motionKey}
+      aria-label={agentLabel(reviewer) + ' reviewer standing by'}
+    >
+      <span className={s.reviewSeal}>
+        <ScanEye size={28} aria-hidden />
+        <span>REVIEW</span>
+      </span>
+      <AgentEmblem agent={reviewer} active={false} size={28} />
+      <span className={s.reviewerCopy}>
+        <span className={s.reviewerTag}>Code reviewer</span>
+        <strong>{agentLabel(reviewer)}</strong>
+        <span>Standing by</span>
+        <span className={s.reviewTarget}>Reviews {agentLabel(builder)}’s work</span>
+        <span className={s.reviewTarget}>Awaiting review assignment</span>
+      </span>
+    </div>
+  );
+}
 
-  if (!plan || !graph) {
+function ReviewerCards({
+  state,
+  events = [],
+  index,
+  onSelect,
+  selected,
+  client,
+  workerId,
+}: PlanViewProps & { workerId: string }) {
+  const reviewers = Object.values(state.sessions).filter(
+    (entry) =>
+      entry.session.role === 'reviewer' &&
+      reviewerTarget(
+        entry,
+        state,
+        events,
+        events[index ?? events.length - 1]?.seq ?? Number.MAX_SAFE_INTEGER,
+      )?.worker.session.id === workerId,
+  );
+  const workers = Object.values(state.sessions).filter(
+    (entry) => entry.session.role === 'worker' && entry.session.id === workerId,
+  );
+  const unreviewed = workers.filter(
+    (worker) =>
+      !reviewers.some(
+        (reviewer) =>
+          reviewerTarget(
+            reviewer,
+            state,
+            events,
+            events[index ?? events.length - 1]?.seq ?? Number.MAX_SAFE_INTEGER,
+          )?.worker.session.id === worker.session.id,
+      ),
+  );
+  const upTo = events[index ?? events.length - 1]?.seq ?? Number.MAX_SAFE_INTEGER;
+  return (
+    <section className={s.reviewNodes} aria-label="Cross-agent reviewers">
+      <div className={s.reviewCards}>
+        {reviewers.map((entry) => {
+          const target = reviewerTarget(entry, state, events, upTo);
+          const review = target ? crossReview(target.worker, state) : undefined;
+          const ownReview = review?.reviewerSessionId === entry.session.id ? review : undefined;
+          const last = events
+            .slice(0, index === undefined ? undefined : index + 1)
+            .filter(
+              (event) =>
+                event.sessionId === entry.session.id && event.type === 'agent_review.abandoned',
+            )
+            .at(-1);
+          const label = ownReview?.label ?? (last ? 'Review stopped' : 'Waiting for review');
+          const active = ownReview?.status === 'reviewing' && entry.activity === 'active';
+          return (
+            <button
+              type="button"
+              key={entry.session.id}
+              data-motion-key={entry.session.id}
+              className={cx(s.reviewerCard, selected === entry.session.id && s.selected)}
+              data-review={ownReview?.status ?? 'idle'}
+              onClick={() => onSelect(entry.session.id)}
+            >
+              <span className={s.reviewSeal}>
+                <ScanEye size={28} aria-hidden />
+                <span>REVIEW</span>
+              </span>
+              <AgentEmblem agent={entry.session.agent} active={active} size={28} />
+              <span className={s.reviewerCopy}>
+                <span className={s.reviewerTag}>
+                  <ShieldCheck size={12} aria-hidden />
+                  Code reviewer
+                </span>
+                <strong>{agentLabel(entry.session.agent)}</strong>
+                <span>{label}</span>
+                <span className={s.reviewTarget}>
+                  {target
+                    ? 'Reviewing ' +
+                      target.worker.session.title +
+                      (target.prNumber ? ' · PR #' + target.prNumber : '')
+                    : entry.session.title}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+        {unreviewed.map((worker) => {
+          const slot = reviewSlot(worker, state, Boolean(client));
+          const recordedAgentReview = crossReview(worker, state);
+          const github = worker.pr?.review;
+          const recordedReview =
+            github && github.decision !== 'none' && github.decision !== 'review_required';
+          const agent = crossReviewerFor(worker.session.agent) ?? 'reviewer';
+          return (
+            <button
+              type="button"
+              key={'review-slot-' + worker.session.id}
+              data-motion-key={'review-slot-' + worker.session.id}
+              className={s.reviewerCard}
+              data-review={slot.status}
+              onClick={() => onSelect(worker.session.id)}
+            >
+              <span className={s.reviewSeal}>
+                <ScanEye size={28} aria-hidden />
+                <span>REVIEW</span>
+              </span>
+              <span className={s.reviewerCopy}>
+                <span className={s.reviewerTag}>Code reviewer</span>
+                <strong>
+                  {recordedAgentReview
+                    ? recordedAgentReview.name
+                    : recordedReview
+                      ? 'GitHub review'
+                      : agentLabel(agent) + ' · review slot'}
+                </strong>
+                <span>{slot.label}</span>
+                <span className={s.reviewTarget}>
+                  {worker.session.title}
+                  {worker.pr ? ' · PR #' + worker.pr.number : ''}
+                </span>
+                <span className={s.reviewTarget}>{slot.detail}</span>
+              </span>
+            </button>
+          );
+        })}
+        {!reviewers.length && !workers.length && (
+          <div className={s.reviewPlaceholder}>
+            <ScanEye size={26} aria-hidden />
+            <strong>Code reviewers standing by</strong>
+            <span>Review assignments appear when work is ready.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PlanCanvas({
+  state,
+  selected,
+  onSelect,
+  onReviewPlan,
+  events,
+  index,
+  client,
+}: PlanViewProps) {
+  const nowIso = events && index !== undefined ? events[index]!.ts : new Date(0).toISOString();
+  const tree = useMemo(
+    () => planTree(state, events ?? [], events && index !== undefined ? index : -1, nowIso),
+    [state, events, index, nowIso],
+  );
+  const graph = useMemo(() => (tree ? layout(tree.workers) : undefined), [tree]);
+  const wrap = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    if (!el || !graph) return;
+    const fit = () => {
+      const w = el.clientWidth - 32;
+      const h = el.clientHeight - 32;
+      if (w <= 0 || h <= 0) return;
+      setScale(Math.max(0.85, Math.min(w / graph.width, 1)));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [graph]);
+
+  if (!tree || !graph) {
+    const orchestrator = Object.values(state.sessions)
+      .filter((s) => s.session.role === 'orchestrator')
+      .at(-1);
+    const workers = Object.values(state.sessions).filter((s) => s.session.role === 'worker');
+    const active = orchestrator ? deriveStatus(orchestrator) === 'working' : false;
+    const label = orchestrator
+      ? (statusLine(orchestrator, deriveStatus(orchestrator), state) ?? 'Waiting to start')
+      : client
+        ? 'Not assigned'
+        : 'Not recorded';
+    const recent = (events ?? [])
+      .slice(0, index === undefined ? undefined : index + 1)
+      .filter((e) => orchestrator && e.sessionId === orchestrator.session.id)
+      .slice(-4);
     return (
-      <EmptyState
-        icon={<Sparkles size={18} />}
-        title="No plan yet"
-        description="Start a task with “Let the orchestrator plan it” and its plan appears here as a live graph."
-      />
+      <div className={s.view}>
+        <section className={s.planning} aria-label="Plan preparation">
+          <button
+            type="button"
+            className={s.orch}
+            data-motion-key="orchestrator"
+            data-tone={active ? 'working' : 'idle'}
+            disabled={!orchestrator}
+            onClick={() => orchestrator && onSelect(orchestrator.session.id)}
+          >
+            <span className={s.orchHead}>
+              <span className={s.orchIcon} data-active={active || undefined}>
+                <Workflow size={20} aria-hidden />
+              </span>
+              <span className={s.orchName}>
+                <strong>Orchestrator</strong>
+                <span>{orchestrator?.session.title ?? 'Coordination'}</span>
+              </span>
+            </span>
+            <span role="status">{label}</span>
+            <span className={s.stats}>
+              {orchestrator ? (
+                <>
+                  Open activity <ArrowRight size={14} aria-hidden />
+                </>
+              ) : (
+                'No orchestrator session in this run'
+              )}
+            </span>
+          </button>
+          <div className={s.standbyAgents} aria-label="Agent team">
+            {(['codex', 'claude-code'] as const)
+              .flatMap((agent) => {
+                const mine = workers.filter((worker) => worker.session.agent === agent);
+                return (mine.length ? mine : [undefined]).map((worker) => ({ agent, worker }));
+              })
+              .map(({ agent, worker }) => {
+                const assigned = worker ? [worker] : [];
+                const working = assigned.some((worker) => deriveStatus(worker) === 'working');
+                return (
+                  <div key={worker?.session.id ?? agent} className={s.agentBranch}>
+                    <div
+                      className={s.standbyAgent}
+                      data-motion-key={worker?.session.id ?? agent}
+                      data-worker-session={worker?.session.id}
+                      style={{ '--agent': agentMeta(agent).colorVar } as CSSProperties}
+                    >
+                      <AgentEmblem agent={agent} active={working} size={44} />
+                      <span className={s.agentName}>
+                        <strong>{agentLabel(agent)}</strong>
+                        <span>
+                          {assigned.length
+                            ? 'Subagent · ' + assigned[0]!.session.title
+                            : 'Awaiting assignment'}
+                        </span>
+                      </span>
+                      <span className={s.pill} data-tone={working ? 'working' : 'idle'}>
+                        {working ? 'Working' : assigned.length ? 'Assigned' : 'Standing by'}
+                      </span>
+                    </div>
+                    {assigned.length === 0 && (
+                      <div className={s.directTask}>
+                        <StandbyReviewer builder={agent} motionKey={'standby-review-' + agent} />
+                      </div>
+                    )}
+                    {assigned.map((worker) => (
+                      <div className={s.directTask} key={worker.session.id}>
+                        <button
+                          type="button"
+                          className={s.unplannedTask}
+                          onClick={() => onSelect(worker.session.id)}
+                        >
+                          <strong>{worker.session.title}</strong>
+                          <span>
+                            {statusLine(worker, deriveStatus(worker), state) ??
+                              deriveStatus(worker)}
+                          </span>
+                        </button>
+                        <ReviewerCards
+                          state={state}
+                          selected={selected}
+                          onSelect={onSelect}
+                          workerId={worker.session.id}
+                          {...(events ? { events } : {})}
+                          {...(index !== undefined ? { index } : {})}
+                          {...(client ? { client } : {})}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+          </div>
+          <div className={s.planningNext}>
+            <strong>
+              {orchestrator
+                ? active
+                  ? 'Preparing your plan'
+                  : 'Plan not submitted yet'
+                : 'Task activity'}
+            </strong>
+            <p>
+              {orchestrator
+                ? 'Tasks and agent assignments appear here when the orchestrator submits its plan. You review it before workers start.'
+                : 'This run contains task activity without a submitted plan. Recorded work and reviews appear as they happen.'}
+            </p>
+          </div>
+          {recent.length > 0 && (
+            <ol className={s.planningEvents} aria-label="Recent planning activity">
+              {recent.map((event) => (
+                <li key={event.seq}>{describeEvent(event, state)}</li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </div>
     );
   }
 
-  const status = (id: PlanNodeId): DisplayStatus => plan.nodeStatus[id] ?? 'pending';
-  const pos = new Map(graph.placed.map((p) => [p.node.id, p]));
-  const rootY = graph.height / 2;
-  const orchestrator = state.sessions[plan.orchestratorSessionId];
-  const claudeNodes = plan.nodes.filter((n) => n.agent === 'claude-code');
-  const codexNodes = plan.nodes.filter((n) => n.agent === 'codex');
-  const claudeWorking = claudeNodes.some((n) => status(n.id) === 'working');
-  const codexWorking = codexNodes.some((n) => status(n.id) === 'working');
-  const orchestratorWorking = orchestrator ? deriveStatus(orchestrator) === 'working' : false;
-  const anyWorking = claudeWorking || codexWorking || orchestratorWorking;
-  const workingCount = plan.nodes.filter((n) => status(n.id) === 'working').length;
-  const needsCount = plan.nodes.filter((n) => status(n.id) === 'needs_you').length;
-  const reviewCount = plan.nodes.filter(
-    (n) => status(n.id) === 'in_review' || status(n.id) === 'ready_to_merge',
-  ).length;
-  const mergedCount = plan.nodes.filter((n) => status(n.id) === 'merged').length;
+  const { orchestrator: orch, plan } = tree;
+  const orchX = (graph.width - ORCH_W) / 2;
+  const orchCx = graph.width / 2;
+  const awaiting = plan.status === 'awaiting_approval';
 
   return (
-    <div className={s.view}>
-      <DecisionBar plan={plan} client={client} isLive={isLive} />
-      <div className={s.observatoryBar} aria-label="Plan strand summary">
-        <div className={s.strandSummary}>
-          <span className={s.strandChip}>
-            <AgentBadge agent="claude-code" active={claudeWorking} />
-            <span className={s.strandCount}>
-              {claudeNodes.length} {claudeNodes.length === 1 ? 'task' : 'tasks'}
-            </span>
-          </span>
-          <span className={s.strandChip}>
-            <AgentBadge agent="codex" active={codexWorking} />
-            <span className={s.strandCount}>
-              {codexNodes.length} {codexNodes.length === 1 ? 'task' : 'tasks'}
-            </span>
-          </span>
-        </div>
-        <div className={s.statusSummary}>
-          <span className={s.statItem}>
-            <StatusDot status="working" />
-            <span>{workingCount} working</span>
-          </span>
-          <span className={s.statItem}>
-            <StatusDot status="needs_you" />
-            <span>{needsCount} needs you</span>
-          </span>
-          <span className={s.statItem}>
-            <StatusDot status="in_review" />
-            <span>{reviewCount} in review</span>
-          </span>
-          <span className={s.statItem}>
-            <StatusDot status="merged" />
-            <span>
-              {mergedCount}/{plan.nodes.length} merged
-            </span>
-          </span>
-        </div>
-      </div>
-      <div className={s.scroller}>
-        <div className={s.canvas} style={{ width: graph.width, height: graph.height }}>
+    <div className={s.view} ref={wrap}>
+      <div className={s.stage} style={{ width: graph.width * scale, height: graph.height * scale }}>
+        <div
+          className={s.canvas}
+          style={{ width: graph.width, height: graph.height, transform: `scale(${scale})` }}
+        >
           <svg className={s.edges} width={graph.width} height={graph.height} aria-hidden>
-            {graph.placed.map((p) => {
-              const targetY = p.y + nodeHeight / 2;
-              const sources = p.node.dependsOn.length
-                ? p.node.dependsOn.map((d) => pos.get(d)).filter((x): x is Placed => !!x)
-                : [undefined];
-              const edgeStrand = agentMeta(p.node.agent).colorVar;
-              return sources.map((src) => {
-                const x1 = src ? src.x + NODE_W : ROOT_W;
-                const y1 = src ? src.y + nodeHeight / 2 : rootY;
-                const done = src ? status(src.node.id) === 'merged' : true;
-                const flowing = done && isActive(status(p.node.id));
-                const d = curve(x1, y1, p.x, targetY);
-                return (
-                  <g
-                    key={`${src?.node.id ?? 'root'}-${p.node.id}`}
-                    style={{ '--edge-strand': edgeStrand } as CSSProperties}
-                  >
-                    <path d={d} className={cx(s.edge, done && s.edgeDone)} />
-                    {flowing && <path d={d} className={s.flow} />}
-                  </g>
-                );
-              });
+            {graph.groups.map((g) => {
+              const strand = agentMeta(g.agent.agent).colorVar;
+              const ax = g.x + g.width / 2;
+              const approved = plan.status === 'approved' && g.agent.tasks.length > 0;
+              return (
+                <g key={g.agent.id} style={{ '--edge-strand': strand } as CSSProperties}>
+                  <path
+                    d={drop(orchCx, ORCH_H, ax, graph.agentY)}
+                    className={cx(s.edge, approved && s.edgeOn)}
+                  />
+                  {approved && g.agent.active && (
+                    <path d={drop(orchCx, ORCH_H, ax, graph.agentY)} className={s.flow} />
+                  )}
+                  <circle cx={ax} cy={graph.agentY} r={3.5} className={s.joint} />
+                  {g.agent.tasks.map((t, i) => {
+                    const cx2 = g.cardsX[i]! + CARD_W / 2;
+                    const d = drop(ax, graph.agentY + AGENT_H, cx2, graph.cardY);
+                    const on = t.status !== 'pending' || approved;
+                    const flowing = t.status === 'working' || t.status === 'ci_failed';
+                    return (
+                      <g key={t.node.id}>
+                        <path d={d} className={cx(s.edge, on && s.edgeOn)} />
+                        {flowing && <path d={d} className={s.flow} />}
+                        <circle cx={cx2} cy={graph.cardY} r={3.5} className={s.joint} />
+                      </g>
+                    );
+                  })}
+                </g>
+              );
             })}
           </svg>
 
-          <button
-            type="button"
-            className={cx(s.root, plan.orchestratorSessionId === selected && s.selected)}
-            style={{ top: rootY - 56, width: ROOT_W }}
-            onClick={() => onSelect(plan.orchestratorSessionId)}
-          >
-            <span className={s.rootLabel}>
-              <HelixLogo size={14} active={anyWorking} /> Plan
-            </span>
-            <p className={s.goal}>{plan.goal}</p>
-            {orchestrator && (
-              <AgentBadge agent={orchestrator.session.agent} active={orchestratorWorking} />
+          {/* Orchestrator */}
+          <div className={s.orchRow} style={{ left: orchX, top: 0, width: ORCH_W }}>
+            <button
+              type="button"
+              className={cx(s.orch, orch.sessionId === selected && s.selected)}
+              data-motion-key="orchestrator"
+              data-tone={orch.tone}
+              style={{ width: ORCH_W, height: ORCH_H }}
+              onClick={() => onSelect(orch.sessionId)}
+            >
+              <span className={s.orchHead}>
+                <span className={s.orchIcon} data-active={orch.active || undefined}>
+                  <Workflow size={20} aria-hidden />
+                </span>
+                <span className={s.orchName}>
+                  <strong>Orchestrator</strong>
+                  <span>Plan and coordinate all tasks</span>
+                </span>
+                <span className={s.pill} data-tone={orch.tone}>
+                  <span className={s.pillDot} aria-hidden />
+                  {orch.statusLabel}
+                </span>
+              </span>
+              <span className={s.stats}>
+                <span>
+                  <ListChecks size={13} aria-hidden />
+                  {awaiting ? `${orch.total} tasks` : `${orch.merged}/${orch.total} merged`}
+                </span>
+                <span>
+                  <Check size={13} aria-hidden />
+                  {orch.planLabel}
+                </span>
+                <span>
+                  <Clock size={13} aria-hidden />
+                  {formatDuration(orch.elapsedMs)}
+                </span>
+              </span>
+            </button>
+            {awaiting && onReviewPlan && (
+              <Button variant="outline" className={s.reviewBtn} onClick={onReviewPlan}>
+                Review plan <ArrowRight size={14} aria-hidden />
+              </Button>
             )}
-            <span className={s.count}>
-              {mergedCount}/{plan.nodes.length} merged
-            </span>
-          </button>
+          </div>
 
-          {graph.placed.map(({ node, x, y }) => {
-            const st = status(node.id);
-            const tone = toneVar(statusMeta[st].tone);
-            const slotWait = slotWaitNote(state, node.id);
-            const worker = node.sessionId ? state.sessions[node.sessionId] : undefined;
-            const review = worker ? crossReview(worker, state) : undefined;
+          {/* Agents */}
+          {graph.groups.map((g) => {
+            const a = g.agent;
+            const ax = g.x + (g.width - AGENT_W) / 2;
             return (
-              <Tooltip
-                key={node.id}
-                side="bottom"
-                content={
-                  <span className={s.tip}>
-                    <strong>Why this task · {provenanceLabel.plan}</strong>
-                    {node.rationale}
-                    {slotWait && (
-                      <>
-                        <strong>Waiting · {provenanceLabel.helix}</strong>
-                        {slotWait}
-                      </>
-                    )}
-                  </span>
+              <div
+                key={a.id}
+                className={s.agent}
+                data-motion-key={a.id}
+                data-worker-node={a.tasks.length ? a.id : undefined}
+                data-active={a.active || undefined}
+                style={
+                  {
+                    left: ax,
+                    top: graph.agentY,
+                    width: AGENT_W,
+                    height: AGENT_H,
+                    '--agent': agentMeta(a.agent).colorVar,
+                  } as CSSProperties
                 }
+                aria-label={`${agentLabel(a.agent)} subagent: ${a.title} — ${a.statusLabel}`}
               >
-                <button
-                  type="button"
-                  className={cx(s.node, node.sessionId === selected && s.selected)}
-                  style={
-                    {
-                      left: x,
-                      top: y,
-                      width: NODE_W,
-                      height: nodeHeight,
-                      '--tone': tone,
-                    } as CSSProperties
-                  }
-                  onClick={() => node.sessionId && onSelect(node.sessionId)}
-                  disabled={!node.sessionId}
-                  data-status={st}
-                >
-                  <span className={s.nodeHead}>
-                    <AgentBadge agent={node.agent} active={st === 'working'} />
-                    {node.dependsOn.length > 0 && (
-                      <span className={s.deps}>after {node.dependsOn.length}</span>
-                    )}
+                <span className={s.agentHead}>
+                  <AgentEmblem agent={a.agent} active={a.active} size={44} />
+                  <span className={s.agentName}>
+                    <strong>
+                      {agentLabel(a.agent)}
+                      {a.tasks[0] ? ` · ${a.tasks[0].number}` : ''}
+                    </strong>
+                    <span title={a.title}>{a.title}</span>
                   </span>
-                  <span className={s.nodeTitle}>{node.title}</span>
-                  {slotWait ? (
-                    <span className={s.slotWait}>
-                      {state.schedulingPaused
-                        ? 'Paused: scheduling is stopped'
-                        : 'Waiting for a worker slot'}
-                    </span>
-                  ) : (
-                    <StatusPill status={st} variant="inline" />
-                  )}
-                  {review && <ReviewChip review={review} />}
-                </button>
-              </Tooltip>
+                  <span className={s.pill} data-tone={agentTone(a)}>
+                    <span className={s.pillDot} aria-hidden />
+                    {a.statusLabel}
+                  </span>
+                </span>
+                <span className={s.stats}>
+                  <span>
+                    <ListChecks size={13} aria-hidden />
+                    {a.tasks.length} {a.tasks.length === 1 ? 'task' : 'tasks'}
+                  </span>
+                  <span data-ok={a.ciTotal > 0 && a.ciPassed === a.ciTotal ? '' : undefined}>
+                    <CircleCheck size={13} aria-hidden />
+                    {a.ciTotal > 0 ? `${a.ciPassed}/${a.ciTotal} CI passed` : 'No CI yet'}
+                  </span>
+                  <span>
+                    <Clock size={13} aria-hidden />
+                    {a.elapsedMs ? formatDuration(a.elapsedMs) : '—'}
+                  </span>
+                </span>
+              </div>
             );
           })}
+
+          {/* Reviewer slots exist before workers start and become real review cards on assignment. */}
+          {graph.groups.flatMap((g) =>
+            g.agent.tasks.map((task, i) => (
+              <div
+                key={'review-' + task.node.id}
+                className={s.reviewNodePosition}
+                style={{ left: g.cardsX[i], top: graph.cardY + CARD_H + 44, width: CARD_W }}
+              >
+                {task.session ? (
+                  <ReviewerCards
+                    state={state}
+                    selected={selected}
+                    onSelect={onSelect}
+                    workerId={task.session.session.id}
+                    {...(events ? { events } : {})}
+                    {...(index !== undefined ? { index } : {})}
+                    {...(client ? { client } : {})}
+                  />
+                ) : (
+                  <StandbyReviewer
+                    builder={task.node.agent}
+                    motionKey={'standby-review-' + task.node.id}
+                  />
+                )}
+              </div>
+            )),
+          )}
+          {/* Tasks */}
+          {graph.groups.flatMap((g) =>
+            g.agent.tasks.map((t, i) => (
+              <TaskCard
+                key={t.node.id}
+                task={t}
+                state={state}
+                x={g.cardsX[i]!}
+                y={graph.cardY}
+                selected={Boolean(t.session && t.session.session.id === selected)}
+                onSelect={onSelect}
+              />
+            )),
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-const isActive = (st: DisplayStatus) =>
-  st === 'working' || st === 'needs_you' || st === 'ci_failed' || st === 'in_review';
+function agentTone(a: AgentView) {
+  if (a.active) return 'working';
+  if (a.statusLabel === 'Done') return 'done';
+  if (a.statusLabel === 'Needs you') return 'needs';
+  return 'idle';
+}
+
+function TaskCard({
+  task: t,
+  state,
+  x,
+  y,
+  selected,
+  onSelect,
+}: {
+  task: TaskView;
+  state: ProjectState;
+  x: number;
+  y: number;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const review = t.session ? crossReview(t.session, state) : undefined;
+  const sid = t.session?.session.id;
+  return (
+    <Tooltip
+      side="bottom"
+      content={
+        <span className={s.tip}>
+          <strong>Why this task · {provenanceLabel.plan}</strong>
+          {t.node.rationale}
+          {t.node.files.length > 0 && (
+            <>
+              <strong>Claims</strong>
+              {t.node.files.join(', ')}
+            </>
+          )}
+          {t.waitingNote && (
+            <>
+              <strong>Waiting · {provenanceLabel.helix}</strong>
+              {t.waitingNote}
+            </>
+          )}
+        </span>
+      }
+    >
+      <button
+        type="button"
+        className={cx(s.card, selected && s.selected)}
+        data-motion-key={t.node.id}
+        style={
+          {
+            left: x,
+            top: y,
+            width: CARD_W,
+            height: CARD_H,
+            '--agent': agentMeta(t.node.agent).colorVar,
+          } as CSSProperties
+        }
+        data-tone={t.tone}
+        data-status={t.status}
+        onClick={() => sid && onSelect(sid)}
+        disabled={!sid}
+      >
+        <span className={s.cardHead}>
+          <AgentBadge
+            agent={t.node.agent}
+            variant="glyph"
+            active={t.status === 'working'}
+            size={16}
+          />
+          <span className={s.cardNum}>Task {t.number}</span>
+          <span className={s.chip} data-tone={t.tone}>
+            {t.label}
+          </span>
+        </span>
+        <span className={s.cardTitle}>{t.node.title}</span>
+        <span className={s.cardDesc}>
+          {t.waitsOn.length > 0 && t.status === 'pending'
+            ? `Waits on ${t.waitsOn.join(', ')}`
+            : t.waitingNote
+              ? t.waitingNote
+              : t.node.description || t.node.rationale}
+        </span>
+        {review && <ReviewChip review={review} />}
+        <span className={s.cardFoot}>
+          <span className={s.diff}>
+            {t.insertions !== undefined ? (
+              <>
+                <span className={s.add}>+{t.insertions}</span>
+                <span className={s.del}>−{t.deletions}</span>
+              </>
+            ) : (
+              <span className={s.muted}>
+                <FileText size={12} aria-hidden /> {t.node.files.length || '—'}
+              </span>
+            )}
+          </span>
+          <span className={s.pr}>
+            <GitPullRequest size={12} aria-hidden />
+            {t.pr ? `#${t.pr}` : '—'}
+          </span>
+          <StatusIcon tone={t.tone} />
+        </span>
+      </button>
+    </Tooltip>
+  );
+}
+
+function StatusIcon({ tone }: { tone: TaskView['tone'] }) {
+  if (tone === 'done' || tone === 'ready')
+    return <CircleCheck size={16} className={s.iconDone} aria-label="Done" />;
+  if (tone === 'blocked') return <CircleX size={16} className={s.iconFail} aria-label="Blocked" />;
+  if (tone === 'progress')
+    return <LoaderCircle size={16} className={s.iconWork} aria-label="In progress" />;
+  return <CircleDashed size={16} className={s.iconTodo} aria-label="Not started" />;
+}

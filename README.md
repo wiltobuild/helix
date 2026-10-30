@@ -2,7 +2,7 @@
 
 **An explainable agent orchestrator.** Helix runs Claude Code and Codex in parallel, each on its own branch, and brings every task to a merge-ready pull request that you approve. Every step is recorded with its cause, so you can replay the project's history and see why each change happened.
 
-> Status: Wave 1 complete. The daemon, Claude Code and Codex adapters, git worktrees, GitHub feedback loop and live UI are built; a real Codex task has run end to end from the UI. Next (Wave 2): the orchestrator agent with plan approval, recorded replay for demo mode, and hardening.
+> Status: Waves 0–2 complete and the UI rebuilt as Concept 3 ("Flow Observatory"). The daemon, Claude Code and Codex adapters, worktrees, the GitHub CI loop, the orchestrator with plan approval, cross-agent review, recorded replay and the hosted demo all work. The app is a plan graph you approve before anything runs, a lane timeline you can replay, and a Why chain for every event.
 
 ## Docs
 - [Product Requirements (PRD)](https://claude.ai/artifact/APjpMcKMGE8DTrRyeLus4M), also in [`docs/PRD.html`](docs/PRD.html)

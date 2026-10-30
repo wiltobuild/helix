@@ -9,8 +9,8 @@
 
 .glyph {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: var(--glyph-size, 14px);
+  height: var(--glyph-size, 14px);
   overflow: visible;
 }
 
@@ -155,6 +155,50 @@
   .root[data-active='true'] .codexRotor,
   .root[data-active='true'] .claudeWaveRing,
   .root[data-active='true'] .claudeRay {
+    animation: none;
+  }
+  /* No movement, but working still reads at a glance: a slow fade instead of spin/ripple. */
+  .root[data-active='true'] .glyph {
+    animation: glyphFade 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes glyphFade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---- Large emblem tile (Concept 3 agent nodes) ---- */
+.emblem {
+  justify-content: center;
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--agent) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--agent) 35%, var(--border));
+}
+
+.emblem[data-active='true'] {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--agent) 40%, transparent);
+  animation: emblemGlow 2.4s ease-in-out infinite;
+}
+
+@keyframes emblemGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agent) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--agent) 18%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emblem[data-active='true'] {
     animation: none;
   }
 }

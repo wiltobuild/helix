@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vitest';
 import { fixtures } from '@helix/contracts';
-import { RecordingControl } from '../app/RecordingControl';
+import { TooltipProvider } from '@helix/ui';
+import { TopBar } from '../app/Chrome';
 import { builtInRun, demoSelection, presetRecording } from './demoScenarios';
 import { replayStart } from './recordings';
 import type { HelixSource } from './useHelixSource';
@@ -48,7 +49,17 @@ test('scenario control offers three choices and selects Cross review', () => {
     demoPreset: 'cross-review',
     selectDemoPreset: () => {},
   };
-  const html = renderToStaticMarkup(<RecordingControl source={source} />);
+  const html = renderToStaticMarkup(
+    <TooltipProvider>
+      <TopBar
+        source={source}
+        working={0}
+        onSearch={() => {}}
+        onSettings={() => {}}
+        onShortcuts={() => {}}
+      />
+    </TooltipProvider>,
+  );
   for (const label of ['Multi-agent plan', 'GitHub CI loop', 'Cross review'])
     expect(html).toContain(label);
   expect(html).toMatch(/<button[^>]*aria-checked="true"[^>]*>Cross review<\/button>/);
