@@ -42,6 +42,9 @@ export type HarnessEmission = {
 export type DiscoveryHarnessContext = Pick<Session, 'id' | 'title' | 'createdAt' | 'model'> & {
   agent: 'codex';
   interface: 'chat';
+  prompt?: never;
+  projectId?: never;
+  role?: never;
 };
 export type HarnessStartOptions = (
   | { purpose?: 'build'; session: Session }
