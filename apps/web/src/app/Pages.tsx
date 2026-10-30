@@ -11,15 +11,14 @@ import { describeEvent, eventTone, provenance, provenanceLabel } from '../data/d
 import {
   activityFeed,
   agentLabel,
-  durationMs,
   formatDuration,
   planSummary,
-  sessionTimings,
   type PlanTree,
 } from '../data/observatory';
 import type { Page } from './Chrome';
 import { TONE_VAR } from './Dock';
 import { identityFor, resolveProjectIdentities } from '../data/identity';
+import { AgentRoster } from './AgentRoster';
 import s from './Pages.module.css';
 
 interface PageProps {
@@ -280,76 +279,19 @@ function Tasks({ state, tree, onOpen }: PageProps) {
 
 /* -------------------------------------------------------------- agents */
 function Agents({ state, events, index, tree, onOpen }: PageProps) {
-  const timings = sessionTimings(events, index);
-  const kinds = [
-    ...new Set(
-      workers(state)
-        .map((w) => w.session.agent)
-        .concat(tree?.agents.map((a) => a.agent) ?? []),
-    ),
-  ];
   return (
     <Frame
       title="Agents"
-      lead="The agents working in this project. Each works on its own branch; Helix commits for them and routes CI back."
+      lead={
+        tree
+          ? `Build: ${tree.plan.goal}`
+          : 'Workers and reviewers at this point in the project history.'
+      }
     >
-      <div className={s.agentGrid}>
-        {kinds.map((agent) => {
-          const mine = workers(state).filter((w) => w.session.agent === agent);
-          const view = tree?.agents.find((a) => a.agent === agent);
-          const active = mine.some((w) => deriveStatus(w) === 'working');
-          const merged = mine.filter((w) => deriveStatus(w) === 'merged').length;
-          const ciPassed = mine.reduce((n, w) => n + (w.pr?.checks.passed ?? 0), 0);
-          const ciTotal = mine.reduce((n, w) => n + (w.pr?.checks.total ?? 0), 0);
-          const timeMs = mine.reduce((n, w) => {
-            const t = timings.get(w.session.id);
-            return n + durationMs(t?.start, t?.merged ?? t?.end);
-          }, 0);
-          const reviews = Object.values(state.sessions).filter(
-            (x) => x.session.role === 'reviewer' && x.session.agent === agent,
-          ).length;
-          return (
-            <section key={agent} className={s.agentCard} data-active={active || undefined}>
-              <AgentEmblem agent={agent} active={active} size={64} />
-              <h2>{agentLabel(agent)} provider</h2>
-              <p className={s.meta}>
-                {active
-                  ? 'Working now'
-                  : (view?.statusLabel ?? (mine.length ? 'Idle' : 'Not used yet'))}
-              </p>
-              <dl className={s.stats}>
-                <dt>Tasks</dt>
-                <dd>{mine.length}</dd>
-                <dt>Merged</dt>
-                <dd>{merged}</dd>
-                <dt>CI</dt>
-                <dd>{ciTotal ? `${ciPassed}/${ciTotal} passed` : '—'}</dd>
-                <dt>Reviews given</dt>
-                <dd>{reviews}</dd>
-                <dt>Time</dt>
-                <dd>{timeMs ? formatDuration(timeMs) : '—'}</dd>
-              </dl>
-              <ul className={s.agentTasks}>
-                {mine.map((w) => (
-                  <li key={w.session.id}>
-                    <button type="button" onClick={() => onOpen(w.session.id)}>
-                      <StatusPill status={deriveStatus(w)} variant="inline" />
-                      <span>
-                        <ActorBadge {...identityFor(state, w.session.id)!} title={w.session.id} /> ·{' '}
-                        {w.session.title}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-      </div>
+      <AgentRoster state={state} events={events} index={index} tree={tree} onOpen={onOpen} />
     </Frame>
   );
 }
-
 /* -------------------------------------------------------------- pull requests */
 function PullRequests({ state, onOpen }: PageProps) {
   const prs = workers(state).filter((w) => w.pr);
