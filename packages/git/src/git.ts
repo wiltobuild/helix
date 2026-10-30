@@ -1,3 +1,4 @@
+import { trustedGit } from './executable.js';
 import { execFile } from 'node:child_process';
 import { HelixError } from '@helix/contracts';
 
@@ -8,10 +9,11 @@ export type GitRunner = (
   env?: NodeJS.ProcessEnv,
 ) => Promise<GitResult>;
 
-export const runGit: GitRunner = (cwd, args, env) =>
-  new Promise((resolve, reject) => {
+export const runGit: GitRunner = async (cwd, args, env) => {
+  const binary = await trustedGit(cwd);
+  return new Promise((resolve, reject) => {
     execFile(
-      'git',
+      binary,
       args,
       {
         cwd,
@@ -38,6 +40,7 @@ export const runGit: GitRunner = (cwd, args, env) =>
       },
     );
   });
+};
 
 export function requireGitVersion(output: string): void {
   const match = /git version (\d+)\.(\d+)/.exec(output);
