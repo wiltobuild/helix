@@ -1,3 +1,4 @@
+import { intakeRequestSchema, intakeResponseSchema } from './intake.js';
 import { reviewedBriefSchema } from './intake.js';
 import { z } from 'zod';
 import { visualDesignRequestSchema, visualDesignResponseSchema } from './visual-design.js';
@@ -257,6 +258,22 @@ const sessionParams = z.strictObject({ id: sessionIdSchema });
  * Import/export use raw UTF-8 JSON Lines, application/x-helixlog (not a JSON wrapper).
  */
 export const routes = {
+  projectIntake: {
+    method: 'GET',
+    path: '/api/projects/:id/intake',
+    params: projectParams,
+    request: empty,
+    response: intakeResponseSchema,
+    status: 200,
+  },
+  changeIntake: {
+    method: 'POST',
+    path: '/api/projects/:id/intake',
+    params: projectParams,
+    request: intakeRequestSchema,
+    response: intakeResponseSchema,
+    status: 200,
+  },
   sessionDesign: {
     method: 'GET',
     path: '/api/sessions/:id/design',

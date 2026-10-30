@@ -127,6 +127,12 @@ export function createFakeCore() {
     terminals,
     start: vi.fn<HelixCore['start']>().mockResolvedValue(undefined),
     shutdown: vi.fn<HelixCore['shutdown']>().mockResolvedValue(undefined),
+    projectIntake: vi
+      .fn<NonNullable<HelixCore['projectIntake']>>()
+      .mockResolvedValue({ draft: null }),
+    changeIntake: vi
+      .fn<NonNullable<HelixCore['changeIntake']>>()
+      .mockResolvedValue({ draft: null }),
     health: vi.fn<HelixCore['health']>().mockResolvedValue({ status: 'ok', version: 'test' }),
     harnesses: vi
       .fn<HelixCore['harnesses']>()
