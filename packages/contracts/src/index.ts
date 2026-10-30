@@ -11,3 +11,4 @@ export * from './errors.js';
 export * from './recording.js';
 export * as fixtures from './fixtures/index.js';
 export * from './visual-design.js';
+export * from './builds.js';
