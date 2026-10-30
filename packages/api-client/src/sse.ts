@@ -62,8 +62,14 @@ export type SubscribeEventsOptions = {
 
 export function subscribeEvents(options: SubscribeEventsOptions): EventSubscription {
   const fetcher = options.fetch ?? globalThis.fetch;
-  let cursor = options.since ?? sse.defaultSince;
+  const initialSince = options.since ?? sse.defaultSince;
+  let cursor = initialSince;
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new RangeError('Invalid event cursor');
+  // The resume watermark is not a delivery filter: project-filtered streams may have gaps,
+  // and late frames may arrive below the high-water mark. Keep every distinct validated
+  // event above the caller's initial boundary, including conflicting same-seq evidence.
+  // Schema parsing normalizes envelope/payload key order before this fingerprint is made.
+  const delivered = new Set<string>();
   let closed = false;
   let controller: AbortController | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -107,12 +113,15 @@ export function subscribeEvents(options: SubscribeEventsOptions): EventSubscript
             ...frame,
             data: JSON.parse(frame.data) as unknown,
           });
-          if (message.data.seq <= cursor) return;
           if (options.projectId && message.data.projectId !== options.projectId) {
             throw new Error('Unexpected project in event stream');
           }
+          if (message.data.seq <= initialSince) return;
+          const fingerprint = JSON.stringify(message.data);
+          if (delivered.has(fingerprint)) return;
           options.onEvent(message.data);
-          cursor = message.data.seq;
+          delivered.add(fingerprint);
+          cursor = Math.max(cursor, message.data.seq);
           delay = 250;
         });
         while (!closed) {
@@ -121,7 +130,7 @@ export function subscribeEvents(options: SubscribeEventsOptions): EventSubscript
           parser.push(decoder.decode(chunk.value, { stream: true }));
         }
       } catch {
-        // Transport errors and incomplete/invalid frames resume from the last delivered event.
+        // Transport errors and incomplete/invalid frames resume from the delivery high-water mark.
       } finally {
         controller.abort();
         if (reader) {
