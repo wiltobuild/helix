@@ -9,6 +9,7 @@ import {
 } from '@helix/contracts';
 import type { SessionCardProps } from '@helix/ui';
 import { crossReview, type CrossReview } from './crossReview';
+import { historicalActorName, resolveIdentities, traceLabel, type ActorIdentity } from './identity';
 
 /** Event categories drive timeline tick colors and icons. */
 export type EventTone =
@@ -123,12 +124,11 @@ const agentName = (agent: string) =>
 
 /** One plain-language sentence for an event, written from the user's side of the screen. */
 export function describeEvent(e: HelixEvent, state: ProjectState): string {
-  const s = e.sessionId ? state.sessions[e.sessionId] : undefined;
-  const who = !s
-    ? 'Helix'
-    : s.session.role === 'orchestrator'
-      ? 'Orchestrator'
-      : agentName(s.session.agent);
+  const identities = resolveIdentities(state);
+  const actor = (id: string | undefined) => (id ? (identities.get(id)?.name ?? 'Agent') : 'Helix');
+  const who =
+    historicalActorName(state, e) ??
+    actor(e.type === 'session.created' ? e.payload.session.id : e.sessionId);
   switch (e.type) {
     case 'project.added':
       return `Added project ${e.payload.project.name}.`;
@@ -140,8 +140,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
         : 'Scheduling resumed.';
     case 'session.created':
       return e.payload.session.role === 'orchestrator'
-        ? `Started the orchestrator for “${e.payload.session.title}”.`
-        : `Created a task for ${agentName(e.payload.session.agent)}: ${e.payload.session.title}.`;
+        ? `Started Helix for “${e.payload.session.title}”.`
+        : `Created a task for ${who} (${agentName(e.payload.session.agent)}): ${e.payload.session.title}.`;
     case 'session.started':
       return `${who} started working.`;
     case 'session.exited':
@@ -168,19 +168,19 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
       return `${who} updated the conversation.`;
     }
     case 'reasoning.summary':
-      return `${e.payload.source === 'orchestrator' ? 'Orchestrator' : who} reasoned: ${truncate(e.payload.text, 110)}`;
+      return `${e.payload.source === 'orchestrator' ? 'Helix' : who} reasoned: ${truncate(e.payload.text, 110)}`;
     case 'approval.requested':
       return `${who} asked to ${lowerFirst(e.payload.approval.summary)}.`;
     case 'approval.decided':
       return `You ${e.payload.decision === 'approved' ? 'approved' : e.payload.decision === 'rejected' ? 'rejected' : 'requested changes to'} the request.`;
     case 'plan.submitted':
-      return `Orchestrator split “${e.payload.plan.goal}” into ${e.payload.plan.nodes.length} tasks.`;
+      return `Helix split “${e.payload.plan.goal}” into ${e.payload.plan.nodes.length} tasks.`;
     case 'plan.approved':
       return 'You approved the plan.';
     case 'plan.rejected':
       return `You rejected the plan: ${e.payload.reason}`;
     case 'plan.node_updated':
-      return e.payload.note ?? 'Orchestrator updated the plan.';
+      return e.payload.note ?? 'Helix updated the plan.';
     case 'explain.note':
       return e.payload.text;
     case 'worktree.created':
@@ -207,8 +207,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
           : `Review updated on PR #${e.payload.prNumber}.`;
     case 'feedback.routed':
       if (e.payload.reason === 'review_findings')
-        return `Helix sent the review findings back to ${agentName(state.sessions[e.payload.toSessionId]?.session.agent ?? 'the agent')} for “${sessionTitle(state, e.payload.toSessionId)}”.`;
-      return `Helix sent the ${reasonLabel(e.payload.reason)} back to ${agentName(state.sessions[e.payload.toSessionId]?.session.agent ?? 'the agent')}, which owns the branch.`;
+        return `Helix sent the review findings back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)} for “${sessionTitle(state, e.payload.toSessionId)}”.`;
+      return `Helix sent the ${reasonLabel(e.payload.reason)} back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)}, which owns the branch.`;
     case 'agent_review.requested':
       return `Helix asked ${who} to review “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber}.`;
     case 'agent_review.submitted':
@@ -356,6 +356,8 @@ export interface BoardCard {
   id: string;
   column: BoardColumn;
   status: DisplayStatus;
+  /** The task-derived actor behind this card; used for display and search. */
+  identity: ActorIdentity;
   card: SessionCardProps;
   review?: CrossReview;
 }
@@ -367,6 +369,7 @@ export function boardCards(
   nowIso: string,
 ): BoardCard[] {
   const plans = Object.values(state.plans);
+  const identities = resolveIdentities(state);
   return Object.values(state.sessions).flatMap((s) => {
     if (s.session.role === 'reviewer') return [];
     const rawStatus = deriveStatus(s);
@@ -395,15 +398,25 @@ export function boardCards(
       : statusLine(s, status, state);
     const title = isOrchestrator ? `Plan: ${s.session.title}` : s.session.title;
     const review = crossReview(s, state);
+    const identity = identities.get(s.session.id)!;
     return [
       {
         id: s.session.id,
         column: boardColumn(status),
         status,
+        identity,
         ...(review ? { review } : {}),
         card: {
           title,
           agent: s.session.agent,
+          actor: {
+            name: identity.name,
+            role: identity.role,
+            title: traceLabel(identity),
+            agent: s.session.agent,
+            ...(s.session.model ? { model: s.session.model } : {}),
+            active: status === 'working',
+          },
           status,
           ...(label ? { statusLabel: label } : {}),
           ...(s.session.branch ? { branch: s.session.branch } : {}),

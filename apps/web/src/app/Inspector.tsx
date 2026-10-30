@@ -13,7 +13,6 @@ import {
   Sparkles,
   Terminal,
   Users,
-  Workflow,
   X,
 } from 'lucide-react';
 import type { HelixClient } from '@helix/api-client';
@@ -29,6 +28,7 @@ import {
   type SessionState,
 } from '@helix/contracts';
 import {
+  HelixLogo,
   AgentBadge,
   AgentEmblem,
   Button,
@@ -48,6 +48,7 @@ import {
   turnLimitNote,
   type Provenance,
 } from '../data/describe';
+import { identityFor, traceLabel } from '../data/identity';
 import s from './Inspector.module.css';
 import { handlePlanShortcut } from './keyboardShortcuts';
 import { crossReview, reviewerTarget, sessionHistory } from '../data/crossReview';
@@ -96,6 +97,7 @@ export function Inspector({
   const [changes, setChanges] = useState<string>();
   const [error, setError] = useState<string>();
   const id = session.session.id;
+  const identity = identityFor(state, id);
   const review = crossReview(session, state);
   const target = reviewerTarget(session, state, events, upTo);
   const orchPlan = Object.values(state.plans).findLast((p) => p.orchestratorSessionId === id);
@@ -176,22 +178,25 @@ export function Inspector({
         <div className={s.headTop}>
           {isOrchestrator ? (
             <span className={s.orchTile} data-active={status === 'working' || undefined}>
-              <Workflow size={22} aria-hidden />
+              <HelixLogo size={22} active={status === 'working'} />
             </span>
           ) : (
             <AgentEmblem agent={session.session.agent} active={status === 'working'} size={40} />
           )}
           <div className={s.headText}>
-            <span className={s.headName}>
-              {isOrchestrator ? 'Orchestrator' : agentLabel(session.session.agent)}
+            <span className={s.headName} title={identity ? traceLabel(identity) : id}>
+              {isOrchestrator ? 'Helix' : (identity?.name ?? agentLabel(session.session.agent))}
+              <span className={s.model}> · {agentLabel(session.session.agent)}</span>
               {session.session.model && <span className={s.model}> · {session.session.model}</span>}
             </span>
             <span className={s.headSub}>
               {isOrchestrator
                 ? 'Plan and coordinate all tasks'
-                : node
-                  ? `Task in the plan`
-                  : 'Standalone task'}
+                : session.session.role === 'reviewer'
+                  ? 'Code reviewer'
+                  : node
+                    ? `Task in the plan`
+                    : 'Standalone task'}
             </span>
           </div>
           <StatusPill status={status} {...(planNeedsReview ? { label: 'Needs review' } : {})} />

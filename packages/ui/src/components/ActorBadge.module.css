@@ -1,0 +1,53 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.symbol {
+  flex: none;
+}
+
+.name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-3);
+  font: 500 var(--text-2xs) / 1 var(--font-mono);
+}
+
+.provider {
+  color: var(--agent);
+}
+
+.model {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+/* A reviewer is the opposite agent judging the author's work: tag it so the two never blur. */
+.tag {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--status-review-soft, var(--surface-2));
+  color: var(--status-review, var(--text-2));
+  font: 600 var(--text-2xs) / 1 var(--font-sans);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.root[data-role='reviewer'] .name {
+  font-style: italic;
+}

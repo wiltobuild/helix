@@ -6,7 +6,7 @@ import {
   type ProjectState,
   type SessionState,
 } from '@helix/contracts';
-import { AgentBadge, AgentEmblem, StatusPill, cx } from '@helix/ui';
+import { ActorBadge, AgentEmblem, StatusPill, cx } from '@helix/ui';
 import { describeEvent, eventTone, provenance, provenanceLabel } from '../data/describe';
 import {
   activityFeed,
@@ -19,6 +19,7 @@ import {
 } from '../data/observatory';
 import type { Page } from './Chrome';
 import { TONE_VAR } from './Dock';
+import { identityFor, resolveProjectIdentities } from '../data/identity';
 import s from './Pages.module.css';
 
 interface PageProps {
@@ -142,7 +143,7 @@ function Overview({ state, events, index, tree, onOpen, onSeek, onPage }: PagePr
             >
               <AgentEmblem agent={a.agent} active={a.active} size={36} />
               <span>
-                <strong>{agentLabel(a.agent)}</strong>
+                <strong>{agentLabel(a.agent)} provider</strong>
                 <span className={s.meta}>
                   {a.statusLabel} · {a.tasks.length} tasks
                 </span>
@@ -163,7 +164,7 @@ function Overview({ state, events, index, tree, onOpen, onSeek, onPage }: PagePr
                   size={36}
                 />
                 <span>
-                  <strong>{agentLabel(w.session.agent)}</strong>
+                  <strong title={w.session.id}>{identityFor(state, w.session.id)?.name}</strong>
                   <span className={s.meta}>{w.session.title}</span>
                 </span>
               </button>
@@ -208,7 +209,13 @@ function Tasks({ state, tree, onOpen }: PageProps) {
                 <span className={s.sub}>{t.node.description || t.node.rationale}</span>
               </td>
               <td>
-                <AgentBadge agent={t.node.agent} active={t.status === 'working'} />
+                <ActorBadge
+                  name={resolveProjectIdentities(state).nodes.get(t.node.id)!.name}
+                  role="author"
+                  agent={t.session?.session.agent ?? t.node.agent}
+                  title={t.node.id}
+                  active={t.status === 'working'}
+                />
               </td>
               <td>
                 <StatusPill status={t.status} />
@@ -236,7 +243,11 @@ function Tasks({ state, tree, onOpen }: PageProps) {
                 <span className={s.sub}>Standalone task</span>
               </td>
               <td>
-                <AgentBadge agent={w.session.agent} active={deriveStatus(w) === 'working'} />
+                <ActorBadge
+                  {...identityFor(state, w.session.id)!}
+                  title={w.session.id}
+                  active={deriveStatus(w) === 'working'}
+                />
               </td>
               <td>
                 <StatusPill status={deriveStatus(w)} />
@@ -300,7 +311,7 @@ function Agents({ state, events, index, tree, onOpen }: PageProps) {
           return (
             <section key={agent} className={s.agentCard} data-active={active || undefined}>
               <AgentEmblem agent={agent} active={active} size={64} />
-              <h2>{agentLabel(agent)}</h2>
+              <h2>{agentLabel(agent)} provider</h2>
               <p className={s.meta}>
                 {active
                   ? 'Working now'
@@ -323,7 +334,10 @@ function Agents({ state, events, index, tree, onOpen }: PageProps) {
                   <li key={w.session.id}>
                     <button type="button" onClick={() => onOpen(w.session.id)}>
                       <StatusPill status={deriveStatus(w)} variant="inline" />
-                      <span>{w.session.title}</span>
+                      <span>
+                        <ActorBadge {...identityFor(state, w.session.id)!} title={w.session.id} /> ·{' '}
+                        {w.session.title}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -374,7 +388,7 @@ function PullRequests({ state, onOpen }: PageProps) {
                   </span>
                 </td>
                 <td>
-                  <AgentBadge agent={w.session.agent} />
+                  <ActorBadge {...identityFor(state, w.session.id)!} title={w.session.id} />
                 </td>
                 <td>
                   <StatusPill status={deriveStatus(w)} />
@@ -468,7 +482,13 @@ function Knowledge({ state, events, index, tree, onSeek }: PageProps) {
           {tree.tasks.map((t) => (
             <div key={t.node.id} className={s.knowledgeItem}>
               <strong>
-                Task {t.number} · {t.node.title} <AgentBadge agent={t.node.agent} />
+                Task {t.number} · {t.node.title}{' '}
+                <ActorBadge
+                  name={resolveProjectIdentities(state).nodes.get(t.node.id)!.name}
+                  role="author"
+                  agent={t.session?.session.agent ?? t.node.agent}
+                  title={t.node.id}
+                />
               </strong>
               <p>{t.node.rationale}</p>
               {t.node.acceptance.length > 0 && (

@@ -3,12 +3,15 @@ import { GitBranch, MessageSquare } from 'lucide-react';
 import { cx } from '../cx';
 import type { AgentKind, DisplayStatus } from '../status';
 import { AgentBadge } from './AgentBadge';
+import { ActorBadge, type ActorBadgeProps } from './ActorBadge';
 import { StatusPill } from './StatusPill';
 import s from './SessionCard.module.css';
 
 export interface SessionCardProps {
   title: string;
   agent: AgentKind;
+  /** The task-derived actor shown as the primary label; falls back to the provider badge. */
+  actor?: ActorBadgeProps;
   status: DisplayStatus;
   /** Override for the status line, e.g. "CI failed · token.test.ts" or "Editing form component". */
   statusLabel?: string;
@@ -26,6 +29,7 @@ export interface SessionCardProps {
 export function SessionCard({
   title,
   agent,
+  actor,
   status,
   statusLabel,
   branch,
@@ -41,7 +45,11 @@ export function SessionCard({
       {/* The whole card is the hit target; the button stretches over it, actions sit above it. */}
       <button type="button" className={s.hit} onClick={onOpen} aria-label={`Open ${title}`} />
       <header className={s.head}>
-        <AgentBadge agent={agent} active={status === 'working'} />
+        {actor ? (
+          <ActorBadge {...actor} />
+        ) : (
+          <AgentBadge agent={agent} active={status === 'working'} />
+        )}
         {updated && <time className={s.time}>{updated}</time>}
       </header>
       <h3 className={s.title}>{title}</h3>

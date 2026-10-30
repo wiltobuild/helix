@@ -206,11 +206,20 @@
 }
 
 .searchItemTitle {
+  display: grid;
+  gap: 1px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.searchItemTitle > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-size: var(--text-xs);
 }
 
 .searchItemMeta {

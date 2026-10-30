@@ -10,7 +10,6 @@ import {
   GitPullRequest,
   ListChecks,
   LoaderCircle,
-  Workflow,
   ShieldCheck,
   ScanEye,
 } from 'lucide-react';
@@ -21,7 +20,7 @@ import {
   type HelixEvent,
   type ProjectState,
 } from '@helix/contracts';
-import { AgentEmblem, AgentBadge, Button, Tooltip, agentMeta, cx } from '@helix/ui';
+import { HelixLogo, AgentEmblem, AgentBadge, Button, Tooltip, agentMeta, cx } from '@helix/ui';
 import { describeEvent, provenanceLabel, statusLine } from '../data/describe';
 import { crossReview, reviewerTarget, reviewSlot } from '../data/crossReview';
 import {
@@ -33,6 +32,7 @@ import {
   type TaskView,
 } from '../data/observatory';
 import { ReviewChip } from './ReviewChip';
+import { identityFor, resolveProjectIdentities, traceLabel } from '../data/identity';
 import s from './PlanView.module.css';
 
 const CARD_W = 200;
@@ -232,7 +232,13 @@ function ReviewerCards({
                   <ShieldCheck size={12} aria-hidden />
                   Code reviewer
                 </span>
-                <strong>{agentLabel(entry.session.agent)}</strong>
+                <strong title={entry.session.id}>
+                  {identityFor(state, entry.session.id)?.name}
+                </strong>
+                <span>
+                  {agentLabel(entry.session.agent)}
+                  {entry.session.model ? ` · ${entry.session.model}` : ''}
+                </span>
                 <span>{label}</span>
                 <span className={s.reviewTarget}>
                   {target
@@ -310,6 +316,7 @@ function PlanCanvas({
     () => planTree(state, events ?? [], events && index !== undefined ? index : -1, nowIso),
     [state, events, index, nowIso],
   );
+  const identities = useMemo(() => resolveProjectIdentities(state), [state]);
   const graph = useMemo(() => (tree ? layout(tree.workers) : undefined), [tree]);
   const wrap = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -353,14 +360,15 @@ function PlanCanvas({
             data-motion-key="orchestrator"
             data-tone={active ? 'working' : 'idle'}
             disabled={!orchestrator}
+            title={orchestrator?.session.id}
             onClick={() => orchestrator && onSelect(orchestrator.session.id)}
           >
             <span className={s.orchHead}>
               <span className={s.orchIcon} data-active={active || undefined}>
-                <Workflow size={20} aria-hidden />
+                <HelixLogo size={20} active={active} />
               </span>
               <span className={s.orchName}>
-                <strong>Orchestrator</strong>
+                <strong>Helix</strong>
                 <span>{orchestrator?.session.title ?? 'Coordination'}</span>
               </span>
             </span>
@@ -394,10 +402,14 @@ function PlanCanvas({
                     >
                       <AgentEmblem agent={agent} active={working} size={44} />
                       <span className={s.agentName}>
-                        <strong>{agentLabel(agent)}</strong>
+                        <strong title={worker?.session.id}>
+                          {worker
+                            ? identities.sessions.get(worker.session.id)?.name
+                            : agentLabel(agent)}
+                        </strong>
                         <span>
                           {assigned.length
-                            ? 'Subagent · ' + assigned[0]!.session.title
+                            ? agentLabel(agent) + ' · ' + assigned[0]!.session.title
                             : 'Awaiting assignment'}
                         </span>
                       </span>
@@ -516,15 +528,16 @@ function PlanCanvas({
               className={cx(s.orch, orch.sessionId === selected && s.selected)}
               data-motion-key="orchestrator"
               data-tone={orch.tone}
+              title={orch.sessionId}
               style={{ width: ORCH_W, height: ORCH_H }}
               onClick={() => onSelect(orch.sessionId)}
             >
               <span className={s.orchHead}>
                 <span className={s.orchIcon} data-active={orch.active || undefined}>
-                  <Workflow size={20} aria-hidden />
+                  <HelixLogo size={20} active={orch.active} />
                 </span>
                 <span className={s.orchName}>
-                  <strong>Orchestrator</strong>
+                  <strong>Helix</strong>
                   <span>Plan and coordinate all tasks</span>
                 </span>
                 <span className={s.pill} data-tone={orch.tone}>
@@ -574,16 +587,28 @@ function PlanCanvas({
                     '--agent': agentMeta(a.agent).colorVar,
                   } as CSSProperties
                 }
-                aria-label={`${agentLabel(a.agent)} subagent: ${a.title} — ${a.statusLabel}`}
+                title={
+                  a.tasks[0]?.session
+                    ? traceLabel(identities.sessions.get(a.tasks[0].session.session.id)!)
+                    : a.tasks[0]?.node.id
+                }
+                aria-label={`${a.tasks[0] ? identities.nodes.get(a.tasks[0].node.id)?.name : agentLabel(a.agent)}: ${a.title} — ${a.statusLabel}`}
               >
                 <span className={s.agentHead}>
                   <AgentEmblem agent={a.agent} active={a.active} size={44} />
                   <span className={s.agentName}>
                     <strong>
-                      {agentLabel(a.agent)}
-                      {a.tasks[0] ? ` · ${a.tasks[0].number}` : ''}
+                      {a.tasks[0]
+                        ? identities.nodes.get(a.tasks[0].node.id)?.name
+                        : agentLabel(a.agent)}
                     </strong>
-                    <span title={a.title}>{a.title}</span>
+                    <span title={a.title}>
+                      {agentLabel(a.agent)}
+                      {a.tasks[0]?.session?.session.model
+                        ? ` · ${a.tasks[0].session.session.model}`
+                        : ''}{' '}
+                      · {a.title}
+                    </span>
                   </span>
                   <span className={s.pill} data-tone={agentTone(a)}>
                     <span className={s.pillDot} aria-hidden />
@@ -721,7 +746,7 @@ function TaskCard({
       >
         <span className={s.cardHead}>
           <AgentBadge
-            agent={t.node.agent}
+            agent={t.session?.session.agent ?? t.node.agent}
             variant="glyph"
             active={t.status === 'working'}
             size={16}

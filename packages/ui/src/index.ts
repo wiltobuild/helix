@@ -8,6 +8,7 @@ export * from './components/Menu';
 export * from './components/Dialog';
 export * from './components/StatusPill';
 export * from './components/AgentBadge';
+export * from './components/ActorBadge';
 export * from './components/HelixLogo';
 export * from './components/SessionCard';
 export * from './components/Tabs';
