@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { visualDesignRequestSchema, visualDesignResponseSchema } from './visual-design.js';
 import {
   agentKindSchema,
   agentReviewSchema,
@@ -254,6 +255,22 @@ const sessionParams = z.strictObject({ id: sessionIdSchema });
  * Import/export use raw UTF-8 JSON Lines, application/x-helixlog (not a JSON wrapper).
  */
 export const routes = {
+  sessionDesign: {
+    method: 'GET',
+    path: '/api/sessions/:id/design',
+    params: sessionParams,
+    request: empty,
+    response: visualDesignResponseSchema,
+    status: 200,
+  },
+  changeDesign: {
+    method: 'POST',
+    path: '/api/sessions/:id/design',
+    params: sessionParams,
+    request: visualDesignRequestSchema,
+    response: visualDesignResponseSchema,
+    status: 200,
+  },
   health: {
     method: 'GET',
     path: '/api/health',

@@ -36,6 +36,12 @@ const planBody = {
   nodes: plan.nodes,
 };
 const cases = [
+  { name: 'sessionDesign', method: 'sessionDesign' },
+  {
+    name: 'changeDesign',
+    method: 'changeDesign',
+    payload: { requestId: 'design-command', revision: 1, action: 'regenerate' },
+  },
   { name: 'setup', method: 'setup' },
   { name: 'health', method: 'health' },
   { name: 'harnesses', method: 'harnesses' },
