@@ -723,12 +723,21 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   function sessionEnv(s: Session): Record<string, string> | undefined {
     return deps.sessionEnv?.({ project: project(s.projectId).project, session: s });
   }
+  function briefContext(reviewed: Session['reviewedBrief']): string {
+    return reviewed
+      ? `\n\nHuman-approved build brief (revision ${reviewed.revision}):\n${reviewed.text}\n\nApproved assumptions:\n${reviewed.assumptions.map((a) => '- ' + a).join('\n')}`
+      : '';
+  }
   function initialPrompt(s: Session): string {
+    const reviewed =
+      s.reviewedBrief ??
+      (s.parentSessionId ? session(s.parentSessionId).session.reviewedBrief : undefined);
+    const brief = briefContext(reviewed);
     const visual = designFor(s);
     const suffix = visual ? approvedVisualContext(visual) : '';
     return s.role === 'orchestrator' && deps.orchestratorPrompt
-      ? `${deps.orchestratorPrompt({ project: project(s.projectId).project, session: s })}\n\n${s.prompt}`
-      : s.prompt + suffix;
+      ? `${deps.orchestratorPrompt({ project: project(s.projectId).project, session: s })}\n\n${s.prompt}${brief}`
+      : s.prompt + brief + suffix;
   }
   function pendingReview(reviewer: Session) {
     const worker = reviewer.parentSessionId ? findSession(reviewer.parentSessionId) : undefined;
@@ -1475,6 +1484,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         agent: request.agent,
         title: request.title,
         prompt: request.prompt,
+        ...(request.reviewedBrief ? { reviewedBrief: request.reviewedBrief } : {}),
         interface: request.interface,
         createdAt: deps.clock(),
         ...(request.model ? { model: request.model } : {}),
@@ -1487,8 +1497,16 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     }
     let creation = eventsFor(s).find((e) => e.type === 'session.created');
     creation ??= await emit('session.created', { session: s }, context(s, cause));
-    if (!parent && needsVisualDesign(s.prompt) && !session(s.id).design) {
-      const design = newVisualDesign(s.id, s.prompt, !!deps.visualImages);
+    if (
+      !parent &&
+      needsVisualDesign(s.prompt + (s.reviewedBrief?.text ?? '')) &&
+      !session(s.id).design
+    ) {
+      const design = newVisualDesign(
+        s.id,
+        s.prompt + briefContext(s.reviewedBrief),
+        !!deps.visualImages,
+      );
       await saveDesign(s, design);
       startVisualJob(s, design);
     }

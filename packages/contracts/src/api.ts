@@ -1,3 +1,4 @@
+import { reviewedBriefSchema } from './intake.js';
 import { z } from 'zod';
 import { visualDesignRequestSchema, visualDesignResponseSchema } from './visual-design.js';
 import {
@@ -76,6 +77,7 @@ export const createProjectRequestSchema = z.strictObject({
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 export const createSessionRequestSchema = z.strictObject({
   title: z.string().min(1),
+  reviewedBrief: reviewedBriefSchema.optional(),
   prompt: z.string().min(1),
   agent: agentKindSchema,
   model: z.string().min(1).optional(),

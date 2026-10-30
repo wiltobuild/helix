@@ -1,4 +1,5 @@
 import { planReviewSchema } from './plan-review.js';
+import { reviewedBriefSchema } from './intake.js';
 import { z } from 'zod';
 import {
   approvalIdSchema,
@@ -48,6 +49,7 @@ export const sessionSchema = z.strictObject({
   agent: agentKindSchema,
   model: z.string().min(1).optional(),
   title: z.string().min(1),
+  reviewedBrief: reviewedBriefSchema.optional(),
   prompt: z.string(),
   branch: z.string().min(1).optional(),
   worktreePath: z.string().min(1).optional(),
