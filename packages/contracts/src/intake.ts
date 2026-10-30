@@ -1,3 +1,4 @@
+import { projectIdSchema } from './ids.js';
 import { z } from 'zod';
 
 const text = z.string().trim().min(1).max(60000);
@@ -5,9 +6,15 @@ export const intakeAnswerSchema = z.strictObject({
   id: text,
   question: text,
   answer: text,
+  offeredChoices: z
+    .array(z.strictObject({ label: text, tradeoff: text }))
+    .max(4)
+    .optional(),
+  assistantMessage: z.string().max(6000).optional(),
   source: z.enum(['user', 'recommendation-accepted']),
 });
 export const intakeSynthesisSchema = z.strictObject({
+  message: z.string().trim().max(6000).optional(),
   brief: text,
   question: z.string().max(2000),
   choices: z.array(z.strictObject({ label: text, tradeoff: text })).max(4),
@@ -24,6 +31,7 @@ export const reviewedBriefSchema = z.strictObject({
   assumptions: z.array(text),
 });
 export const intakeDraftSchema = z.strictObject({
+  destinationProjectId: projectIdSchema.optional(),
   id: text,
   revision: z.number().int().positive(),
   title: z.string().max(300),
@@ -49,6 +57,7 @@ export const intakeRequestSchema = z.discriminatedUnion('action', [
     originalGoal: z.string().max(60000),
     answers: z.array(intakeAnswerSchema).max(100),
   }),
+  z.strictObject({ ...base, action: z.literal('bind'), projectId: projectIdSchema }),
   z.strictObject({ ...base, action: z.literal('generate') }),
   z.strictObject({ ...base, action: z.literal('cancel') }),
   z.strictObject({ ...base, action: z.literal('brief'), text }),

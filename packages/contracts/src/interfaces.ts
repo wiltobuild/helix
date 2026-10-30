@@ -38,8 +38,21 @@ export type HarnessEmissionType =
 export type HarnessEmission = {
   [K in HarnessEmissionType]: { type: K; payload: PayloadFor<K> };
 }[HarnessEmissionType];
-export type HarnessStartOptions = {
-  session: Session;
+/** Scratch discovery metadata is deliberately not a build Session and has no project. */
+export type DiscoveryHarnessContext = Pick<Session, 'id' | 'title' | 'createdAt' | 'model'> & {
+  agent: 'codex';
+  interface: 'chat';
+};
+export type HarnessStartOptions = (
+  | { purpose?: 'build'; session: Session }
+  | {
+      purpose: 'discovery';
+      session: DiscoveryHarnessContext;
+      env?: never;
+      review?: never;
+      resumeToken?: never;
+    }
+) & {
   cwd: string;
   resumeToken?: string;
   /** Per-session additions merged over the adapter's base environment. */
@@ -215,6 +228,10 @@ export type FeedbackMessageBuilder = (input: {
 
 /** The domain API the daemon exposes. Implemented by @helix/core; every method maps 1:1 to a route. */
 export interface HelixCore {
+  discoveryIntake?(): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
+  changeDiscovery?(
+    request: import('./intake.js').IntakeRequest,
+  ): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
   projectIntake?(id: ProjectId): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
   changeIntake?(
     id: ProjectId,

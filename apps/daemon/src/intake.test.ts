@@ -60,7 +60,7 @@ function setup(writer: IntakeWriter = { generate: vi.fn(async () => synthesis) }
         revision: draft?.revision ?? 0,
         requestId,
       } as IntakeRequest)
-    ).draft!;
+    ).draft;
   const start = async (mode = 'interview') => {
     const fresh = await command(null, { action: 'new', mode });
     return command(fresh, {
@@ -214,4 +214,210 @@ test('uncertain launch preserves approval, rejects edits, and retries identical 
   expect(vi.mocked(t.core.createSession).mock.calls[0]).toEqual(
     vi.mocked(t.core.createSession).mock.calls[1],
   );
+});
+
+test('editing the concept preserves conversation context and offered directions', async () => {
+  const offered = {
+    ...synthesis,
+    message: 'A quiet workspace is a useful starting point.',
+    question: 'Which direction feels right?',
+    choices: [
+      { label: 'Calendar', tradeoff: 'Clear overview, more setup' },
+      { label: 'Daily list', tradeoff: 'Simple focus, less overview' },
+    ],
+    unknowns: ['Direction'],
+  };
+  const t = setup({ generate: vi.fn(async () => offered) });
+  let draft = await t.start();
+  await t.command(draft, { action: 'generate' });
+  await vi.waitFor(async () => expect((await t.current()).status).toBe('review'));
+  draft = await t.current();
+  draft = await t.command(draft, { action: 'brief', text: 'An edited concept.' });
+  expect(draft.synthesis?.message).toBe(offered.message);
+  expect(draft.synthesis?.choices).toEqual(offered.choices);
+  draft = await t.command(draft, {
+    action: 'edit',
+    title: draft.title,
+    originalGoal: draft.originalGoal,
+    answers: [
+      {
+        id: 'relative-choice',
+        question: offered.question,
+        assistantMessage: offered.message,
+        offeredChoices: offered.choices,
+        answer: 'Combine the first and second options',
+        source: 'user',
+      },
+    ],
+  });
+  await t.command(draft, { action: 'generate' });
+  await vi.waitFor(() => expect(t.writer.generate).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(t.writer.generate).mock.calls[1]?.[0].answers[0]?.offeredChoices).toEqual(
+    offered.choices,
+  );
+  expect(t.core.createSession).not.toHaveBeenCalled();
+});
+
+function independent(t: ReturnType<typeof setup>) {
+  let sequence = 0;
+  return {
+    current: async () => (await t.service.discoveryIntake()).draft!,
+    command: async (
+      draft: IntakeDraft | null,
+      action: Record<string, unknown>,
+      requestId = `discovery_${++sequence}`,
+    ) =>
+      (
+        await t.service.changeDiscovery({
+          ...action,
+          id: draft?.id ?? 'new',
+          revision: draft?.revision ?? 0,
+          requestId,
+        } as IntakeRequest)
+      ).draft,
+  };
+}
+
+test('independent conversation persists by draft identity with zero registered projects and no build session', async () => {
+  const t = setup();
+  vi.mocked(t.core.listProjects).mockResolvedValue([]);
+  const d = independent(t);
+  expect(await d.current()).toBeNull();
+  let draft = await d.command(null, { action: 'new', mode: 'interview' });
+  draft = await d.command(draft, {
+    action: 'edit',
+    title: 'Calmer home',
+    originalGoal: 'Help me design a calmer home',
+    answers: [],
+  });
+  await d.command(draft, { action: 'generate' });
+  await vi.waitFor(async () => expect((await d.current()).status).toBe('review'));
+  draft = await d.current();
+  expect(t.writer.generate).toHaveBeenCalledWith(
+    expect.objectContaining({ id: draft.id }),
+    expect.any(AbortSignal),
+    undefined,
+  );
+  expect(await t.store.getMeta('discovery-drafts', draft.id)).toEqual(draft);
+  expect((await createIntakeService(t.store, t.core, t.writer).discoveryIntake()).draft).toEqual(
+    draft,
+  );
+  await expect(d.command(draft, { action: 'approve' })).rejects.toThrow(
+    'Choose a registered destination',
+  );
+  expect(t.core.createSession).not.toHaveBeenCalled();
+});
+
+test('binding is explicit, revision-bound, preserves concept and permits only the bound approved revision', async () => {
+  const t = setup();
+  const d = independent(t);
+  let draft = await d.command(null, { action: 'new', mode: 'direct' });
+  draft = await d.command(draft, {
+    action: 'edit',
+    title: 'Idea',
+    originalGoal: 'A useful concept',
+    answers: [],
+  });
+  draft = await d.command(draft, { action: 'brief', text: 'A useful concept' });
+  const unbound = draft;
+  await expect(d.command(draft, { action: 'bind', projectId: 'missing' })).rejects.toThrow(
+    'Destination project not found',
+  );
+  expect(await d.current()).toEqual(unbound);
+  draft = await d.command(draft, { action: 'bind', projectId });
+  expect(draft.revision).toBe(unbound.revision + 1);
+  expect(draft.synthesis).toEqual(unbound.synthesis);
+  expect(t.core.createSession).not.toHaveBeenCalled();
+  await expect(d.command(unbound, { action: 'approve' })).rejects.toThrow('brief changed');
+  const bound = draft;
+  draft = await d.command(bound, { action: 'approve' }, 'independent-approval');
+  await d.command(bound, { action: 'approve' }, 'independent-approval');
+  expect(t.core.createSession).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(t.core.createSession).mock.calls[0]?.[0]).toBe(projectId);
+  expect(draft.approved?.revision).toBe(bound.revision);
+});
+
+test('binding never overwrites legacy drafts and both mutation directions enforce destination ownership', async () => {
+  const t = setup();
+  const d = independent(t);
+  const legacy = await t.start();
+  let draft = await d.command(null, { action: 'new', mode: 'direct' });
+  draft = await d.command(draft, {
+    action: 'edit',
+    title: 'Idea',
+    originalGoal: 'Independent idea',
+    answers: [],
+  });
+  draft = await d.command(draft, { action: 'brief', text: 'Independent idea' });
+  await expect(d.command(draft, { action: 'bind', projectId })).rejects.toThrow(
+    'already has a draft',
+  );
+  expect(await t.current()).toEqual(legacy);
+  await t.command(legacy, { action: 'edit', title: '', originalGoal: '', answers: [] });
+  draft = await d.command(draft, { action: 'bind', projectId });
+  await expect(t.command(await t.current(), { action: 'new', mode: 'direct' })).rejects.toThrow(
+    'already bound',
+  );
+  // Simulate old software restoring a project-scoped record outside this service: approval rechecks.
+  await t.store.setMeta('build-intake', projectId, JSON.parse(JSON.stringify(legacy)) as MetaValue);
+  await expect(d.command(draft, { action: 'approve' })).rejects.toThrow('active draft');
+  expect(t.core.createSession).not.toHaveBeenCalled();
+});
+
+test('superseded creation retries cannot adopt the replacement conversation', async () => {
+  const t = setup();
+  const d = independent(t);
+  const first = await d.command(null, { action: 'new', mode: 'interview' }, 'first-create');
+  const replacement = await d.command(first, { action: 'new', mode: 'interview' }, 'second-create');
+  await expect(
+    d.command(null, { action: 'new', mode: 'interview' }, 'first-create'),
+  ).rejects.toThrow('brief changed');
+  expect(await d.current()).toEqual(replacement);
+});
+
+test('a real project named discovery remains isolated from the independent draft namespace', async () => {
+  const t = setup();
+  const d = independent(t);
+  const literal = projectIdSchema.parse('discovery');
+  vi.mocked(t.core.listProjects).mockResolvedValue([{ id: literal }] as Awaited<
+    ReturnType<HelixCore['listProjects']>
+  >);
+  const independentDraft = await d.command(null, { action: 'new', mode: 'interview' });
+  const legacy = (
+    await t.service.changeIntake(literal, {
+      id: 'new',
+      revision: 0,
+      requestId: 'literal-project',
+      action: 'new',
+      mode: 'direct',
+    })
+  ).draft;
+  expect(legacy.id).not.toBe(independentDraft.id);
+  expect((await t.service.projectIntake(literal)).draft).toEqual(legacy);
+  expect(await d.current()).toEqual(independentDraft);
+});
+
+test('cancel and replacement discard late independent generation output', async () => {
+  let finish!: (value: IntakeSynthesis) => void;
+  const t = setup({
+    generate: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  const d = independent(t);
+  let draft = await d.command(null, { action: 'new', mode: 'interview' });
+  draft = await d.command(draft, {
+    action: 'edit',
+    title: 'Idea',
+    originalGoal: 'An independent idea',
+    answers: [],
+  });
+  draft = await d.command(draft, { action: 'generate' });
+  draft = await d.command(draft, { action: 'cancel' });
+  finish(synthesis);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(await d.current()).toEqual(draft);
+  expect(draft.synthesis).toBeNull();
+  expect(t.core.createSession).not.toHaveBeenCalled();
 });

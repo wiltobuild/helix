@@ -258,6 +258,20 @@ const sessionParams = z.strictObject({ id: sessionIdSchema });
  * Import/export use raw UTF-8 JSON Lines, application/x-helixlog (not a JSON wrapper).
  */
 export const routes = {
+  discoveryIntake: {
+    method: 'GET',
+    path: '/api/discovery',
+    request: empty,
+    response: intakeResponseSchema,
+    status: 200,
+  },
+  changeDiscovery: {
+    method: 'POST',
+    path: '/api/discovery',
+    request: intakeRequestSchema,
+    response: intakeResponseSchema,
+    status: 200,
+  },
   projectIntake: {
     method: 'GET',
     path: '/api/projects/:id/intake',

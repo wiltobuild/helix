@@ -48,7 +48,10 @@ function finish(text = 'ok') {
     });
     send({
       method: 'turn/completed',
-      params: { threadId: thread, turn: { id, status: 'completed' } },
+      params: {
+        threadId: thread,
+        turn: { id, status: process.env.HELIX_FAKE_TURN_STATUS || 'completed' },
+      },
     });
   }
 }
@@ -171,6 +174,17 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         ? { id: message.id, error: { code: -1, message: 'Fixture initialization rejected' } }
         : { id: message.id, result: {} },
     );
+  } else if (message.method === 'config/read') {
+    send({
+      id: message.id,
+      result: {
+        config: {
+          mcp_servers: { unsafe: {} },
+          apps: { linked: {} },
+          plugins: { 'sample@local': {} },
+        },
+      },
+    });
   } else if (message.method === 'thread/start' || message.method === 'thread/resume') {
     thread = message.params.threadId || thread;
     send({ id: message.id, result: { thread: { id: thread } } });

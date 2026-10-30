@@ -461,3 +461,87 @@ it.each([
   },
   30_000,
 );
+
+it('text-only Codex review disables shell, linked apps, MCP and plugins before a turn', async () => {
+  const cwd = await directory();
+  const transcript = join(cwd, 'transcript.jsonl');
+  const harness = createHarness('codex', {
+    ...opts('codex', { HELIX_FAKE_TRANSCRIPT: transcript }),
+    codexTextOnly: true,
+    codexSandbox: 'read-only',
+    codexApprovalPolicy: 'never',
+  });
+  const session = await harness.start({ cwd, session: { ...template, agent: 'codex' } });
+  sessions.push(session);
+  const messages = (await readFile(transcript, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => record(JSON.parse(line) as unknown));
+  const request = messages.find((m) => m.method === 'thread/start');
+  expect(record(request?.params)).toMatchObject({
+    sandbox: 'read-only',
+    approvalPolicy: 'never',
+    config: {
+      'features.shell_tool': false,
+      'features.apps': false,
+      'mcp_servers.unsafe.enabled': false,
+      'apps.linked.enabled': false,
+      'plugins.sample@local.enabled': false,
+    },
+  });
+}, 30000);
+
+it.each(['interrupted', 'unknown'])(
+  'text-only review rejects %s completion after assistant output',
+  async (status) => {
+    const cwd = await directory();
+    const session = await createHarness('codex', {
+      ...opts('codex', { HELIX_FAKE_TURN_STATUS: status }),
+      codexTextOnly: true,
+      codexSandbox: 'read-only',
+      codexApprovalPolicy: 'never',
+    }).start({ cwd, session: { ...template, agent: 'codex' } });
+    sessions.push(session);
+    const events: HarnessEmission[] = [];
+    session.onEvent((e) => events.push(e));
+    await session.send('{"verdict":"passed","summary":"ok","findings":[]}', 'queue');
+    await expect
+      .poll(
+        () => events.some((e) => e.type === 'activity.changed' && e.payload.activity === 'unknown'),
+        { timeout: 10000 },
+      )
+      .toBe(true);
+    expect(
+      events.filter((e) => e.type === 'activity.changed' && e.payload.activity === 'idle').length,
+    ).toBe(1);
+  },
+  30000,
+);
+it('text-only review refuses permission requests before approval fast paths', async () => {
+  const cwd = await directory();
+  const transcript = join(cwd, 'transcript.jsonl');
+  const session = await createHarness('codex', {
+    ...opts('codex', { HELIX_FAKE_TRANSCRIPT: transcript }),
+    codexTextOnly: true,
+    codexSandbox: 'read-only',
+    codexApprovalPolicy: 'never',
+  }).start({ cwd, session: { ...template, agent: 'codex' } });
+  sessions.push(session);
+  const events: HarnessEmission[] = [];
+  session.onEvent((e) => events.push(e));
+  await session.send('approve-permissions', 'queue');
+  await expect
+    .poll(
+      () => events.some((e) => e.type === 'activity.changed' && e.payload.activity === 'unknown'),
+      { timeout: 10000 },
+    )
+    .toBe(true);
+  const messages = (await readFile(transcript, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => record(JSON.parse(line) as unknown));
+  expect(
+    messages.some((m) => JSON.stringify(m.result) === '{"permissions":{},"scope":"turn"}'),
+  ).toBe(true);
+  expect(events.some((e) => e.type === 'approval.requested')).toBe(false);
+}, 30000);

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarness } from '@helix/harness';
@@ -54,4 +54,76 @@ test.skipIf(process.env.HELIX_E2E !== '1')(
     }
   },
   240000,
+);
+
+test.skipIf(process.env.HELIX_INTAKE_CONVERSATION_SMOKE !== '1')(
+  'real Codex develops a concept and adapts to a change of direction',
+  async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'helix-conversation-e2e-'));
+    const projectId = projectIdSchema.parse('project_conversation_smoke');
+    const draft: IntakeDraft = {
+      id: 'conversation-smoke',
+      revision: 1,
+      title: 'A calmer shared home',
+      originalGoal:
+        'I want to design something that makes living with housemates feel calmer. I do not have a product concept yet. Help me come up with one.',
+      mode: 'interview',
+      answers: [],
+      synthesis: null,
+      versions: [],
+      status: 'generating',
+    };
+    try {
+      const writer = createIntakeWriter(
+        createHarness('codex', {
+          codexSandbox: 'read-only',
+          codexApprovalPolicy: 'never',
+          autoApproveSafeCommands: false,
+        }),
+        dir,
+        projectId,
+      );
+      const first = await writer.generate(draft, new AbortController().signal, projectId);
+      expect(first.message?.length).toBeGreaterThan(30);
+      expect(first.question.trim().length).toBeGreaterThan(10);
+      const reply =
+        'I like the focus on a calmer home, but definitely not chore tracking or splitting bills. Explore a few ideas around quiet hours and guests instead. It should feel welcoming rather than like a rulebook. This is for four adult housemates.';
+      const secondDraft: IntakeDraft = {
+        ...draft,
+        revision: 2,
+        answers: [
+          {
+            id: 'direction-change',
+            question: first.question,
+            answer: reply,
+            source: 'user',
+            ...(first.message ? { assistantMessage: first.message } : {}),
+          },
+        ],
+      };
+      const second = await writer.generate(secondDraft, new AbortController().signal, projectId);
+      expect(second.message?.length).toBeGreaterThan(30);
+      expect(second.choices.length).toBeGreaterThanOrEqual(2);
+      expect(
+        second.confirmed.every((item) =>
+          item.answerIds.every((id) => ['original-goal', 'direction-change'].includes(id)),
+        ),
+      ).toBe(true);
+      const evidence = {
+        conversationDemo: {
+          mode: 'REAL CODEX / isolated scratch / no build created',
+          originalGoal: draft.originalGoal,
+          first,
+          reply,
+          second,
+        },
+      };
+      console.info(JSON.stringify(evidence));
+      if (process.env.HELIX_INTAKE_DEMO_RECEIPT)
+        await writeFile(process.env.HELIX_INTAKE_DEMO_RECEIPT, JSON.stringify(evidence, null, 2));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  480000,
 );
