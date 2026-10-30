@@ -312,80 +312,85 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
       />
 
       <main className={s.main}>
+        {page === 'sessions' && (
+          <div className={s.sessionChrome}>
+            <SessionHeader
+              state={state}
+              source={source}
+              title={sessionTitle}
+              {...(tree ? { goal: tree.plan.goal } : {})}
+              mode={mode}
+              elapsedMs={elapsedMs}
+              timeMode={run.timeMode}
+              tab={tab}
+              onTab={setTab}
+              counts={{ board: activeCount, files: undefined, commits: undefined }}
+              onNewTask={() => setNewTask(true)}
+              onAddRepo={() => setAddRepoOpen(true)}
+              onSelectRepo={(id) => {
+                setSelected(null);
+                source.selectProject(id);
+              }}
+              stopAll={stopAll}
+              repos={repoList}
+              activeCount={activeCount}
+            />
+          </div>
+        )}
+        {/* Shared by every view: hidden activity and focus must always have a visible exit. */}
+        <div className={s.graphTools} role="group" aria-label="Workspace display controls">
+          {(graphFocus || (page === 'sessions' && (tab === 'plan' || tab === 'visual'))) && (
+            <>
+              <Button size="sm" ref={focusButton} onClick={graphFocus ? exitFocus : enterFocus}>
+                {graphFocus
+                  ? 'Exit focus (Esc)'
+                  : tab === 'visual'
+                    ? 'Focus design'
+                    : 'Focus graph'}
+              </Button>
+              <Button size="sm" onClick={() => void enterFullscreen()}>
+                Fullscreen workspace
+              </Button>
+            </>
+          )}
+          {selectedSession && !(page === 'sessions' && tab === 'visual') && (
+            <Button
+              size="sm"
+              aria-pressed={!inspectorHidden}
+              onClick={() => setInspectorHidden((hidden) => !hidden)}
+            >
+              {inspectorHidden ? 'Show selected agent' : 'Hide inspector'}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            aria-pressed={!activityHidden}
+            onClick={() => setActivityHidden((hidden) => !hidden)}
+          >
+            {activityHidden ? 'Show activity' : 'Hide activity'}
+          </Button>
+          {!activityHidden && (
+            <label className={s.panelSize}>
+              Activity height
+              <input
+                aria-label="Activity height"
+                type="range"
+                min="120"
+                max="400"
+                step="20"
+                value={activityHeight}
+                onChange={(event) => {
+                  setActivityHeight(Number(event.target.value));
+                  setDockExpanded(false);
+                }}
+              />
+            </label>
+          )}
+          {graphFocus && stopAll}
+          {fullscreenNotice && <span role="status">{fullscreenNotice}</span>}
+        </div>
         {page === 'sessions' ? (
           <>
-            <div className={s.sessionChrome}>
-              <SessionHeader
-                state={state}
-                source={source}
-                title={sessionTitle}
-                {...(tree ? { goal: tree.plan.goal } : {})}
-                mode={mode}
-                elapsedMs={elapsedMs}
-                timeMode={run.timeMode}
-                tab={tab}
-                onTab={setTab}
-                counts={{ board: activeCount, files: undefined, commits: undefined }}
-                onNewTask={() => setNewTask(true)}
-                onAddRepo={() => setAddRepoOpen(true)}
-                onSelectRepo={(id) => {
-                  setSelected(null);
-                  source.selectProject(id);
-                }}
-                stopAll={stopAll}
-                repos={repoList}
-                activeCount={activeCount}
-              />
-            </div>
-            {(tab === 'plan' || tab === 'visual') && (
-              <div className={s.graphTools} role="group" aria-label="Workspace display controls">
-                <Button size="sm" ref={focusButton} onClick={graphFocus ? exitFocus : enterFocus}>
-                  {graphFocus
-                    ? 'Exit focus (Esc)'
-                    : tab === 'visual'
-                      ? 'Focus design'
-                      : 'Focus graph'}
-                </Button>
-                <Button size="sm" onClick={() => void enterFullscreen()}>
-                  Fullscreen workspace
-                </Button>
-                {selectedSession && tab !== 'visual' && (
-                  <Button
-                    size="sm"
-                    aria-pressed={!inspectorHidden}
-                    onClick={() => setInspectorHidden((hidden) => !hidden)}
-                  >
-                    {inspectorHidden ? 'Show selected agent' : 'Hide inspector'}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  aria-pressed={!activityHidden}
-                  onClick={() => setActivityHidden((hidden) => !hidden)}
-                >
-                  {activityHidden ? 'Show activity' : 'Hide activity'}
-                </Button>
-                {!activityHidden && (
-                  <label className={s.panelSize}>
-                    Activity height
-                    <input
-                      aria-label="Activity height"
-                      type="range"
-                      min="120"
-                      max="400"
-                      step="20"
-                      value={activityHeight}
-                      onChange={(event) => {
-                        setActivityHeight(Number(event.target.value));
-                        setDockExpanded(false);
-                      }}
-                    />
-                  </label>
-                )}
-                {graphFocus && stopAll}
-                {fullscreenNotice && <span role="status">{fullscreenNotice}</span>}
-              </div>
-            )}
             <div className={s.content}>
               {tab !== 'visual' && hasVisualDesign && (
                 <div className={s.planBanner} role="status">
