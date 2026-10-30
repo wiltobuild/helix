@@ -58,7 +58,25 @@ samples['terminal.output_marker'] = eventSchemas['terminal.output_marker'].parse
   type: 'terminal.output_marker',
   payload: { bytesOffset: 1024 },
 });
+samples['design.updated'] = eventSchemas['design.updated'].parse({
+  ...base,
+  type: 'design.updated',
+  payload: {
+    design: {
+      sessionId: base.sessionId,
+      revision: 1,
+      brief: 'A storefront',
+      status: 'unavailable',
+      rounds: [],
+      conversation: [],
+      references: [],
+      receipts: [],
+      blocker: 'Provider unavailable',
+    },
+  },
+});
 const invalid: Record<EventType, unknown> = {
+  'design.updated': { design: { revision: -1 } },
   'project.added': { project: { ...fixtures.passwordResetProject, id: '' } },
   'scheduling.changed': { paused: 'true' },
   'session.created': { session: { id: 'x' } },

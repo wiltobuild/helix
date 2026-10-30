@@ -215,6 +215,13 @@ export type FeedbackMessageBuilder = (input: {
 
 /** The domain API the daemon exposes. Implemented by @helix/core; every method maps 1:1 to a route. */
 export interface HelixCore {
+  sessionDesign?(
+    id: SessionId,
+  ): Promise<{ design: import('./visual-design.js').VisualDesign | null }>;
+  changeDesign?(
+    id: SessionId,
+    request: import('./visual-design.js').VisualDesignRequest,
+  ): Promise<{ design: import('./visual-design.js').VisualDesign | null }>;
   readonly events: EventStore;
   readonly terminals: TerminalHost;
   start(): Promise<void>;
