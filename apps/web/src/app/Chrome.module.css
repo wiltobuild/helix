@@ -19,8 +19,11 @@
 
 .wordmark {
   font: 700 18px / 1 var(--font-display);
-  letter-spacing: 0.04em;
-  color: var(--text);
+  letter-spacing: -0.035em;
+  background: linear-gradient(100deg, var(--strand-codex), var(--strand-claude));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
 .tagline {

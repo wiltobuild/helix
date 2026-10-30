@@ -43,7 +43,14 @@ export function SessionCard({
   return (
     <article className={cx(s.card, selected && s.selected)} data-status={status}>
       {/* The whole card is the hit target; the button stretches over it, actions sit above it. */}
-      <button type="button" className={s.hit} onClick={onOpen} aria-label={`Open ${title}`} />
+      <button
+        type="button"
+        className={s.hit}
+        onClick={onOpen}
+        aria-label={`Open ${title}`}
+        aria-description={actor?.model ? `Model: ${actor.model}` : undefined}
+        title={[actor?.name, actor?.model, actor?.title].filter(Boolean).join(' · ') || undefined}
+      />
       <header className={s.head}>
         {actor ? (
           <ActorBadge {...actor} />

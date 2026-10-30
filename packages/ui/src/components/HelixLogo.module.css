@@ -2,104 +2,48 @@
   flex: none;
   display: inline-block;
   vertical-align: middle;
-  overflow: visible;
 }
-
 .tile {
   fill: var(--surface);
   stroke: var(--border-strong);
 }
-
 .rung {
   stroke: var(--border-strong);
-  opacity: 0.75;
+  stroke-width: 1;
+  opacity: 0.8;
 }
-
-.strandClaude {
-  stroke: var(--strand-claude);
-}
-
-.strandCodex {
-  stroke: var(--strand-codex);
-}
-
-.nodeClaude {
-  fill: var(--strand-claude);
-}
-
-.nodeCodex {
+.teal {
   fill: var(--strand-codex);
 }
-
-.nodeA,
-.nodeB {
-  transform-box: fill-box;
-  transform-origin: center;
+.rust {
+  fill: var(--strand-claude);
 }
-
-@keyframes helixRungPulse {
-  0%,
-  100% {
-    opacity: 0.4;
-    stroke-width: 1.4;
-  }
-  50% {
-    opacity: 0.95;
-    stroke-width: 2;
-  }
+.tealRail,
+.rustRail {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.85;
 }
-
-@keyframes helixNodeA {
-  0%,
-  100% {
-    transform: translateX(0) scale(1);
-  }
-  50% {
-    transform: translateX(1.5px) scale(1.12);
+.tealRail {
+  stroke: var(--strand-codex);
+}
+.rustRail {
+  stroke: var(--strand-claude);
+}
+.strands {
+  transform: translateX(0);
+}
+/* Translation is linear and the final frame is geometrically identical to the first. */
+@keyframes flow {
+  to {
+    transform: translateX(-60px);
   }
 }
-
-@keyframes helixNodeB {
-  0%,
-  100% {
-    transform: translateX(0) scale(1);
-  }
-  50% {
-    transform: translateX(-1.5px) scale(1.12);
-  }
+.logo[data-active] .strands {
+  animation: flow 8.726646s linear infinite;
 }
-
-.logo[data-active='true'] .rung1 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 0s;
-}
-
-.logo[data-active='true'] .rung2 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 0.35s;
-}
-
-.logo[data-active='true'] .rung3 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 0.7s;
-}
-
-.logo[data-active='true'] .rung4 {
-  animation: helixRungPulse 2s var(--ease-in-out) infinite 1.05s;
-}
-
-.logo[data-active='true'] .nodeA {
-  animation: helixNodeA 2.2s var(--ease-in-out) infinite;
-}
-
-.logo[data-active='true'] .nodeB {
-  animation: helixNodeB 2.2s var(--ease-in-out) infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .logo[data-active='true'] .rung1,
-  .logo[data-active='true'] .rung2,
-  .logo[data-active='true'] .rung3,
-  .logo[data-active='true'] .rung4,
-  .logo[data-active='true'] .nodeA,
-  .logo[data-active='true'] .nodeB {
+  .logo[data-active] .strands {
     animation: none;
   }
 }

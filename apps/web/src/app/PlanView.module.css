@@ -136,22 +136,12 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 40px;
+  width: 52px;
   height: 40px;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--strand-orchestrator) 14%, var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--strand-orchestrator) 40%, var(--border));
   color: var(--strand-orchestrator);
-}
-
-.orchIcon[data-active] svg {
-  animation: orchSpin 6s linear infinite;
-}
-
-@keyframes orchSpin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .orchName,
@@ -163,20 +153,18 @@
 
 .orchName strong,
 .agentName strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
   font-size: var(--text-lg);
   font-weight: 600;
 }
 
 .orchName span,
 .agentName span {
-  overflow: hidden;
   color: var(--text-2);
   font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
 }
 
 .pill {
@@ -191,6 +179,23 @@
   font-weight: 500;
   background: var(--surface-3);
   color: var(--text-2);
+}
+
+.agentHead {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 4px 10px;
+}
+
+.agentHead > .pill {
+  grid-column: 3;
+  justify-self: start;
+  padding: 0;
+  background: transparent;
+}
+
+.agentName strong {
+  font-size: var(--text-md);
 }
 
 .pillDot {
@@ -459,7 +464,13 @@
 
 .iconWork {
   color: var(--status-working);
-  animation: orchSpin 1.4s linear infinite;
+  animation: taskSpin 1.4s linear infinite;
+}
+
+@keyframes taskSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .iconTodo {

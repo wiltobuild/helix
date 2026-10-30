@@ -334,6 +334,10 @@
   cursor: pointer;
 }
 
+.laneLabel[data-kind='orchestrator'] {
+  grid-template-columns: 28px minmax(0, auto) minmax(0, 1fr);
+}
+
 .laneLabel:disabled {
   cursor: default;
 }

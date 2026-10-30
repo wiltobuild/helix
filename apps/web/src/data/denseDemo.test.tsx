@@ -63,7 +63,7 @@ test('every dense replay cursor projects safely with twelve workers and distinct
     expect(Number(top)).toBe(Number(task![2]) + Number(task![4]) + 24);
   }
   // Twelve one-task columns no longer reserve lateral review-card space.
-  expect(html).toContain('width:4416px;height:500px');
+  expect(html).toContain('width:4416px;height:528px');
   expect(html).toContain('Reviewer unavailable');
   expect(html).toMatch(/2(?:<!-- -->)? findings/);
   expect(html).toContain('<summary>Graph options</summary>');

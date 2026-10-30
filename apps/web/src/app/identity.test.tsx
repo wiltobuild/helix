@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { ActorBadge, SessionCard } from '@helix/ui';
 
 // The canonical two-strand Helix mark; the Codex hex-knot path. Used to prove which emblem renders.
-const HELIX_STRAND = 'd="M8 4 C24 10';
+const HELIX_STRAND = 'data-helix="dna"';
 const CODEX_KNOT = 'd="M22.2819 9.8211';
 
 test('the orchestrator actor wears the canonical HelixLogo, never a provider emblem', () => {
@@ -13,8 +13,8 @@ test('the orchestrator actor wears the canonical HelixLogo, never a provider emb
   expect(html).toContain('data-role="orchestrator"');
   expect(html).toContain('Helix');
   expect(html).toContain(HELIX_STRAND);
-  // Four base-pair rungs confirm it is the real HelixLogo symbol, not an invented one.
-  expect(html.match(/<line /g)?.length).toBe(4);
+  expect(html.match(/<line /g)?.length).toBe(12);
+  expect(html.match(/<circle /g)?.length).toBe(50);
   expect(html).not.toContain(CODEX_KNOT);
   expect(html).toContain('data-active="true"');
 });
