@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import {
+  environment,
   killLiveProcesses,
   killTree,
   prepareSupervisorAssembly,
@@ -165,3 +166,9 @@ it('kills every live agent tree when the host process exits abruptly', async () 
   killLiveProcesses();
   await expect.poll(() => alive(grandchild), { timeout: 10_000 }).toBe(false);
 }, 30_000);
+
+it('restricted roles do not inherit daemon credentials or launcher environment', () => {
+  expect(environment({ inheritEnv: false, env: { PATH: 'safe-path' } })).toEqual({
+    PATH: 'safe-path',
+  });
+});

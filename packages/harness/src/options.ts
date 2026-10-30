@@ -5,6 +5,8 @@ export interface HarnessOptions {
   /** Arguments before the adapter's arguments (also useful for executable wrappers). */
   extraArgs?: string[];
   env?: Record<string, string>;
+  /** Dedicated restricted roles may replace rather than inherit the daemon environment. */
+  inheritEnv?: boolean;
   /** Default for detection; HarnessStartOptions.cwd takes precedence for sessions. */
   cwd?: string;
   requestTimeoutMs?: number;
@@ -18,6 +20,8 @@ export interface HarnessOptions {
     'manual' | 'acceptEdits' | 'dontAsk' | 'plan' | 'auto' | 'bypassPermissions';
   /** Approve read-only and project-script commands without asking (see safe-commands.ts). */
   autoApproveSafeCommands?: boolean;
+  /** Dedicated text-only discovery: disable configured external tools and shell access. */
+  codexTextOnly?: boolean;
   codexApprovalPolicy?: 'on-request' | 'never';
   codexSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
 }

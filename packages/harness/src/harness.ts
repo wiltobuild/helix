@@ -57,21 +57,41 @@ class CliHarness implements AgentHarness {
   // CONTRACT-REQUEST: document AgentHarness.start as initialization-only and
   // HarnessSession.send as one explicit turn with caller-owned pending messages.
   async start(options: HarnessStartOptions): Promise<ApprovingHarnessSession> {
+    if (options.purpose === 'discovery' && this.kind !== 'codex')
+      throw new HelixError('INVALID_REQUEST', 'Discovery requires the Codex conversation adapter');
+    if (options.purpose === 'discovery' && (options.review || options.resumeToken || options.env))
+      throw new HelixError(
+        'INVALID_REQUEST',
+        'Discovery cannot inherit a checkout, resume token, or session environment',
+      );
     if (options.session.interface !== 'chat')
       throw new HelixError('INVALID_REQUEST', 'Harness adapters support chat sessions only');
     try {
       const sessionOptions = {
         ...this.options,
+        ...(options.purpose === 'discovery'
+          ? {
+              inheritEnv: false,
+              codexTextOnly: true,
+              codexSandbox: 'read-only' as const,
+              codexApprovalPolicy: 'never' as const,
+              autoApproveSafeCommands: false,
+            }
+          : {}),
         env: Object.fromEntries(
           Object.entries(
             environment(this.options, {
               ...options.env,
               // CLI launchers (tsx IPC/cache) and other helpers must keep temporary writes in scratch.
-              ...(options.review
+              ...(options.review || options.purpose === 'discovery'
                 ? { TMPDIR: options.cwd, TEMP: options.cwd, TMP: options.cwd }
                 : {}),
             }),
-          ).filter((entry): entry is [string, string] => entry[1] !== undefined),
+          ).filter(
+            (entry): entry is [string, string] =>
+              entry[1] !== undefined &&
+              (options.purpose !== 'discovery' || !/^(HELIX_|GIT_)/i.test(entry[0])),
+          ),
         ),
       };
       const bin = await this.executable(sessionOptions);

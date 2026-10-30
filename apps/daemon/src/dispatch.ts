@@ -22,6 +22,16 @@ type Handlers = { [K in HttpName]: (input: Input<K>) => Promise<z.output<Routes[
 
 export function createDispatch(core: SetupCore) {
   const handlers: Handlers = {
+    discoveryIntake: () => {
+      if (!core.discoveryIntake)
+        throw new HelixError('HARNESS_UNAVAILABLE', 'Repository-free discovery is unavailable');
+      return core.discoveryIntake();
+    },
+    changeDiscovery: ({ body }) => {
+      if (!core.changeDiscovery)
+        throw new HelixError('HARNESS_UNAVAILABLE', 'Repository-free discovery is unavailable');
+      return core.changeDiscovery(body);
+    },
     projectIntake: ({ params }) =>
       core.projectIntake ? core.projectIntake(params.id) : Promise.resolve({ draft: null }),
     changeIntake: ({ params, body }) => {
