@@ -53,6 +53,89 @@ afterEach(() => {
 });
 
 describe('GitHub SCM', () => {
+  test('refresh publishes through watchers immediately, retains ETags and resets one poll timer', async () => {
+    const fake = createFakeGitHub();
+    fake.seedPr();
+    const events: ScmEmission[] = [];
+    const scm = createGitHubScm({ token: 'test', fetch: fake.fetch });
+    subscriptions.push(scm.watch(project, number, (e) => events.push(e)));
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    events.length = 0;
+    fake.setPr(1, { mergeable: null });
+    await scm.refresh!(project, number);
+    expect(events.map((e) => e.type)).toEqual(['pr.updated']);
+    expect(events[0]?.payload).toMatchObject({ pr: { mergeable: 'unknown' } });
+    expect(fake.requests.filter((r) => r.ifNoneMatch)).toHaveLength(4);
+    events.length = 0;
+    await scm.refresh!(project, number);
+    expect(events.map((e) => e.type)).toEqual(['pr.updated']);
+    const count = fake.requests.length;
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(fake.requests).toHaveLength(count);
+    fake.setPr(1, { mergeable: false });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.requests).toHaveLength(count + 5);
+    expect(events.at(-1)?.payload).toMatchObject({ pr: { mergeable: 'conflicting' } });
+  });
+
+  test('refresh waits for an older poll and coalesces concurrent refresh callers', async () => {
+    const fake = createFakeGitHub();
+    fake.seedPr();
+    let release!: () => void;
+    let hold = true;
+    const fetcher: typeof fetch = async (input, init) => {
+      const response = await fake.fetch(input, init);
+      if (hold && requestUrl(input).endsWith('/pulls/1')) {
+        hold = false;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return response;
+    };
+    const scm = createGitHubScm({ token: 'test', fetch: fetcher });
+    const events: ScmEmission[] = [];
+    subscriptions.push(scm.watch(project, number, (e) => events.push(e)));
+    await flush();
+    const one = scm.refresh!(project, number);
+    const two = scm.refresh!(project, number);
+    expect(one).toBe(two);
+    expect(fake.requests).toHaveLength(1);
+    fake.setPr(1, { mergeable: false });
+    release();
+    await Promise.all([one, two]);
+    expect(fake.requests.filter((r) => r.path.endsWith('/pulls/1'))).toHaveLength(2);
+    expect(events.at(-1)?.payload).toMatchObject({ pr: { mergeable: 'conflicting' } });
+    const count = fake.requests.length;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(fake.requests).toHaveLength(count + 5);
+  });
+
+  test('refresh respects rate-limit cooldown and last unsubscribe', async () => {
+    const fake = createFakeGitHub();
+    fake.seedPr();
+    const scm = createGitHubScm({ token: 'test', fetch: fake.fetch });
+    await scm.refresh!(project, number);
+    expect(fake.requests).toHaveLength(0);
+    const stop = scm.watch(project, number);
+    subscriptions.push(stop);
+    await flush();
+    fake.rateLimitNext({ headers: { 'Retry-After': '45' }, status: 429 });
+    await scm.refresh!(project, number);
+    const count = fake.requests.length;
+    await scm.refresh!(project, number);
+    await vi.advanceTimersByTimeAsync(44_999);
+    expect(fake.requests).toHaveLength(count);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.requests.length).toBeGreaterThan(count);
+    stop();
+    const stopped = fake.requests.length;
+    await scm.refresh!(project, number);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.requests).toHaveLength(stopped);
+  });
+
   test('open PR preserves draft and sends REST creation parameters', async () => {
     const fake = createFakeGitHub();
     const scm = createGitHubScm({ token: 'test-token', fetch: fake.fetch });

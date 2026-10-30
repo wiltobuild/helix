@@ -21,6 +21,15 @@ import { insideWorktree } from './worktree-paths.js';
 import { HELIX_GIT_INSTRUCTIONS, isGitWriteCommand } from './git-policy.js';
 import { isSafeCommand } from './safe-commands.js';
 
+// Match the runner diagnostic, not arbitrary stderr from a program under review.
+// Never include raw command output here: it can contain repository secrets.
+const SANDBOX_SETUP_FAILURE =
+  /^Failed to create unified exec process: helper_unknown_error: setup refresh had errors\s*$/;
+const SANDBOX_SETUP_MESSAGE =
+  'Codex command runner could not initialize its Windows sandbox (setup refresh had errors). ' +
+  'No command ran. Repair the Codex runtime reported in its sandbox log, then request a new review. ' +
+  'No AI review verdict was produced; CI is not an AI approval.';
+
 /** Completed items are canonical; deltas are not emitted a second time as duplicate chat. */
 export function codexItem(value: unknown, completed: boolean): HarnessEmission[] {
   const item = record(value);
@@ -228,6 +237,18 @@ export class CodexSession extends ProcessSession {
       }
       for (const emission of codexItem(params.item, method === 'item/completed'))
         this.emit(emission);
+      const item = record(params.item);
+      if (
+        this.startOptions.review &&
+        method === 'item/completed' &&
+        item.type === 'commandExecution' &&
+        item.exitCode === -1 &&
+        SANDBOX_SETUP_FAILURE.test(string(item.aggregatedOutput))
+      ) {
+        // Core abandons on unknown activity, so it will not ask for a verdict
+        // after the failed turn. Keep sandbox/approval policy unchanged.
+        this.fail(SANDBOX_SETUP_MESSAGE);
+      }
     } else if (method === 'error') {
       this.fail(string(record(params.error).message) || 'Codex reported an error');
     } else if (method === 'serverRequest/resolved') {
