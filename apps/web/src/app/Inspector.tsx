@@ -49,6 +49,7 @@ import {
   type Provenance,
 } from '../data/describe';
 import s from './Inspector.module.css';
+import { handlePlanShortcut } from './keyboardShortcuts';
 import { crossReview, reviewerTarget, sessionHistory } from '../data/crossReview';
 import { ReviewSection } from './ReviewSection';
 import { ReviewChip } from './ReviewChip';
@@ -158,25 +159,19 @@ export function Inspector({
       ? 1
       : undefined;
 
-  // ⌘↵ approves the plan, ⌘R opens "Request changes", only while the plan waits and you can act.
-  useEffect(() => {
-    if (!planNeedsReview || !canAct) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === 'Enter' && changes === undefined) {
-        e.preventDefault();
-        void decidePlan('approve');
-      } else if (e.key.toLowerCase() === 'r') {
-        e.preventDefault();
-        setChanges((c) => c ?? '');
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
-
   return (
-    <aside className={s.inspector} aria-label={`Session: ${session.session.title}`}>
+    <aside
+      className={s.inspector}
+      aria-label={`Session: ${session.session.title}`}
+      onKeyDown={(event) =>
+        handlePlanShortcut(event, {
+          enabled: planNeedsReview && canAct && !busy,
+          canApprove: changes === undefined,
+          approve: () => void decidePlan('approve'),
+          requestChanges: () => setChanges((c) => c ?? ''),
+        })
+      }
+    >
       <header className={s.header}>
         <div className={s.headTop}>
           {isOrchestrator ? (
