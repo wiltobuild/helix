@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { FolderPlus, LayoutGrid, Network, Plus } from 'lucide-react';
 import { deriveStatus, type HarnessInfo, type HelixEvent, type Project } from '@helix/contracts';
 import {
@@ -75,6 +75,56 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   const [tabOverride, setTab] = useState<SessionTab | null>(null);
   const [page, setPage] = useState<Page>('sessions');
   const [dockExpanded, setDockExpanded] = useState(false);
+  const [graphFocus, setGraphFocus] = useState(false);
+  const [inspectorHidden, setInspectorHidden] = useState(false);
+  const [activityHidden, setActivityHidden] = useState(
+    () => window.matchMedia('(max-width: 1440px), (max-height: 900px)').matches,
+  );
+  const [activityHeight, setActivityHeight] = useState(220);
+  const [fullscreenNotice, setFullscreenNotice] = useState('');
+  const fullscreenOwned = useRef(false);
+  const focusButton = useRef<HTMLButtonElement>(null);
+  const beforeFocus = useRef({ inspectorHidden: false, activityHidden: false });
+  const enterFocus = () => {
+    if (!graphFocus) beforeFocus.current = { inspectorHidden, activityHidden };
+    setGraphFocus(true);
+    setInspectorHidden(true);
+    setActivityHidden(true);
+  };
+  const exitFocus = () => {
+    setGraphFocus(false);
+    setInspectorHidden(beforeFocus.current.inspectorHidden);
+    setActivityHidden(beforeFocus.current.activityHidden);
+    setFullscreenNotice('');
+    if (fullscreenOwned.current && document.fullscreenElement)
+      void document.exitFullscreen().catch(() => {});
+    fullscreenOwned.current = false;
+    focusButton.current?.focus();
+  };
+  const enterFullscreen = async () => {
+    enterFocus();
+    try {
+      // Include body portals so approval dialogs remain visible above the graph.
+      if (!document.documentElement.requestFullscreen) throw new Error('Unsupported');
+      await document.documentElement.requestFullscreen();
+      fullscreenOwned.current = true;
+      setFullscreenNotice('');
+    } catch {
+      setFullscreenNotice('Fullscreen unavailable. Workspace focus is active.');
+    }
+  };
+  useEffect(() => {
+    const changed = () => {
+      if (document.fullscreenElement || !fullscreenOwned.current) return;
+      fullscreenOwned.current = false;
+      setGraphFocus(false);
+      setInspectorHidden(beforeFocus.current.inspectorHidden);
+      setActivityHidden(beforeFocus.current.activityHidden);
+      focusButton.current?.focus();
+    };
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, []);
   const [newTask, setNewTask] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -82,6 +132,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   const [addRepoOpen, setAddRepoOpen] = useState(false);
 
   const selectSession = (id: string, tab = 'summary') => {
+    setInspectorHidden(false);
     setSelected(id);
     setInspectorTab(tab);
     setTab((currentTab) =>
@@ -187,6 +238,8 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
   // Keyboard: [ ] step, L live, ⌘N new task, ⌘K search, ? shortcuts, Esc closes the inspector.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || document.querySelector('[role="dialog"][aria-modal="true"]'))
+        return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         setNewTask(true);
@@ -205,13 +258,17 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
       else if (e.key === ']') run.step(1);
       else if (e.key === 'l' || e.key === 'L') run.goLive();
       else if (e.key === '?') setShortcutsOpen(true);
-      else if (e.key === 'Escape') setSelected(null);
-      else return;
+      else if (e.key === 'Escape') {
+        if (graphFocus) {
+          if (!inspectorHidden && selectedSession) setInspectorHidden(true);
+          else exitFocus();
+        } else setInspectorHidden(true);
+      } else return;
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [run]);
+  });
 
   const stopAll =
     live && source.client ? (
@@ -226,7 +283,12 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
     );
 
   return (
-    <div className={s.shell} data-inspector={showInspector ? 'open' : 'closed'}>
+    <div
+      className={s.shell}
+      data-inspector={showInspector && !inspectorHidden ? 'open' : 'closed'}
+      data-graph-focus={graphFocus || undefined}
+      data-inspector-hidden={inspectorHidden || undefined}
+    >
       <TopBar
         source={source}
         working={working}
@@ -252,27 +314,78 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
       <main className={s.main}>
         {page === 'sessions' ? (
           <>
-            <SessionHeader
-              state={state}
-              source={source}
-              title={sessionTitle}
-              {...(tree ? { goal: tree.plan.goal } : {})}
-              mode={mode}
-              elapsedMs={elapsedMs}
-              timeMode={run.timeMode}
-              tab={tab}
-              onTab={setTab}
-              counts={{ board: activeCount, files: undefined, commits: undefined }}
-              onNewTask={() => setNewTask(true)}
-              onAddRepo={() => setAddRepoOpen(true)}
-              onSelectRepo={(id) => {
-                setSelected(null);
-                source.selectProject(id);
-              }}
-              stopAll={stopAll}
-              repos={repoList}
-              activeCount={activeCount}
-            />
+            <div className={s.sessionChrome}>
+              <SessionHeader
+                state={state}
+                source={source}
+                title={sessionTitle}
+                {...(tree ? { goal: tree.plan.goal } : {})}
+                mode={mode}
+                elapsedMs={elapsedMs}
+                timeMode={run.timeMode}
+                tab={tab}
+                onTab={setTab}
+                counts={{ board: activeCount, files: undefined, commits: undefined }}
+                onNewTask={() => setNewTask(true)}
+                onAddRepo={() => setAddRepoOpen(true)}
+                onSelectRepo={(id) => {
+                  setSelected(null);
+                  source.selectProject(id);
+                }}
+                stopAll={stopAll}
+                repos={repoList}
+                activeCount={activeCount}
+              />
+            </div>
+            {(tab === 'plan' || tab === 'visual') && (
+              <div className={s.graphTools} role="group" aria-label="Workspace display controls">
+                <Button size="sm" ref={focusButton} onClick={graphFocus ? exitFocus : enterFocus}>
+                  {graphFocus
+                    ? 'Exit focus (Esc)'
+                    : tab === 'visual'
+                      ? 'Focus design'
+                      : 'Focus graph'}
+                </Button>
+                <Button size="sm" onClick={() => void enterFullscreen()}>
+                  Fullscreen workspace
+                </Button>
+                {selectedSession && tab !== 'visual' && (
+                  <Button
+                    size="sm"
+                    aria-pressed={!inspectorHidden}
+                    onClick={() => setInspectorHidden((hidden) => !hidden)}
+                  >
+                    {inspectorHidden ? 'Show selected agent' : 'Hide inspector'}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  aria-pressed={!activityHidden}
+                  onClick={() => setActivityHidden((hidden) => !hidden)}
+                >
+                  {activityHidden ? 'Show activity' : 'Hide activity'}
+                </Button>
+                {!activityHidden && (
+                  <label className={s.panelSize}>
+                    Activity height
+                    <input
+                      aria-label="Activity height"
+                      type="range"
+                      min="120"
+                      max="400"
+                      step="20"
+                      value={activityHeight}
+                      onChange={(event) => {
+                        setActivityHeight(Number(event.target.value));
+                        setDockExpanded(false);
+                      }}
+                    />
+                  </label>
+                )}
+                {graphFocus && stopAll}
+                {fullscreenNotice && <span role="status">{fullscreenNotice}</span>}
+              </div>
+            )}
             <div className={s.content}>
               {tab !== 'visual' && hasVisualDesign && (
                 <div className={s.planBanner} role="status">
@@ -323,6 +436,11 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
               {tab === 'plan' && (
                 <PlanView
                   state={state}
+                  onFollowLive={() => {
+                    setSelected(null);
+                    setInspectorHidden(true);
+                    if (live) run.goLive();
+                  }}
                   selected={effectiveSelected}
                   onSelect={selectSession}
                   {...(tree
@@ -361,17 +479,23 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
             />
           </div>
         )}
-        <Dock
-          run={run}
-          source={source}
-          tree={tree}
-          expanded={dockExpanded}
-          onExpand={setDockExpanded}
-          onSelectSession={(id) => {
-            setPage('sessions');
-            selectSession(id);
-          }}
-        />
+        <div
+          className={s.activityPanel}
+          hidden={activityHidden}
+          style={{ height: dockExpanded ? '45vh' : activityHeight }}
+        >
+          <Dock
+            run={run}
+            source={source}
+            tree={tree}
+            expanded={dockExpanded}
+            onExpand={setDockExpanded}
+            onSelectSession={(id) => {
+              setPage('sessions');
+              selectSession(id);
+            }}
+          />
+        </div>
       </main>
 
       {selectedSession && showInspector && (
@@ -384,7 +508,7 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
           state={state}
           events={run.events}
           upTo={current.seq}
-          onClose={() => setSelected(null)}
+          onClose={() => setInspectorHidden(true)}
           onJump={(seq) => run.seek(run.events.findIndex((e) => e.seq === seq))}
           {...(tree ? { tree } : {})}
           {...(live && source.client ? { client: source.client, isLive: run.isLive } : {})}

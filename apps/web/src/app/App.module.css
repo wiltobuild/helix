@@ -24,6 +24,67 @@
   min-height: 0;
 }
 
+.sessionChrome {
+  flex: none;
+}
+
+.graphTools {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panelSize {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+}
+
+.panelSize input {
+  width: 90px;
+}
+
+.activityPanel {
+  flex: none;
+  min-height: 120px;
+  max-height: 45%;
+  overflow: hidden;
+}
+
+.activityPanel > * {
+  height: 100% !important;
+}
+
+.activityPanel[hidden],
+.shell[data-inspector-hidden] > aside {
+  display: none;
+}
+
+.shell[data-graph-focus][data-inspector] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'main';
+}
+
+.shell[data-graph-focus] > header,
+.shell[data-graph-focus] > nav,
+.shell[data-graph-focus] .sessionChrome {
+  display: none;
+}
+
+.shell[data-graph-focus] > aside {
+  position: fixed;
+  inset: 48px 0 0 auto;
+  width: min(420px, 100vw);
+  z-index: var(--z-popover, 30);
+  box-shadow: var(--shadow-pop);
+}
+
 .content {
   position: relative;
   flex: 1;
