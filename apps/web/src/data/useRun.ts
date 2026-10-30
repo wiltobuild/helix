@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createProjector, type HelixEvent, type ProjectState } from '@helix/contracts';
+import { indexIdentities, withIdentityIndex } from './identity';
 import { replayDelays, replayPause } from './useDemoStream';
 
 export interface RunView {
@@ -40,8 +41,15 @@ export function useRun(
   const current = events[index]!;
   const projector = useMemo(() => createProjector(events), [events]);
   const bySeq = useMemo(() => new Map(events.map((e) => [e.seq, e])), [events]);
-  const state = useMemo(() => projector.at(current.seq), [projector, current.seq]);
-  const latestState = useMemo(() => projector.at(events[last]!.seq), [projector, events, last]);
+  const identities = useMemo(() => indexIdentities(events), [events]);
+  const state = useMemo(
+    () => withIdentityIndex(projector.at(current.seq), identities),
+    [projector, current.seq, identities],
+  );
+  const latestState = useMemo(
+    () => withIdentityIndex(projector.at(events[last]!.seq), identities),
+    [projector, events, last, identities],
+  );
   const delays = useMemo(() => (recorded ? replayDelays(events) : []), [events, recorded]);
   const delay = (recorded ? (delays[index] ?? 650) : replayPause(current)) / speed;
   const lastRef = useRef(last);

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Project, ProjectState } from '@helix/contracts';
 import {
+  ActorBadge,
   Button,
   HelixLogo,
   IconButton,
@@ -38,6 +39,7 @@ import {
 import type { HelixSource } from '../data/useHelixSource';
 import { DEMO_SCENARIOS } from '../data/demoScenarios';
 import { formatDuration } from '../data/observatory';
+import { traceLabel, type ActorIdentity } from '../data/identity';
 import s from './Chrome.module.css';
 
 export type Page = 'overview' | 'sessions' | 'tasks' | 'agents' | 'prs' | 'ci' | 'knowledge';
@@ -111,6 +113,7 @@ export function TopBar({
 /* ------------------------------------------------------------------ left nav */
 
 export interface SessionSummary {
+  identity?: ActorIdentity | undefined;
   id: string;
   title: string;
   status: DisplayStatus;
@@ -199,7 +202,12 @@ export function NavRail({
             }}
           >
             <span className={s.activeTop}>
-              <span className={s.activeTitle}>{active.title}</span>
+              <span className={s.activeTitle}>
+                {active.identity && (
+                  <ActorBadge {...active.identity} title={traceLabel(active.identity)} />
+                )}
+                {active.title}
+              </span>
               <span className={s.liveTag} data-live={active.live || undefined}>
                 <span className={s.liveDot} aria-hidden />
                 {active.live ? 'Live' : 'Replay'}
@@ -227,7 +235,10 @@ export function NavRail({
                   }}
                 >
                   <StatusDot status={r.status} />
-                  <span className={s.recentTitle}>{r.title}</span>
+                  <span className={s.recentTitle}>
+                    {r.identity && <ActorBadge {...r.identity} title={traceLabel(r.identity)} />}
+                    {r.title}
+                  </span>
                   <span className={s.recentMeta}>{r.meta}</span>
                 </button>
               </li>

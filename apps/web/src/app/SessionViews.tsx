@@ -1,7 +1,8 @@
 import { FileText, GitCommitHorizontal, GitMerge } from 'lucide-react';
 import type { HelixEvent, ProjectState } from '@helix/contracts';
-import { AgentBadge, EmptyState, StatusPill } from '@helix/ui';
+import { ActorBadge, EmptyState, StatusPill } from '@helix/ui';
 import { commits, type PlanTree } from '../data/observatory';
+import { historicalActorName, identityFor, resolveProjectIdentities } from '../data/identity';
 import s from './SessionViews.module.css';
 
 /** Files tab: what each task claims and how much it has changed so far. */
@@ -14,11 +15,13 @@ export function FilesView({
   tree: PlanTree | undefined;
   onOpen: (sessionId: string) => void;
 }) {
+  const identities = resolveProjectIdentities(state);
   const rows = tree
     ? tree.tasks.map((t) => ({
         key: t.node.id,
+        name: identities.nodes.get(t.node.id)!.name,
         title: `Task ${t.number} · ${t.node.title}`,
-        agent: t.node.agent,
+        agent: t.session?.session.agent ?? t.node.agent,
         status: t.status,
         files: t.node.files,
         diff: t.session?.worktree?.diff,
@@ -28,6 +31,7 @@ export function FilesView({
         .filter((x) => x.session.role === 'worker')
         .map((x) => ({
           key: x.session.id,
+          name: identities.sessions.get(x.session.id)!.name,
           title: x.session.title,
           agent: x.session.agent,
           status: undefined,
@@ -69,7 +73,12 @@ export function FilesView({
             onClick={() => r.sessionId && onOpen(r.sessionId)}
           >
             <span className={s.fileHead}>
-              <AgentBadge agent={r.agent} variant="glyph" />
+              <ActorBadge
+                name={r.name}
+                role="author"
+                agent={r.agent}
+                title={r.sessionId ? `${r.sessionId} · ${r.key}` : r.key}
+              />
               <strong>{r.title}</strong>
               {r.status && <StatusPill status={r.status} variant="inline" />}
             </span>
@@ -117,6 +126,19 @@ export function CommitsView({
   onSeek: (index: number) => void;
 }) {
   const list = commits(state);
+  const commitActor = (sha: string, sessionId: string) => {
+    const event = events
+      .slice(0, index + 1)
+      .find(
+        (e) =>
+          e.sessionId === sessionId &&
+          e.type === 'chat.item' &&
+          e.payload.item.kind === 'message' &&
+          e.payload.item.role === 'system' &&
+          e.payload.item.text.startsWith(`Committed ${sha}:`),
+      );
+    return (event && historicalActorName(state, event)) ?? identityFor(state, sessionId)!.name;
+  };
   const merges = events
     .slice(0, index + 1)
     .map((e, i) => ({ e, i }))
@@ -153,7 +175,11 @@ export function CommitsView({
               <GitCommitHorizontal size={15} aria-hidden />
               <code className={s.sha}>{c.sha.slice(0, 7)}</code>
               <span className={s.grow}>{c.title}</span>
-              <AgentBadge agent={c.agent} />
+              <ActorBadge
+                {...identityFor(state, c.sessionId)!}
+                name={commitActor(c.sha, c.sessionId)}
+                title={c.sessionId}
+              />
               <span className={s.branch}>{c.branch}</span>
             </button>
           </li>

@@ -14,7 +14,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { whyChain, type HelixEvent, type ProjectState } from '@helix/contracts';
-import { AgentBadge, AgentEmblem, Dialog, IconButton, cx } from '@helix/ui';
+import { HelixLogo, ActorBadge, AgentBadge, AgentEmblem, Dialog, IconButton, cx } from '@helix/ui';
 import {
   describeEvent,
   eventTone,
@@ -24,7 +24,6 @@ import {
 } from '../data/describe';
 import {
   activityFeed,
-  agentLabel,
   ganttLanes,
   planTree,
   narratedEvent,
@@ -34,6 +33,7 @@ import { eventIndexAtTime, timelineMilestones } from '../data/timeline';
 import type { RunView } from '../data/useRun';
 import type { HelixSource } from '../data/useHelixSource';
 import { REPLAY_SPEEDS, type ReplaySpeed } from '../data/useDemoStream';
+import { historicalActorName, identityFor, traceLabel } from '../data/identity';
 import s from './Dock.module.css';
 
 export const TONE_VAR: Record<EventTone, string> = {
@@ -234,10 +234,10 @@ export function Dock({
                       {clock(Date.parse(f.ts) - Date.parse(events[0]!.ts))}
                     </span>
                     <span className={s.dot} style={{ background: TONE_VAR[f.tone] }} />
-                    {sess ? (
+                    {sess && sess.session.role !== 'orchestrator' ? (
                       <AgentBadge agent={sess.session.agent} variant="glyph" />
                     ) : (
-                      <Workflow size={14} className={s.helixIcon} aria-label="Helix" />
+                      <HelixLogo size={14} className={s.helixIcon} />
                     )}
                     <span className={s.feedText}>{f.text}</span>
                     <span className={s.feedSeq}>#{f.seq}</span>
@@ -358,6 +358,7 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
               key={l.id}
               type="button"
               className={s.laneLabel}
+              title={`${l.label} · ${l.sessionId ? l.sessionId + ' · ' : ''}${l.id}`}
               data-kind={l.kind}
               disabled={!l.sessionId}
               onClick={() => {
@@ -372,7 +373,7 @@ function Gantt({ run, onSelectSession }: { run: RunView; onSelectSession: (id: s
               }}
             >
               {l.kind === 'orchestrator' ? (
-                <Workflow size={14} className={s.orchIcon} aria-hidden />
+                <HelixLogo size={14} className={s.orchIcon} />
               ) : l.kind === 'agent' && l.agent ? (
                 <AgentEmblem agent={l.agent} size={18} />
               ) : (
@@ -495,12 +496,10 @@ function RunLog({ run }: { run: RunView }) {
               >
                 {e.type}
               </span>
-              <span className={s.logWho}>
-                {sess
-                  ? sess.session.role === 'orchestrator'
-                    ? 'orchestrator'
-                    : agentLabel(sess.session.agent)
-                  : 'helix'}
+              <span className={s.logWho} title={e.sessionId}>
+                {sess?.session.role === 'orchestrator' && <HelixLogo size={14} />}
+                {historicalActorName(state, e) ??
+                  (sess ? identityFor(state, sess.session.id)?.name : 'Helix')}
               </span>
               <span className={s.logText}>{describeEvent(e, state)}</span>
               {e.causedBy !== undefined && <span className={s.logCause}>← #{e.causedBy}</span>}
@@ -555,7 +554,10 @@ function Artifacts({
           <span key={x.session.id} className={s.artifact}>
             <GitBranch size={14} aria-hidden />
             <span className={s.mono}>{x.session.branch}</span>
-            <AgentBadge agent={x.session.agent} />
+            <ActorBadge
+              {...identityFor(state, x.session.id)!}
+              title={traceLabel(identityFor(state, x.session.id)!)}
+            />
           </span>
         ))}
       </section>

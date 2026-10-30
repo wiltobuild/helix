@@ -53,7 +53,7 @@ test('reverse agent pairing names Codex as the reviewer', () => {
       reversed.find((e) => e.seq === at.approved)!,
       state,
     ),
-  ).toContain('Codex approved');
+  ).toContain('Discount Codes Reviewer approved');
 });
 
 test('an approval for an old head is pending, never ready or approved', () => {
@@ -88,7 +88,7 @@ test('abandonment removes the chip and remains in worker history', () => {
   expect(crossReview(state.sessions[ids.worker]!, state)).toBeUndefined();
   expect(sessionHistory(events, ids.worker, abandoned.seq)[0]).toEqual(abandoned);
   expect(describeEvent(abandoned, state)).toBe(
-    "Helix ended Claude Code's review of “Add discount codes” · PR #7 without a verdict: Reviewer stopped.",
+    "Helix ended Discount Codes Reviewer's review of “Add discount codes” · PR #7 without a verdict: Reviewer stopped.",
   );
   expect(eventTone(abandoned)).toBe('needs');
   expect(provenance(abandoned, state)).toBe('helix');
@@ -97,20 +97,20 @@ test('abandonment removes the chip and remains in worker history', () => {
 test.each([
   [
     requested.seq,
-    'Helix asked Claude Code to review “Add discount codes” · PR #7.',
+    'Helix asked Discount Codes Reviewer to review “Add discount codes” · PR #7.',
     'review',
     'helix',
   ],
   [
     at.changesRequested,
-    'Claude Code requested changes (2 findings) for “Add discount codes” · PR #7.',
+    'Discount Codes Reviewer requested changes (2 findings) for “Add discount codes” · PR #7.',
     'failed',
     'agent',
   ],
-  [at.approved, 'Claude Code approved “Add discount codes” · PR #7.', 'done', 'agent'],
+  [at.approved, 'Discount Codes Reviewer approved “Add discount codes” · PR #7.', 'done', 'agent'],
   [
     at.routed,
-    'Helix sent the review findings back to Codex for “Add discount codes”.',
+    'Helix sent the review findings back to Discount Codes Engineer for “Add discount codes”.',
     'feedback',
     'helix',
   ],

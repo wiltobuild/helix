@@ -1,5 +1,6 @@
 import type { AgentReview, HelixEvent, ProjectState, SessionState } from '@helix/contracts';
-import { AgentBadge, Button } from '@helix/ui';
+import { ActorBadge, Button } from '@helix/ui';
+import { historicalActorName, identityFor } from '../data/identity';
 import { crossReview } from '../data/crossReview';
 import { ReviewChip } from './ReviewChip';
 import s from './Review.module.css';
@@ -36,6 +37,13 @@ export function ReviewSection({
       <h3>Review</h3>
       {display && current ? (
         <>
+          <ActorBadge
+            {...identityFor(state, current.reviewerSessionId)!}
+            name={identityFor(state, current.reviewerSessionId)?.name ?? display.name}
+            role="reviewer"
+            agent={display.agent}
+            title={current.reviewerSessionId}
+          />
           <ReviewChip review={display} />
           <p className={s.head}>
             Head <code>{display.stale ? session.pr?.headSha : current.headSha}</code>
@@ -64,7 +72,15 @@ export function ReviewSection({
             <p className={s.head}>
               Head <code>{event.payload.headSha}</code>
             </p>
-            {reviewer && <AgentBadge agent={reviewer.session.agent} variant="full" />}
+            {reviewer && (
+              <ActorBadge
+                {...identityFor(state, reviewer.session.id)!}
+                name={
+                  historicalActorName(state, event) ?? identityFor(state, reviewer.session.id)!.name
+                }
+                title={reviewer.session.id}
+              />
+            )}
             <Verdict review={event.payload.review} />
             {event.sessionId && (
               <Button size="sm" onClick={() => onSelect(event.sessionId!, 'activity')}>

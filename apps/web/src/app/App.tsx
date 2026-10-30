@@ -3,6 +3,7 @@ import { FolderPlus, LayoutGrid, Network, Plus } from 'lucide-react';
 import { deriveStatus, type HarnessInfo, type HelixEvent, type Project } from '@helix/contracts';
 import {
   AgentBadge,
+  ActorBadge,
   Button,
   Dialog,
   Kbd,
@@ -35,6 +36,7 @@ import { NavPage } from './Pages';
 import { CommitsView, FilesView } from './SessionViews';
 import { NewTaskDialog } from './NewTaskDialog';
 import { Onboarding } from './Onboarding';
+import { identityFor, traceLabel } from '../data/identity';
 import s from './App.module.css';
 
 export function App() {
@@ -133,6 +135,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     ? {
         id: tree.orchestrator.sessionId,
         title: sessionTitle,
+        identity: identityFor(state, tree.orchestrator.sessionId),
         status:
           tree.orchestrator.tone === 'needs'
             ? 'needs_you'
@@ -146,6 +149,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
       ? {
           id: cards[0].id,
           title: cards[0].card.title,
+          identity: cards[0].identity,
           status: cards[0].status,
           meta: cards[0].card.updated ?? '',
           live: mode === 'live',
@@ -163,6 +167,7 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
     .map((x) => ({
       id: x.session.id,
       title: x.session.title,
+      identity: identityFor(state, x.session.id),
       status: deriveStatus(x),
       meta: relativeTo(bySeq.get(x.lastEventSeq)?.ts ?? x.session.createdAt, current.ts),
       live: false,
@@ -489,6 +494,7 @@ function SearchDialog({
       cards.filter((c) => {
         if (!q) return true;
         return (
+          c.identity.name.toLowerCase().includes(q) ||
           c.card.title.toLowerCase().includes(q) ||
           (c.card.branch?.toLowerCase().includes(q) ?? false) ||
           c.card.agent.toLowerCase().includes(q) ||
@@ -526,9 +532,15 @@ function SearchDialog({
               onClick={() => onSelectSession(c.id)}
             >
               <StatusDot status={c.status} />
-              <span className={s.searchItemTitle}>{c.card.title}</span>
+              <span className={s.searchItemTitle}>
+                <ActorBadge
+                  {...c.identity}
+                  title={traceLabel(c.identity)}
+                  active={c.status === 'working'}
+                />
+                <span>{c.card.title}</span>
+              </span>
               {c.card.branch && <span className={s.searchItemMeta}>{c.card.branch}</span>}
-              <AgentBadge agent={c.card.agent} active={c.status === 'working'} />
             </button>
           ))}
           {matches.length === 0 && (

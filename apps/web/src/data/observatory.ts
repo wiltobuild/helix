@@ -8,6 +8,7 @@ import {
   type ProjectState,
   type SessionState,
 } from '@helix/contracts';
+import { resolveProjectIdentities } from './identity';
 import { describeEvent, eventTone, slotWaitNote, type EventTone } from './describe';
 
 /**
@@ -235,7 +236,7 @@ export function planTree(
     ),
   );
   const workers = tasks.map((task) => ({
-    ...summarize(task.node.agent, [task]),
+    ...summarize(task.session?.session.agent ?? task.node.agent, [task]),
     id: task.node.id,
     title: task.node.title,
     statusLabel: !task.session
@@ -442,6 +443,7 @@ export function ganttLanes(
   state: ProjectState,
   tree: PlanTree | undefined,
 ): { lanes: Lane[]; startTs: number; endTs: number; cursorAt: number } {
+  const identities = resolveProjectIdentities(state);
   const startTs = Date.parse(events[0]!.ts);
   const endTs = Math.max(Date.parse(events.at(-1)!.ts), startTs + 1000);
   const span = endTs - startTs;
@@ -486,7 +488,7 @@ export function ganttLanes(
     lanes.push({
       id: 'orchestrator',
       kind: 'orchestrator',
-      label: 'Orchestrator',
+      label: 'Helix',
       agent: tree.orchestrator.agent,
       sessionId: orchId,
       bars: orchBars.length
@@ -528,7 +530,7 @@ export function ganttLanes(
       lanes.push({
         id: `agent-${a.agent}`,
         kind: 'agent',
-        label: agentLabel(a.agent),
+        label: `${agentLabel(a.agent)} provider`,
         agent: a.agent,
         bars: bars.length
           ? [
@@ -552,25 +554,21 @@ export function ganttLanes(
       lanes.push({
         id: `task-${t.node.id}`,
         kind: 'task',
-        label: `Task ${t.number}`,
-        sublabel: t.node.title,
+        label: identities.nodes.get(t.node.id)!.name,
+        sublabel: `Task ${t.number} · ${t.node.title}`,
         agent: t.node.agent,
         ...(id ? { sessionId: id } : {}),
         bars,
         marks: id ? marksFor((e) => e.sessionId === id) : [],
       });
     }
-  } else {
-    for (const s of Object.values(state.sessions)) {
+  }
+  for (const s of Object.values(state.sessions)) {
+    if (!tree || s.session.role === 'reviewer') {
       lanes.push({
         id: s.session.id,
-        kind: 'task',
-        label:
-          s.session.role === 'orchestrator'
-            ? 'Orchestrator'
-            : s.session.role === 'reviewer'
-              ? `${agentLabel(s.session.agent)} · review`
-              : agentLabel(s.session.agent),
+        kind: s.session.role === 'orchestrator' ? 'orchestrator' : 'task',
+        label: identities.sessions.get(s.session.id)!.name,
         sublabel: s.session.title,
         agent: s.session.agent,
         sessionId: s.session.id,

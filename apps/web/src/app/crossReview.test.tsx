@@ -131,7 +131,7 @@ test('reviewer header links back to the worker and its chat renders normally', (
 test('worker Why includes the reviewer request and verdict beside the routed feedback and CI', () => {
   const html = inspector(projectUpTo(run, at.routed), 'why');
   expect(html).toContain('requested changes (2 findings)');
-  expect(html).toContain('Helix asked Claude Code to review');
+  expect(html).toContain('Helix asked Discount Codes Reviewer to review');
   expect(html).toContain('CI passed on PR #7');
   expect(html).toContain(`caused by #${at.changesRequested}`);
   expect(html).toContain('data-source="agent"');
@@ -196,7 +196,7 @@ test.each(['discount-codes', 'github-ci-repair'])(
         index={events.length - 1}
       />,
     );
-    expect(html).toContain('Orchestrator');
+    expect(html).toContain('Helix');
     expect(html).toContain('Code reviewer');
     expect(html).toContain('PR merged');
     expect(html).not.toContain('No agent review recorded');

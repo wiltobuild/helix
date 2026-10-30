@@ -80,11 +80,11 @@ test('PlanView renders the Concept 3 tree: orchestrator, one subagent per task, 
     </TooltipProvider>,
   );
 
-  expect(html).toContain('Orchestrator');
+  expect(html).toContain('Helix');
   expect(html).toContain('Plan and coordinate all tasks');
   // One node per agent, with the large animated logo while that agent works
-  expect(html).toContain('aria-label="Codex subagent:');
-  expect(html).toContain('aria-label="Claude Code subagent:');
+  expect(html).toContain('aria-label="Password Reset Architect:');
+  expect(html).toContain('aria-label="Password Reset Designer:');
   expect(html.match(/data-worker-node=/g)).toHaveLength(3);
   expect(html).toContain('role="img" aria-label="Codex (working)"');
   // Every planned task is a card
@@ -139,7 +139,7 @@ test('PlanView shows the orchestrator and observed activity before plan submissi
   expect(html.match(/Standing by/g)).toHaveLength(4);
   expect(html).toContain('Codex');
   expect(html).toContain('Claude Code');
-  expect(html).toContain('Orchestrator');
+  expect(html).toContain('Helix');
   expect(html).toContain('Recent planning activity');
   expect(html).not.toContain('No plan yet');
   expect(html).not.toContain('Task 1');
