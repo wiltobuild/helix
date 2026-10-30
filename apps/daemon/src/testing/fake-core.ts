@@ -114,6 +114,12 @@ export function createFakeCore() {
     list: () => [session.id],
   } satisfies TerminalHost;
   const core = {
+    sessionDesign: vi
+      .fn<NonNullable<HelixCore['sessionDesign']>>()
+      .mockResolvedValue({ design: null }),
+    changeDesign: vi
+      .fn<NonNullable<HelixCore['changeDesign']>>()
+      .mockResolvedValue({ design: null }),
     events,
     terminals,
     start: vi.fn<HelixCore['start']>().mockResolvedValue(undefined),

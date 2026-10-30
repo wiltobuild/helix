@@ -1,7 +1,9 @@
+import { createCodexVisualProvider } from './visual-images.js';
+import { resolveExecutable } from '@helix/harness';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createHelixCore, type CoreLog } from '@helix/core';
-import { isHelixError, type HelixCore } from '@helix/contracts';
+import { HelixError, isHelixError, type HelixCore } from '@helix/contracts';
 import { openStore } from '@helix/storage';
 import { GitWorktreeManager } from '@helix/git';
 import { NodePtyHost } from '@helix/pty-host';
@@ -191,7 +193,22 @@ export async function createRealCore(options: {
         ...(codexArgs.length ? { extraArgs: codexArgs } : {}),
       }),
     };
+    const codexBin = await resolveExecutable('codex', env);
+    // Probe lazily: ordinary daemon startup and nonvisual tasks never launch an image process.
+    const visualImages = codexBin
+      ? {
+          generate: async (
+            input: Parameters<import('@helix/core').VisualImageProvider['generate']>[0],
+          ) => {
+            const provider = await createCodexVisualProvider({ bin: codexBin, dataDir, env });
+            if (!provider)
+              throw new HelixError('HARNESS_UNAVAILABLE', 'Codex image capability unavailable');
+            return provider.generate(input);
+          },
+        }
+      : undefined;
     const core = createHelixCore({
+      ...(visualImages ? { visualImages } : {}),
       store,
       worktrees: new GitWorktreeManager({ dataDir, projects: store }),
       terminals,

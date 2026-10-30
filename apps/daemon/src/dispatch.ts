@@ -1,4 +1,4 @@
-import { backfill, routes, type HelixCore, type RouteName } from '@helix/contracts';
+import { HelixError, backfill, routes, type HelixCore, type RouteName } from '@helix/contracts';
 import type { z } from 'zod';
 
 type Routes = typeof routes;
@@ -20,6 +20,13 @@ type Handlers = { [K in HttpName]: (input: Input<K>) => Promise<z.output<Routes[
 
 export function createDispatch(core: HelixCore) {
   const handlers: Handlers = {
+    sessionDesign: ({ params }) =>
+      core.sessionDesign ? core.sessionDesign(params.id) : Promise.resolve({ design: null }),
+    changeDesign: ({ params, body }) => {
+      if (!core.changeDesign)
+        throw new HelixError('HARNESS_UNAVAILABLE', 'Visual design is unavailable');
+      return core.changeDesign(params.id, body);
+    },
     health: () => core.health(),
     harnesses: () => core.harnesses(),
     projects: () => core.listProjects(),

@@ -66,7 +66,12 @@ export async function createServer(options: ServerOptions) {
     const domain = isHelixError(error)
       ? error
       : badRequest
-        ? new HelixError('INVALID_REQUEST', 'Invalid request')
+        ? new HelixError(
+            'INVALID_REQUEST',
+            error.statusCode === 413
+              ? 'Reference upload exceeds the request limit (32 MiB for design changes). Remove images or reduce their size.'
+              : 'Invalid request',
+          )
         : new HelixError('INTERNAL_ERROR', 'Internal server error');
     const status = errorStatus[domain.code] ?? 500;
     // Error details are untrusted and can contain stacks, paths or process output.
@@ -129,6 +134,7 @@ export async function createServer(options: ServerOptions) {
     app.route({
       method: route.method,
       url: route.path,
+      ...(name === 'changeDesign' ? { bodyLimit: 32 * 1024 * 1024 } : {}),
       handler: async (request, reply) => {
         const params = parseRequest('params' in route ? route.params : empty, request.params ?? {});
         const query = parseRequest('query' in route ? route.query : empty, request.query ?? {});
