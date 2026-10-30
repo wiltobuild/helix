@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { createHelixClient, HelixApiError, type HelixClient } from '@helix/api-client';
 import {
+  visualDesignRequestSchema,
   boardColumn,
   deriveStatus,
   projectUpTo,
@@ -25,6 +26,8 @@ const usage = `helix [--json] <command>
   plan submit <file.json>
   plan show <planId>
   review submit <file|-> --head <sha>
+  design show <designSessionId>
+  design checkpoint <file.json> --session <designSessionId>
   explain <text> [--session <id>] [--node <id>]
 Environment: HELIX_URL, HELIX_DATA_DIR (default ~/.helix),
   HELIX_SESSION_ID (explain/plan submit/review submit), HELIX_PROJECT_ID (plan submit)`;
@@ -150,6 +153,13 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         if (!['submit', 'show'].includes(rest[0]!)) throw new UsageError(usage);
         if (rest[0] === 'show') planIdSchema.parse(rest[1]);
         break;
+      case 'design':
+        check(2, ['session']);
+        if (!['show', 'checkpoint'].includes(rest[0]!)) throw new UsageError(usage);
+        if (rest[0] === 'show') sessionIdSchema.parse(rest[1]);
+        else if (!values.session)
+          throw new UsageError('design checkpoint requires --session <designSessionId>');
+        break;
       case 'review':
         check(2, ['head']);
         if (rest[0] !== 'submit') throw new UsageError(usage);
@@ -168,6 +178,16 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       default:
         throw new UsageError(usage);
     }
+    const checkpointRequest =
+      command === 'design' && rest[0] === 'checkpoint'
+        ? visualDesignRequestSchema.parse(
+            JSON.parse(await readFile(resolve(cwd, rest[1]!), 'utf8')),
+          )
+        : undefined;
+    if (checkpointRequest && checkpointRequest.action !== 'checkpoint')
+      throw new UsageError(
+        'design checkpoint only accepts action: checkpoint; human approval remains in the UI',
+      );
     const plan =
       command === 'plan' && rest[0] === 'submit'
         ? parsePlanInput(JSON.parse(await readFile(resolve(cwd, rest[1]!), 'utf8')), env)
@@ -245,6 +265,19 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
           mode: values.interrupt ? 'interrupt' : 'queue',
         });
         print(response, `Message accepted for ${rest[0]}`);
+        break;
+      }
+      case 'design': {
+        const response =
+          rest[0] === 'show'
+            ? await client.sessionDesign(sessionIdSchema.parse(rest[1]))
+            : await client.changeDesign(sessionIdSchema.parse(values.session), checkpointRequest!);
+        print(
+          response,
+          response.design
+            ? `Visual design revision ${response.design.revision}: ${response.design.status}`
+            : 'No visual design',
+        );
         break;
       }
       case 'plan': {
