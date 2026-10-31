@@ -53,24 +53,103 @@ import { VisualDesignPanel } from './VisualDesignPanel';
 import { NavPage } from './Pages';
 import { CommitsView, FilesView } from './SessionViews';
 import { NewTaskDialog } from './NewTaskDialog';
-import { Onboarding } from './Onboarding';
+import { readyIntakeSession, type PendingIntakeLaunch } from './intakeModel';
 import { identityFor, traceLabel } from '../data/identity';
 import s from './App.module.css';
 
 export function App() {
   const source = useHelixSource();
-
-  if (source.mode === 'empty') return <Onboarding onAdd={source.addProject} error={source.error} />;
-  if (source.events.length === 0)
-    return (
-      <div className={s.loading}>
-        <Spinner size={18} label="Connecting to Helix" />
-      </div>
-    );
-  return <Workspace key={source.sourceId} events={source.events} source={source} />;
+  const [newTask, setNewTask] = useState<boolean>();
+  const [addRepoOpen, setAddRepoOpen] = useState(false);
+  const [pendingLaunch, setPendingLaunch] = useState<PendingIntakeLaunch | null>(null);
+  const pendingSessionId = readyIntakeSession(pendingLaunch, source.project?.id, source.events);
+  const connected = source.mode === 'empty' || source.mode === 'live';
+  return (
+    <>
+      {source.mode === 'empty' ? (
+        <FirstConversation
+          onStart={() => setNewTask(true)}
+          onRegister={() => setAddRepoOpen(true)}
+        />
+      ) : source.events.length === 0 ? (
+        <div className={s.loading}>
+          <Spinner size={18} label="Connecting to Helix" />
+        </div>
+      ) : (
+        <Workspace
+          key={source.sourceId}
+          events={source.events}
+          source={source}
+          setNewTask={setNewTask}
+          setAddRepoOpen={setAddRepoOpen}
+          pendingSessionId={pendingSessionId}
+          onIntakeOpened={() => setPendingLaunch(null)}
+        />
+      )}
+      <NewTaskDialog
+        open={newTask ?? source.mode === 'empty'}
+        onOpenChange={setNewTask}
+        {...(connected && source.client
+          ? {
+              client: source.client,
+              projects: source.projects,
+              ...(source.project ? { project: source.project } : {}),
+            }
+          : {})}
+        onSelectProject={source.selectProject}
+        onAddProject={() => setAddRepoOpen(true)}
+        onCreated={(id, projectId) => {
+          if (!projectId) return;
+          setPendingLaunch({ id, projectId });
+          if (source.project?.id !== projectId) source.selectProject(projectId);
+        }}
+      />
+      <AddRepositoryDialog
+        open={addRepoOpen}
+        onOpenChange={setAddRepoOpen}
+        demo={!connected}
+        onAdd={source.addProject}
+      />
+    </>
+  );
 }
 
-function Workspace({ events, source }: { events: readonly HelixEvent[]; source: HelixSource }) {
+export function FirstConversation({
+  onStart,
+  onRegister,
+}: {
+  onStart: () => void;
+  onRegister: () => void;
+}) {
+  return (
+    <main className={s.loading}>
+      <div>
+        <h1>Start with an idea.</h1>
+        <p>No repository needed. Let’s work out what to build together.</p>
+        <Button onClick={onStart}>Continue the conversation</Button>
+        <Button variant="ghost" onClick={onRegister}>
+          Connect an existing repository
+        </Button>
+      </div>
+    </main>
+  );
+}
+
+function Workspace({
+  events,
+  source,
+  setNewTask,
+  setAddRepoOpen,
+  pendingSessionId,
+  onIntakeOpened,
+}: {
+  events: readonly HelixEvent[];
+  source: HelixSource;
+  setNewTask: (open: boolean) => void;
+  setAddRepoOpen: (open: boolean) => void;
+  pendingSessionId: string | undefined;
+  onIntakeOpened: () => void;
+}) {
   const run = useRun(events, {
     recorded: source.mode !== 'live',
     speed: source.speed,
@@ -81,10 +160,33 @@ function Workspace({ events, source }: { events: readonly HelixEvent[]; source: 
   });
   if ('error' in run)
     return <HistoryUnavailable error={run.error} events={events} source={source} />;
-  return <ProjectedWorkspace run={run} source={source} />;
+  return (
+    <ProjectedWorkspace
+      run={run}
+      source={source}
+      setNewTask={setNewTask}
+      setAddRepoOpen={setAddRepoOpen}
+      pendingSessionId={pendingSessionId}
+      onIntakeOpened={onIntakeOpened}
+    />
+  );
 }
 
-function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource }) {
+function ProjectedWorkspace({
+  run,
+  source,
+  setNewTask,
+  setAddRepoOpen,
+  pendingSessionId,
+  onIntakeOpened,
+}: {
+  run: RunView;
+  source: HelixSource;
+  setNewTask: (open: boolean) => void;
+  setAddRepoOpen: (open: boolean) => void;
+  pendingSessionId: string | undefined;
+  onIntakeOpened: () => void;
+}) {
   const { bySeq, current } = run;
   const [selectedBuild, setSelectedBuild] = useState<string>();
   const { builds, build, state } = useMemo(
@@ -149,11 +251,30 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
     document.addEventListener('fullscreenchange', changed);
     return () => document.removeEventListener('fullscreenchange', changed);
   }, []);
-  const [newTask, setNewTask] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [addRepoOpen, setAddRepoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!pendingSessionId) return;
+    let cancelled = false;
+    // The source has delivered the destination's session. Apply navigation after this commit;
+    // a source change/unmount cancels the pending handoff instead of opening a stale session.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      run.goLive();
+      setPage('sessions');
+      setSelectedBuild(pendingSessionId);
+      setInspectorHidden(false);
+      setSelected(pendingSessionId);
+      setInspectorTab('summary');
+      setTab('plan');
+      onIntakeOpened();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingSessionId, onIntakeOpened, run]);
 
   const selectSession = (id: string, tab = 'summary') => {
     const owner = builds.find((b) => b.sessionIds.some((sessionId) => sessionId === id));
@@ -583,18 +704,6 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
         />
       )}
 
-      <NewTaskDialog
-        open={newTask}
-        onOpenChange={setNewTask}
-        {...(live && source.client && source.project
-          ? { client: source.client, project: source.project }
-          : {})}
-        onCreated={(id) => {
-          run.goLive();
-          openFromPage(id);
-        }}
-      />
-
       <SearchDialog
         open={searchOpen}
         onOpenChange={setSearchOpen}
@@ -627,13 +736,6 @@ function ProjectedWorkspace({ run, source }: { run: RunView; source: HelixSource
           setSettingsOpen(false);
           setAddRepoOpen(true);
         }}
-      />
-
-      <AddRepositoryDialog
-        open={addRepoOpen}
-        onOpenChange={setAddRepoOpen}
-        demo={!live}
-        onAdd={source.addProject}
       />
     </div>
   );
