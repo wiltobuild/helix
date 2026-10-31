@@ -51,6 +51,7 @@ import { Inspector } from './Inspector';
 import { PlanView } from './PlanView';
 import { OutputWorkspace } from './OutputWorkspace';
 import { VisualDesignPanel } from './VisualDesignPanel';
+import { DesignReturnBanner } from './DesignReturnBanner';
 import { NavPage } from './Pages';
 import { CommitsView, FilesView } from './SessionViews';
 import { NewTaskDialog } from './NewTaskDialog';
@@ -577,16 +578,7 @@ function ProjectedWorkspace({
           <>
             <div className={s.content}>
               {tab !== 'visual' && hasVisualDesign && (
-                <div className={s.planBanner} role="status">
-                  <span>
-                    {needsVisualDecision
-                      ? 'A visual direction needs your input.'
-                      : 'The approved visual direction is available.'}
-                  </span>
-                  <Button size="sm" onClick={() => setTab('visual')}>
-                    Open design workspace
-                  </Button>
-                </div>
+                <DesignReturnBanner pending={needsVisualDecision} onOpen={() => setTab('visual')} />
               )}
               {tab === 'output' && (
                 <OutputWorkspace
