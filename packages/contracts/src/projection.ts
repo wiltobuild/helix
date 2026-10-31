@@ -30,6 +30,8 @@ export type SessionState = {
   chat: ChatItem[];
   lastEventSeq: number;
   pendingApprovalIds: ApprovalId[];
+  /** Exact-file verification failed on this PR head. A new head must pass CI and verification. */
+  acceptanceFailedHeads?: string[];
   /**
    * Workers only: the latest cross-agent review of this worker's PR. It describes `headSha`; once
    * the PR head moves on, the review is stale and the PR waits for a new one.
@@ -505,9 +507,11 @@ function reduceInto(
       break;
     }
     case 'pr.opened':
-    case 'pr.updated':
-      getSession().pr = structuredClone(e.payload.pr);
+    case 'pr.updated': {
+      const s = getSession();
+      s.pr = structuredClone(e.payload.pr);
       break;
+    }
     case 'ci.updated':
     case 'review.updated':
     case 'pr.merged': {
@@ -547,6 +551,12 @@ function reduceInto(
       break;
     case 'feedback.routed': {
       const s = sessionFor(next, e.payload.toSessionId);
+      if (
+        e.payload.reason === 'acceptance_failed' &&
+        s.pr?.number === e.payload.prNumber &&
+        !s.acceptanceFailedHeads?.includes(s.pr.headSha)
+      )
+        s.acceptanceFailedHeads = [...(s.acceptanceFailedHeads ?? []), s.pr.headSha];
       s.chat.push({ kind: 'message', role: 'system', text: e.payload.summary });
       s.lastEventSeq = e.seq;
       break;
@@ -557,6 +567,13 @@ function reduceInto(
         s.chat.push({ kind: 'message', role: 'system', text: e.payload.text });
         if (e.payload.code === 'turn_limit_reached') s.turnLimited = true;
         else if (e.payload.code === 'turn_limit_extended') s.turnLimited = false;
+        else if (e.payload.code === 'acceptance_verified' && s.pr) {
+          const remaining = (s.acceptanceFailedHeads ?? []).filter(
+            (head) => head !== s.pr!.headSha,
+          );
+          if (remaining.length) s.acceptanceFailedHeads = remaining;
+          else delete s.acceptanceFailedHeads;
+        }
       } else if (e.planNodeId) {
         const plan = planForNode(next, e.planNodeId);
         const s = sessionFor(next, plan.orchestratorSessionId);

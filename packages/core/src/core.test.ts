@@ -318,6 +318,9 @@ test('golden plan → PR → CI repair → approval → merge → dependent work
   const started = related.find((e) => e.type === 'session.started')!;
   expect(tree.causedBy).toBe(created.seq);
   expect(started.causedBy).toBe(tree.seq);
+  expect(f.state(f.p.id).sessions[f.api]!.session.prompt).toContain(
+    'Acceptance criteria:\n- Tests pass\n- Errors are documented',
+  );
   expect(related.find((e) => e.type === 'reasoning.summary')).toMatchObject({
     causedBy: f.routed.seq,
     planNodeId: nodes[0]!.id,
@@ -341,6 +344,182 @@ test('same inputs produce byte-identical event logs', async () => {
   const first = await golden();
   const second = await golden();
   expect(JSON.stringify(first.store.events)).toBe(JSON.stringify(second.store.events));
+});
+
+test('resubmitted plan exact bytes block review until a corrected head passes fresh CI', async () => {
+  const codex = new FakeHarness();
+  const claude = new FakeHarness();
+  claude.detect.mockResolvedValue({ agent: 'claude-code', installed: true, signedIn: true });
+  const f = fixture({ crossReview: true, harnesses: { codex, 'claude-code': claude } });
+  const p = await f.add();
+  const orchestrator = await f.core.createSession(
+    p.id,
+    { ...request, title: 'Planner', planWithOrchestrator: true },
+    'exact-planner',
+  );
+  const rejected = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'First draft',
+    nodes: [nodes[0]!],
+  });
+  await f.core.decidePlan(rejected.id, { decision: 'reject', reason: 'Specify the exact bytes' });
+  const expected = '# Helix smoke case B\nSignal: orchard-17.\n';
+  const node: PlanNode = {
+    ...nodes[0]!,
+    id: planNodeIdSchema.parse('api-v2'),
+    files: ['CASE-B.md'],
+    exactFiles: [{ path: 'CASE-B.md', content: expected }],
+  };
+  const submitted = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'Verify the exact signal',
+    nodes: [node],
+  });
+  await f.core.decidePlan(submitted.id, { decision: 'approve' });
+  const workerId = f.state(p.id).plans[submitted.id]!.nodes[0]!.sessionId!;
+  const handle = codex.handles.get(workerId)!;
+  expect(f.state(p.id).sessions[workerId]!.session.prompt).toContain(JSON.stringify(expected));
+  f.git.ahead = 1;
+  handle.emit(activity('idle'));
+  await f.drain();
+  const firstPr = f.state(p.id).sessions[workerId]!.pr!;
+  f.git.committedFiles.set(
+    'head-1:CASE-B.md',
+    new TextEncoder().encode(expected.replace('17.', '17')),
+  );
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: firstPr.number, checks: green },
+  });
+  await f.drain();
+  expect(f.git.readCommittedFile).toHaveBeenCalledWith(expect.any(String), 'head-1', 'CASE-B.md');
+  expect(f.store.events.filter((event) => event.type === 'agent_review.requested')).toHaveLength(0);
+  expect(f.store.events.filter((event) => event.type === 'feedback.routed').at(-1)).toMatchObject({
+    payload: { reason: 'acceptance_failed', toSessionId: workerId },
+  });
+  expect(handle.send).toHaveBeenLastCalledWith(expect.stringContaining('byte for byte'), 'queue');
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-1');
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'review.updated',
+    payload: { prNumber: firstPr.number, review: { decision: 'approved', unresolvedThreads: 0 } },
+  });
+  await f.drain();
+  expect(deriveStatus(f.state(p.id).sessions[workerId]!)).toBe('changes_requested');
+  await expect(f.core.merge(workerId)).rejects.toMatchObject({ code: 'MERGE_BLOCKED' });
+  expect(f.scm.merge).not.toHaveBeenCalled();
+
+  // Even a head update carrying stale green checks cannot slip past the merge-time byte check.
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'pr.updated',
+    payload: {
+      pr: {
+        ...f.state(p.id).sessions[workerId]!.pr!,
+        headSha: 'unverified-head',
+        checks: green,
+        review: { decision: 'approved', unresolvedThreads: 0 },
+      },
+    },
+  });
+  await f.drain();
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-1');
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'pr.updated',
+    payload: {
+      pr: {
+        ...firstPr,
+        headSha: 'head-1',
+        checks: green,
+        review: { decision: 'approved', unresolvedThreads: 0 },
+      },
+    },
+  });
+  await f.drain();
+  expect(deriveStatus(f.state(p.id).sessions[workerId]!)).toBe('changes_requested');
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'pr.updated',
+    payload: {
+      pr: {
+        ...firstPr,
+        headSha: 'unverified-head',
+        checks: green,
+        review: { decision: 'approved', unresolvedThreads: 0 },
+      },
+    },
+  });
+  await f.drain();
+  const readsBeforeMerge = f.git.readCommittedFile.mock.calls.length;
+  await expect(f.core.merge(workerId)).rejects.toMatchObject({ code: 'MERGE_BLOCKED' });
+  expect(f.git.readCommittedFile.mock.calls.length).toBeGreaterThan(readsBeforeMerge);
+  expect(f.scm.merge).not.toHaveBeenCalled();
+
+  f.git.committedFiles.set('fixed-head:CASE-B.md', new TextEncoder().encode(expected));
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'pr.updated',
+    payload: { pr: { ...firstPr, headSha: 'fixed-head' } },
+  });
+  f.scm.emit(p.id, firstPr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: firstPr.number, checks: green },
+  });
+  await f.drain();
+  expect(f.store.events.filter((event) => event.type === 'agent_review.requested')).toHaveLength(1);
+  expect(f.store.events.find((event) => event.type === 'agent_review.requested')).toMatchObject({
+    payload: { headSha: 'fixed-head', workerSessionId: workerId },
+  });
+});
+
+test('a recovered Git read retries automatically on the same immutable head', async () => {
+  const codex = new FakeHarness();
+  const claude = new FakeHarness();
+  claude.detect.mockResolvedValue({ agent: 'claude-code', installed: true, signedIn: true });
+  const f = fixture({
+    crossReview: true,
+    harnesses: { codex, 'claude-code': claude },
+    acceptanceRetryMs: 50,
+  });
+  const p = await f.add();
+  const orchestrator = await f.core.createSession(
+    p.id,
+    { ...request, title: 'Planner', planWithOrchestrator: true },
+    'git-recovery-planner',
+  );
+  const exact = 'Signal: orchard-17.\n';
+  const plan = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'Verify a complete file',
+    nodes: [
+      { ...nodes[0]!, files: ['CASE-B.md'], exactFiles: [{ path: 'CASE-B.md', content: exact }] },
+    ],
+  });
+  await f.core.decidePlan(plan.id, { decision: 'approve' });
+  const workerId = f.state(p.id).plans[plan.id]!.nodes[0]!.sessionId!;
+  f.git.ahead = 1;
+  codex.handles.get(workerId)!.emit(activity('idle'));
+  await f.drain();
+  const pr = f.state(p.id).sessions[workerId]!.pr!;
+  f.git.committedFiles.set('head-1:CASE-B.md', new TextEncoder().encode(exact));
+  f.git.readCommittedFile.mockRejectedValueOnce(new Error('temporary Git read failure'));
+  f.scm.emit(p.id, pr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: pr.number, checks: green },
+  });
+  await f.drain();
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-1');
+  expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(0);
+  await vi.waitFor(async () => {
+    await f.drain();
+    expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
+  });
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toBeUndefined();
+  expect(
+    f.store.events.find(
+      (e) => e.type === 'explain.note' && e.payload.code === 'acceptance_verified',
+    ),
+  ).toBeTruthy();
+  expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
 });
 
 test('retry sends the initial prompt even when a failed launch already captured a resume token', async () => {

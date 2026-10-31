@@ -328,8 +328,21 @@ test('reviewer prompt exports a valid verdict example and names task, base and r
     'helix review submit',
     'blocker or',
     'major issues',
+    'compare the literal characters',
   ])
     expect(prompt).toContain(text);
+  expect(
+    reviewerPrompt({
+      project: fixtures.crossReviewProject,
+      worker,
+      reviewer: template,
+      pr,
+      node: {
+        ...fixtures.passwordResetPlan.nodes[0]!,
+        exactFiles: [{ path: 'CASE-B.md', content: 'Signal: orchard-17.\n' }],
+      },
+    }),
+  ).toContain('CASE-B.md: "Signal: orchard-17.\\n"');
 });
 
 test('Claude reviewers read the worktree under review without a prompt, but nothing else', () => {

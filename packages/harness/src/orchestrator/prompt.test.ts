@@ -18,6 +18,8 @@ test('public prompt export loads the Markdown and includes planning rules', asyn
     'dependsOn',
     'description',
     'acceptance',
+    'exactFiles: [{"path":"CASE-B.md"',
+    'prose alone cannot trigger that check',
     'non-empty',
     'repository-relative globs',
     'rationale',
