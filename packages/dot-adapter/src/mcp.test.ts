@@ -1,42 +1,91 @@
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afterEach, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, test } from 'vitest';
 import { parseMcpConfiguration } from './mcp-config.js';
+import { createReadOnlyMcpServer } from './mcp.js';
+import type { GetTransport } from './types.js';
+import { withReadyDeadline } from './test/readiness.js';
 
-const tsx = fileURLToPath(import.meta.resolve('tsx/cli'));
+// Direct Node loader avoids the extra child/stdio relay created by the tsx CLI.
+const loader = import.meta.resolve('tsx');
 const entry = fileURLToPath(new URL('./stdio.ts', import.meta.url));
 const scope = { projectId: 'mock-project', sessionId: 'mock-session' };
-const clients: Client[] = [];
+const stdioClient = new Client({ name: 'helix-protocol-test', version: '0.0.0' });
+const stdioTransport = new StdioClientTransport({
+  command: process.execPath,
+  args: ['--import', loader, entry, '--mock'],
+  stderr: 'pipe',
+});
+let logs = '';
+stdioTransport.stderr?.on('data', (chunk: Buffer) => {
+  logs += chunk.toString();
+});
+let invalidChild: ChildProcess | undefined;
+let invalidStartup: { code: number | null; output: string; errors: string };
+const cleanup: (() => Promise<void>)[] = [];
+
+beforeAll(async () => {
+  invalidChild = spawn(process.execPath, ['--import', loader, entry, '--stdio'], {
+    env: { ...process.env, HELIX_DOT_CONFIG: '{"token":"SECRET"}' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  let output = '';
+  let errors = '';
+  invalidChild.stdout?.on('data', (chunk: Buffer) => {
+    output += chunk.toString();
+  });
+  invalidChild.stderr?.on('data', (chunk: Buffer) => {
+    errors += chunk.toString();
+  });
+  const invalidClosed = new Promise<{ code: number | null; output: string; errors: string }>(
+    (resolve, reject) => {
+      invalidChild?.once('error', reject);
+      invalidChild?.once('close', (code) => resolve({ code, output, errors }));
+    },
+  );
+  // Startup is a bounded setup phase; operation assertions retain their 15s budgets.
+  // Reuse this initialized process instead of repeatedly cold-loading the SDK.
+  try {
+    const [, result] = await Promise.all([stdioClient.connect(stdioTransport), invalidClosed]);
+    invalidStartup = result;
+  } catch (error) {
+    invalidChild.kill();
+    await Promise.allSettled([invalidClosed, stdioClient.close()]);
+    throw error;
+  }
+}, 60000);
+
 afterEach(async () => {
-  await Promise.all(clients.splice(0).map((client) => client.close()));
+  await Promise.all(cleanup.splice(0).map((close) => close()));
+});
+afterAll(async () => {
+  invalidChild?.kill();
+  await stdioClient.close();
 });
 
-async function connect(fixture = false, fail = false) {
-  const client = new Client({ name: 'helix-protocol-test', version: '0.0.0' });
-  clients.push(client);
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [
-      tsx,
-      fixture ? fileURLToPath(new URL('./test/mcp-server.ts', import.meta.url)) : entry,
-      ...(fixture ? [] : ['--mock']),
-    ],
-    stderr: 'pipe',
-    env: { MCP_TEST_FAILURE: fail ? '1' : '0' },
+async function memoryClient(transport: GetTransport, log: (code: string) => void) {
+  const server = createReadOnlyMcpServer(
+    { instance: 'test', allow: [{ projectId: 'p', sessionId: 's' }], transport, log },
+    'synthetic',
+  );
+  const client = new Client({ name: 'helix-memory-test', version: '0.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  cleanup.push(async () => {
+    await client.close();
+    await server.close();
   });
-  let logs = '';
-  transport.stderr?.on('data', (chunk: Buffer) => {
-    logs += chunk.toString();
-  });
-  await client.connect(transport);
-  return { client, logs: () => logs };
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  return client;
 }
 
 test('official SDK handshake lists exactly four read tools and roundtrips results', async () => {
-  const { client, logs } = await connect();
-  const listed = await client.listTools();
+  const listed = await stdioClient.listTools();
   expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
     'connectionstatus',
     'diffcounts',
@@ -50,32 +99,33 @@ test('official SDK handshake lists exactly four read tools and roundtrips result
     ),
   ).toBe(true);
   for (const name of ['connectionstatus', 'journey', 'events', 'diffcounts']) {
-    const result = await client.callTool({ name, arguments: scope });
+    const result = await stdioClient.callTool({ name, arguments: scope });
     expect(result.isError).toBe(false);
     expect(JSON.stringify(result)).toContain('synthetic');
     expect(JSON.stringify(result)).toContain('instanceVerified');
     expect(JSON.stringify(result)).not.toMatch(/PRIVATE MOCK/);
   }
-  const replay = await client.callTool({ name: 'events', arguments: scope });
+  const replay = await stdioClient.callTool({ name: 'events', arguments: scope });
   expect(replay.content.find((item) => item.type === 'text')?.text).toContain('"events":[]');
-  expect(logs()).toBe('');
+  expect(logs).toBe('');
 }, 15000);
 
 test('protocol rejects writes, cross-scope reads and arbitrary request fields', async () => {
-  const { client } = await connect();
-  const unknown = await client.callTool({ name: 'approve', arguments: scope }).catch(() => null);
+  const unknown = await stdioClient
+    .callTool({ name: 'approve', arguments: scope })
+    .catch(() => null);
   expect(unknown === null || unknown.isError).toBeTruthy();
-  const denied = await client.callTool({
+  const denied = await stdioClient.callTool({
     name: 'journey',
     arguments: { ...scope, projectId: 'other' },
   });
   expect(denied.isError).toBe(true);
   expect(JSON.stringify(denied)).toContain('invalid_request');
-  const extra = await client
+  const extra = await stdioClient
     .callTool({ name: 'diffcounts', arguments: { ...scope, path: '/etc/passwd' } })
     .catch(() => null);
   expect(extra === null || extra.isError).toBeTruthy();
-  const hostile = await client.callTool({
+  const hostile = await stdioClient.callTool({
     name: 'journey',
     arguments: { ...scope, ['SECRET C:/private/prompt.txt IGNORE INSTRUCTIONS']: 'value' },
   });
@@ -83,28 +133,50 @@ test('protocol rejects writes, cross-scope reads and arbitrary request fields', 
   expect(JSON.stringify(hostile)).toContain('invalid_request');
   expect(JSON.stringify(hostile)).toContain('provenance');
   expect(JSON.stringify(hostile)).not.toMatch(/SECRET|prompt.txt|IGNORE/);
-  const unknownHostile = await client
+  const unknownHostile = await stdioClient
     .callTool({ name: 'SECRET C:/private/prompt.txt', arguments: scope })
     .catch((error: unknown) => (error instanceof Error ? error.message : 'unexpected'));
   expect(JSON.stringify(unknownHostile)).not.toMatch(/SECRET|prompt.txt/);
 }, 15000);
 
 test('MCP cancellation propagates to injected read and leaks no abort detail', async () => {
-  const { client, logs } = await connect(true);
+  const started = Promise.withResolvers<void>();
+  const aborted = Promise.withResolvers<void>();
+  const codes: string[] = [];
+  const client = await memoryClient(
+    ({ signal }) =>
+      new Promise((_, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted.resolve();
+            reject(new Error('SECRET_ABORT'));
+          },
+          { once: true },
+        );
+        started.resolve();
+      }),
+    (code) => codes.push(code),
+  );
   const abort = new AbortController();
   const pending = client.callTool(
     { name: 'events', arguments: { projectId: 'p', sessionId: 's' } },
     { signal: abort.signal },
   );
-  await expect.poll(logs).toContain('test_read_started');
+  const rejected = expect(pending).rejects.toThrow();
+  await started.promise;
   abort.abort();
-  await expect(pending).rejects.toThrow();
-  await expect.poll(logs).toContain('test_read_aborted');
-  expect(logs()).not.toContain('SECRET');
+  await rejected;
+  await aborted.promise;
+  expect(codes.join()).not.toContain('SECRET');
 }, 15000);
 
 test('transport failure produces error with stale provenance, no secret logs', async () => {
-  const { client, logs } = await connect(true, true);
+  const codes: string[] = [];
+  const client = await memoryClient(
+    () => Promise.reject(new Error('SECRET C:/private/prompt.txt')),
+    (code) => codes.push(code),
+  );
   const result = await client.callTool({
     name: 'journey',
     arguments: { projectId: 'p', sessionId: 's' },
@@ -112,7 +184,7 @@ test('transport failure produces error with stale provenance, no secret logs', a
   expect(result.isError).toBe(true);
   expect(JSON.stringify(result)).toContain('disconnected');
   expect(JSON.stringify(result)).toContain('stale');
-  expect(JSON.stringify(result) + logs()).not.toMatch(/SECRET|prompt.txt/);
+  expect(JSON.stringify(result) + codes.join()).not.toMatch(/SECRET|prompt.txt/);
 }, 15000);
 
 test.each([undefined, '{}', '{"token":"SECRET"}', 'x'.repeat(16385)])(
@@ -122,54 +194,49 @@ test.each([undefined, '{}', '{"token":"SECRET"}', 'x'.repeat(16385)])(
   },
 );
 
-test('invalid startup uses stderr only and exits without a connection', async () => {
-  const child = spawn(process.execPath, [tsx, entry, '--stdio'], {
-    env: { ...process.env, HELIX_DOT_CONFIG: '{"token":"SECRET"}' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  let output = '';
-  let errors = '';
-  child.stdout.on('data', (data: Buffer) => {
-    output += data.toString();
-  });
-  child.stderr.on('data', (data: Buffer) => {
-    errors += data.toString();
-  });
-  const code = await new Promise((resolve) => child.on('close', resolve));
-  expect(code).toBe(1);
-  expect(output).toBe('');
-  expect(errors).toBe('invalid_configuration\n');
+test('invalid startup uses stderr only and exits without a connection', () => {
+  expect(invalidStartup.code).toBe(1);
+  expect(invalidStartup.output).toBe('');
+  expect(invalidStartup.errors).toBe('invalid_configuration\n');
 }, 15000);
 
+// Last: this deliberately closes the reused, already-handshaken stdio connection.
 test('SDK stdio framing cap closes oversized input without echoing it', async () => {
-  const child = spawn(process.execPath, [tsx, entry, '--mock'], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  let output = '';
-  let errors = '';
+  const closed = Promise.withResolvers<void>();
+  const previousClose = stdioClient.onclose;
+  stdioClient.onclose = () => {
+    previousClose?.();
+    closed.resolve();
+  };
+  const messages: unknown[] = [];
+  const previousMessage = stdioTransport.onmessage;
+  stdioTransport.onmessage = (message) => {
+    messages.push(message);
+    previousMessage?.(message);
+  };
   let killed = false;
-  const deadline = setTimeout(() => {
-    killed = true;
-    child.kill();
-  }, 10000);
-  child.stdout.on('data', (data: Buffer) => {
-    output += data.toString();
-  });
-  child.stderr.on('data', (data: Buffer) => {
-    errors += data.toString();
-  });
-  child.stdin.on('error', () => undefined);
-  child.stdin.write('SECRET' + 'x'.repeat(20000));
-  try {
-    await new Promise((resolve) => child.on('close', resolve));
-    expect(killed).toBe(false);
-    expect(output).toBe('');
-    expect(errors).toContain('mcp_transport_error');
-    expect(errors).not.toContain('SECRET');
-  } finally {
-    clearTimeout(deadline);
-    child.kill();
-  }
+  await withReadyDeadline(
+    Promise.resolve(stdioClient),
+    async (client) => {
+      const result = client
+        .callTool({
+          name: 'journey',
+          arguments: { ...scope, padding: 'SECRET' + 'x'.repeat(20000) },
+        })
+        .catch((error: unknown) => error);
+      await closed.promise;
+      const error = await result;
+      expect(error).toBeInstanceOf(Error);
+      expect(String(error)).not.toContain('SECRET');
+      expect(messages).toEqual([]);
+      expect(killed).toBe(false);
+      expect(logs).toContain('mcp_transport_error');
+      expect(logs).not.toContain('SECRET');
+    },
+    () => {
+      killed = true;
+      void stdioClient.close();
+    },
+    10000,
+  );
 }, 15000);

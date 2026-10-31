@@ -1,5 +1,36 @@
 # Issue 97: Dot-to-Helix read-only adapter
 
+## MCP test lifecycle follow-up (October 31)
+
+Central candidate `0c31d41` failed two MCP tests under parallel repository load.
+The coordinator log (`task-5/dot-local-full-check.log`, lines 738 onward) records
+25 seconds of imports, a 15-second handshake-test deadline and the framing
+watchdog killing its child. Both tests included cold TypeScript/SDK startup in
+operation budgets; that evidence does not establish a post-ready shutdown hang.
+
+The tests now initialize and reuse one real stdio mock in a bounded 60-second
+setup phase, using Node's direct tsx loader to avoid the CLI relay process.
+Operation tests retain their 15-second deadlines; the oversized-frame shutdown
+watchdog retains 10 seconds and starts after the SDK handshake. The framing test
+requires no protocol response, no secret in the caught error or stderr, and exit
+without watchdog intervention. Cancellation and read-failure cases use the
+official in-memory SDK transport with explicit start/abort events, removing
+repeated child startup and polling. Runtime server code and budgets are unchanged.
+
+A deterministic regression advances fake time by 20 seconds before readiness.
+It failed with the previous eager-watchdog scheduling (expiry occurred before
+readiness), then passed when the operation deadline was armed after readiness.
+It also proves the unchanged 10-second deadline still fires after readiness.
+This is controlled startup-delay evidence, not a simulated full CPU-load run.
+
+Focused validation: 71 tests in four files passed; the standalone `mcp:proof`
+completed the official SDK handshake and all four synthetic calls. Typecheck,
+lint, formatting and whitespace checks are recorded with the final commit.
+Independent Sol review found no remaining blockers in this test-only correction. Full parallel
+repository validation is still pending the coordinator's explicit slot; the
+unrelated web recording test failure is outside this package's ownership.
+No live Helix request, dependency change or service activation was performed.
+
 ## Dependency integration follow-up
 
 The coordinator authorized this isolated package manifest, root lockfile patch and
