@@ -53,6 +53,7 @@ test('hosts only an immutable committed export on a free private loopback listen
     );
     expect((await fetch(preview.url + 'app/index.html')).status).toBe(404);
     const wrapperText = await wrapper.text();
+    expect(wrapperText).toContain("fetch(frame.src, {method:'HEAD', credentials:'omit'})");
     const nonce = /script nonce="([a-f0-9]+)"/.exec(wrapperText)![1]!;
     // Wrapper launch ticket is single-use; this HTTP test does not prove browser interaction.
     expect(wrapperText).not.toContain('RTCPeerConnection');

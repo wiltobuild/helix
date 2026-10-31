@@ -240,10 +240,14 @@ function outputWrapper(appRoot: string, nonce: string): string {
       const {capability} = await response.json();
       if(finished) return;
       frame = document.createElement('iframe'); frame.title = 'Generated application'; frame.setAttribute('sandbox','allow-scripts allow-forms'); frame.referrerPolicy='no-referrer'; frame.src='${appRoot}' + capability + '/index.html';
-      frame.onload = () => {
+      frame.onload = async () => {
         if(finished) return;
-        finished = true; clearTimeout(timer); status.remove();
-        parent.postMessage({type:'helix-output-ready',load:location.hash}, '*');
+        try {
+          const documentResponse = await fetch(frame.src, {method:'HEAD', credentials:'omit'});
+          if(!documentResponse.ok || finished) throw Error('Preview document unavailable');
+          finished = true; clearTimeout(timer); status.remove();
+          parent.postMessage({type:'helix-output-ready',load:location.hash}, '*');
+        } catch { fail(); }
       };
       frame.onerror = fail;
       document.body.appendChild(frame);
