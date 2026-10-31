@@ -151,7 +151,7 @@ test('fresh and reset wrapper documents wait for application load and fail close
         title: '',
         src: '',
         referrerPolicy: '',
-        onload: undefined as (() => void) | undefined,
+        onload: undefined as (() => Promise<void>) | undefined,
         onerror: undefined as (() => void) | undefined,
         removed: false,
         setAttribute() {},
@@ -191,11 +191,11 @@ test('fresh and reset wrapper documents wait for application load and fail close
       expect(frame.src).toMatch(/\/app\/[a-f0-9]{48}\/index\.html$/);
       if (load === '#1-1') {
         timeout!();
-        frame.onload!();
+        await frame.onload!();
         expect(frame.removed).toBe(true);
         expect(messages).toEqual([{ type: 'helix-output-unavailable', load }]);
       } else {
-        frame.onload!();
+        await frame.onload!();
         timeout!();
         expect(frame.removed).toBe(false);
         expect(messages).toEqual([{ type: 'helix-output-ready', load }]);
