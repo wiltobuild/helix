@@ -1,5 +1,7 @@
 import { mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { access, chmod, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Project, Session } from '@helix/contracts';
@@ -63,12 +65,17 @@ export function sessionEnvironment(dataDir: string, base: NodeJS.ProcessEnv) {
 }
 
 /**
- * The folder an orchestrator writes its plan artifact to, created on demand. A real native path:
- * on Windows, Claude Code's Write tool and its Git Bash shell disagree about where `/tmp` is.
+ * The folder an orchestrator writes its plan artifact to, created on demand.
+ * Keep it under the native OS temporary directory, which is already writable by
+ * workspace-write agents, while isolating each Helix data directory and session.
+ * On Windows, Claude Code's Write tool and Git Bash disagree about `/tmp`, so
+ * the prompt uses this native absolute path instead.
  */
 export function orchestratorScratch(dataDir: string, session: Pick<Session, 'id'>): string {
-  const dir = join(resolve(dataDir), 'scratch', session.id);
-  mkdirSync(dir, { recursive: true });
+  const namespace = createHash('sha256').update(resolve(dataDir)).digest('hex').slice(0, 16);
+  const sessionKey = createHash('sha256').update(session.id).digest('hex').slice(0, 16);
+  const dir = join(tmpdir(), 'helix-plan-scratch', namespace, sessionKey);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 

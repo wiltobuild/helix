@@ -1,13 +1,18 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
-import { fixtures } from '@helix/contracts';
-import { GIT_BASH_SHIM, launcherContents, sessionEnvironment } from './helix-launcher.js';
+import { fixtures, sessionIdSchema } from '@helix/contracts';
+import {
+  GIT_BASH_SHIM,
+  launcherContents,
+  orchestratorScratch,
+  sessionEnvironment,
+} from './helix-launcher.js';
 import { createRealCore } from './real-core.js';
 import { startDaemon } from './lifecycle.js';
 
@@ -30,7 +35,15 @@ test('orchestrators and reviewers receive CLI discovery, identity and a prepende
     PATH: join(dataDir, 'bin') + delimiter + 'base-path',
   };
   // Orchestrators also get a scratch folder for their plan artifact, created on demand.
-  const scratch = join(dataDir, 'scratch', session.id);
+  const scratch = orchestratorScratch(dataDir, session);
+  expect(scratch.startsWith(join(tmpdir(), 'helix-plan-scratch') + sep)).toBe(true);
+  expect(scratch.startsWith(dataDir + sep)).toBe(false);
+  const unsafeIdScratch = orchestratorScratch(dataDir, {
+    id: sessionIdSchema.parse('../../outside'),
+  });
+  expect(unsafeIdScratch.startsWith(join(tmpdir(), 'helix-plan-scratch') + sep)).toBe(true);
+  expect(unsafeIdScratch).not.toContain('outside');
+  rmSync(unsafeIdScratch, { recursive: true, force: true });
   expect(env({ project, session: { ...session, role: 'orchestrator' } })).toEqual({
     ...shared,
     HELIX_SCRATCH_DIR: scratch,
@@ -47,6 +60,7 @@ test('orchestrators and reviewers receive CLI discovery, identity and a prepende
   expect(base).toEqual(
     process.platform === 'win32' ? { Path: 'base-path' } : { PATH: 'base-path' },
   );
+  rmSync(scratch, { recursive: true, force: true });
 });
 
 test('launcher templates quote workspace paths and forward all arguments', () => {

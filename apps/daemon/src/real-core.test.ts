@@ -18,6 +18,7 @@ import {
   resolveGitHubToken,
 } from './real-core.js';
 import { startDaemon } from './lifecycle.js';
+import { orchestratorScratch } from './helix-launcher.js';
 
 vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof import('node:child_process')>()),
@@ -94,7 +95,7 @@ test('real composition runs without SCM and closes its store exactly once', asyn
       session: fixtures.passwordResetRun.find(isEventOf('session.created'))!.payload.session,
     };
     expect(deps.orchestratorPrompt!(ctx)).toBe(
-      orchestratorPrompt({ ...ctx, scratchDir: join(dataDir, 'scratch', ctx.session.id) }),
+      orchestratorPrompt({ ...ctx, scratchDir: orchestratorScratch(dataDir, ctx.session) }),
     );
     expect(deps.reviewerPrompt).toBe(reviewerPrompt);
     expect(deps.crossReview).toBe(true);
@@ -154,6 +155,28 @@ test('HELIX_GITHUB=off never looks up a GitHub token', async () => {
     expect(vi.mocked(createHelixCore).mock.calls.at(-1)![0].crossReview).toBe(false);
     expect(vi.mocked(spawn).mock.calls.some(([cmd]) => cmd === 'gh')).toBe(false);
     expect(info.mock.calls.map((c) => String(c[0])).join('\n')).toContain('HELIX_GITHUB=off');
+  } finally {
+    await core.shutdown();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('setup reports the GitHub connection established at startup', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'helix-github-setup-'));
+  vi.mocked(spawn).mockImplementation((command) =>
+    command === 'gh' ? gh('existing-token\n') : gh('', 1),
+  );
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
+  const core = await createRealCore({ dataDir, env: {} });
+  try {
+    // The CLI probe can later be slow or unavailable without disconnecting the
+    // SCM instance that was already configured when the daemon started.
+    vi.mocked(spawn).mockImplementation(() => gh('', 1));
+    expect((await core.setup!()).github).toMatchObject({
+      status: 'on',
+      tokenResolved: true,
+    });
+    expect(fetch).toHaveBeenCalled();
   } finally {
     await core.shutdown();
     await rm(dataDir, { recursive: true, force: true });

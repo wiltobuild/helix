@@ -760,6 +760,28 @@ describe('lifecycle, diffs and transport', () => {
     await f.drain();
     expect(f.scm.openPr).not.toHaveBeenCalled();
   });
+  test('a draft PR opt-in follows an approved orchestrated plan to its worker', async () => {
+    const f = fixture();
+    const p = await f.add();
+    const orchestrator = await f.core.createSession(
+      p.id,
+      { ...request, planWithOrchestrator: true, draftPr: true },
+      'draft-planner',
+    );
+    const submitted = await f.core.submitPlan({
+      projectId: p.id,
+      orchestratorSessionId: orchestrator.id,
+      goal: 'One bounded draft task',
+      nodes: [nodes[0]!],
+    });
+    await f.core.decidePlan(submitted.id, { decision: 'approve' });
+    const workerId = f.state(p.id).plans[submitted.id]!.nodes[0]!.sessionId!;
+    expect(f.state(p.id).sessions[workerId]!.session.draftPr).toBe(true);
+    f.git.ahead = 1;
+    f.harness.handles.get(workerId)!.emit(activity('idle'));
+    await f.drain();
+    expect(f.scm.openPr).toHaveBeenCalledWith(expect.objectContaining({ draft: true }));
+  });
   test('events, health, harness discovery, explain and recordings obey contracts', async () => {
     const f = fixture();
     const p = await f.add();

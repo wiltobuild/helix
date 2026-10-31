@@ -85,6 +85,7 @@ export const createSessionRequestSchema = z.strictObject({
   model: z.string().min(1).optional(),
   interface: sessionInterfaceSchema,
   planWithOrchestrator: z.boolean().optional(),
+  draftPr: z.boolean().optional(),
 });
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 export const messageModeSchema = z.enum(['queue', 'interrupt']);

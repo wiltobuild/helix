@@ -170,7 +170,10 @@ export async function createRealCore(options: {
       changeDiscovery: intake.changeDiscovery,
       projectIntake: intake.projectIntake,
       changeIntake: intake.changeIntake,
-      setup: createSetupChecks({ env, dataDir, resolveToken: () => resolveGitHubToken(env, 2500) }),
+      // Report the SCM connection actually established at startup. Re-probing the
+      // keyring with a shorter timeout can misleadingly show GitHub as unavailable
+      // while the already configured SCM is publishing PRs.
+      setup: createSetupChecks({ env, dataDir, resolveToken: () => Promise.resolve(token) }),
       shutdown: () =>
         (closing ??= (async () => {
           try {

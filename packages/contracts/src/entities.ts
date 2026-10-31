@@ -48,6 +48,7 @@ export const sessionSchema = z.strictObject({
   role: sessionRoleSchema,
   agent: agentKindSchema,
   model: z.string().min(1).optional(),
+  draftPr: z.boolean().optional(),
   title: z.string().min(1),
   reviewedBrief: reviewedBriefSchema.optional(),
   prompt: z.string(),
