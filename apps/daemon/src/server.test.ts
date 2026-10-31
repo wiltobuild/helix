@@ -415,3 +415,18 @@ it('stop-all uses project IDs and rejects hostile Host/Origin before dispatch', 
   expect(response.json()).toEqual({ stopped: [session.id] });
   expect(core.stopAll).toHaveBeenCalledExactlyOnceWith(project.id);
 });
+
+it('rejects iframe navigation into the daemon UI and API', async () => {
+  const { core } = createFakeCore();
+  const app = await createServer({ core, port: 0 });
+  cleanup.push(() => app.close());
+  for (const url of ['/api/health', '/']) {
+    const result = await app.inject({
+      method: 'GET',
+      url,
+      headers: { host: '127.0.0.1', 'sec-fetch-dest': 'iframe' },
+    });
+    expect(result.statusCode).toBe(403);
+    expect(result.headers['x-frame-options']).toBe('DENY');
+  }
+});
