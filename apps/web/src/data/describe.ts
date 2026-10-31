@@ -17,6 +17,8 @@ export type EventTone =
 
 export function eventTone(e: HelixEvent): EventTone {
   switch (e.type) {
+    case 'output.updated':
+      return e.payload.output.status === 'running' ? 'work' : 'quiet';
     case 'design.updated':
       return e.payload.design.status === 'approved'
         ? 'done'
@@ -39,6 +41,8 @@ export function eventTone(e: HelixEvent): EventTone {
         : e.payload.checks.pending > 0
           ? 'quiet'
           : 'done';
+    case 'plan.reviewed':
+      return e.payload.review.status === 'passed' ? 'review' : 'needs';
     case 'feedback.routed':
       return 'feedback';
     case 'agent_review.requested':
@@ -130,6 +134,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
     historicalActorName(state, e) ??
     actor(e.type === 'session.created' ? e.payload.session.id : e.sessionId);
   switch (e.type) {
+    case 'output.updated':
+      return `Output revision ${e.payload.output.revision}: ${e.payload.output.status}.`;
     case 'project.added':
       return `Added project ${e.payload.project.name}.`;
     case 'design.updated':
@@ -173,6 +179,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
       return `${who} asked to ${lowerFirst(e.payload.approval.summary)}.`;
     case 'approval.decided':
       return `You ${e.payload.decision === 'approved' ? 'approved' : e.payload.decision === 'rejected' ? 'rejected' : 'requested changes to'} the request.`;
+    case 'plan.reviewed':
+      return `Codex plan review: ${e.payload.review.status}. ${e.payload.review.message}`;
     case 'plan.submitted':
       return `Helix split “${e.payload.plan.goal}” into ${e.payload.plan.nodes.length} tasks.`;
     case 'plan.approved':

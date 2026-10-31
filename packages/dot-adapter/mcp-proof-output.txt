@@ -1,0 +1,90 @@
+SYNTHETIC MCP STDIO PROOF ΓÇö no live Helix, Dot, tunnel or registration
+{
+  "handshake": "completed with official SDK client",
+  "tools": [
+    {
+      "name": "connectionstatus",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "journey",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "events",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "diffcounts",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}
+{
+  "tool": "connectionstatus",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"mode\":\"synthetic\",\"ok\":true,\"data\":{\"connected\":true,\"scopeVerified\":false,\"note\":\"Health only; configured instance identity and session existence are not attested.\"},\"provenance\":{\"instance\":\"synthetic-mcp\",\"instanceVerified\":false,\"projectId\":\"mock-project\",\"sessionId\":\"mock-session\",\"revision\":null,\"cursor\":0,\"timestamp\":\"2026-10-31T00:00:00.000Z\",\"sourceTimestamp\":null,\"stale\":false,\"partial\":true,\"untrustedContent\":true}}"
+      }
+    ],
+    "isError": false
+  }
+}
+{
+  "tool": "journey",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"mode\":\"synthetic\",\"ok\":true,\"data\":{\"stages\":{\"discovery\":[],\"design\":[],\"execution\":[{\"seq\":7,\"stage\":\"execution\",\"claim\":\"Execution started\",\"assurance\":\"recorded\"}],\"handoff\":[]},\"executionState\":\"active\",\"decisionNeeded\":[],\"blockers\":[],\"limits\":[\"Read-only observations; no current-head verification or budget guarantees.\"],\"current\":{\"discovery\":{\"state\":\"absent\",\"sourceTimestamp\":null,\"freshness\":\"unknown\"},\"design\":{\"state\":\"absent\",\"sourceTimestamp\":null,\"freshness\":\"unknown\"}}},\"provenance\":{\"instance\":\"synthetic-mcp\",\"instanceVerified\":false,\"projectId\":\"mock-project\",\"sessionId\":\"mock-session\",\"revision\":null,\"cursor\":7,\"timestamp\":\"2026-10-31T00:00:00.000Z\",\"sourceTimestamp\":\"2026-10-31T00:00:00Z\",\"stale\":false,\"partial\":false,\"untrustedContent\":true}}"
+      }
+    ],
+    "isError": false
+  }
+}
+{
+  "tool": "events",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"mode\":\"synthetic\",\"ok\":true,\"data\":{\"events\":[{\"seq\":7,\"ts\":\"2026-10-31T00:00:00Z\",\"type\":\"session.started\",\"content\":\"withheld\"}],\"summary\":{\"stages\":{\"discovery\":[],\"design\":[],\"execution\":[{\"seq\":7,\"stage\":\"execution\",\"claim\":\"Execution started\",\"assurance\":\"recorded\"}],\"handoff\":[]},\"executionState\":\"active\",\"decisionNeeded\":[],\"blockers\":[],\"limits\":[\"Read-only observations; no current-head verification or budget guarantees.\"]}},\"provenance\":{\"instance\":\"synthetic-mcp\",\"instanceVerified\":false,\"projectId\":\"mock-project\",\"sessionId\":\"mock-session\",\"revision\":null,\"cursor\":7,\"timestamp\":\"2026-10-31T00:00:00.000Z\",\"sourceTimestamp\":\"2026-10-31T00:00:00Z\",\"stale\":false,\"partial\":false,\"untrustedContent\":true}}"
+      }
+    ],
+    "isError": false
+  }
+}
+{
+  "tool": "diffcounts",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"mode\":\"synthetic\",\"ok\":true,\"data\":{\"filesChanged\":1,\"content\":\"withheld\",\"verification\":\"generated, not verified or accepted\"},\"provenance\":{\"instance\":\"synthetic-mcp\",\"instanceVerified\":false,\"projectId\":\"mock-project\",\"sessionId\":\"mock-session\",\"revision\":null,\"cursor\":0,\"timestamp\":\"2026-10-31T00:00:00.000Z\",\"sourceTimestamp\":null,\"stale\":false,\"partial\":true,\"untrustedContent\":true}}"
+      }
+    ],
+    "isError": false
+  }
+}

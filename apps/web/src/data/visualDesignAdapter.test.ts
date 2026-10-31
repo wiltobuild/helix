@@ -73,3 +73,37 @@ test('a decision without new references does not erase the persisted reference s
   });
   expect(request).not.toHaveProperty('references');
 });
+
+test('round and decision palette snapshots are projected independently', () => {
+  const palette = {
+    name: 'Teal',
+    background: '#F6F4EF',
+    foreground: '#183430',
+    primary: '#0E7672',
+    accent: '#B64D31',
+  };
+  const view = visualDesignView(
+    {
+      ...design,
+      rounds: [{ revision: 1, jobId: 'old', concepts: [], palette }, ...design.rounds],
+      decision: { revision: 2, conceptIds: ['one'], rationale: 'Approved', palette },
+    },
+    'Test',
+    [],
+  );
+  expect(view.rounds[0]?.palette).toEqual(palette);
+  expect(view.rounds.at(-1)?.palette).toBeUndefined();
+  expect(view.decisions[0]?.palette).toEqual(palette);
+  const request = visualDesignRequest({
+    workspaceId: design.sessionId,
+    revision: 3,
+    roundId: 'round-two',
+    action: 'regenerate',
+    conceptIds: [],
+    feedback: '',
+    references: [],
+    requestId: 'palette',
+    palette,
+  });
+  expect(visualDesignRequestSchema.parse(request).palette).toEqual(palette);
+});

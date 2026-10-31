@@ -1,5 +1,6 @@
 const allowed = {
   contracts: [],
+  'dot-adapter': [],
   testing: ['contracts'],
   storage: ['contracts'],
   harness: ['contracts'],

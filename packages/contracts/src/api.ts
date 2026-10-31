@@ -1,3 +1,6 @@
+import { outputRequestSchema, outputResponseSchema, outputLeaseResponseSchema } from './output.js';
+import { intakeRequestSchema, intakeResponseSchema } from './intake.js';
+import { reviewedBriefSchema } from './intake.js';
 import { z } from 'zod';
 import { visualDesignRequestSchema, visualDesignResponseSchema } from './visual-design.js';
 import {
@@ -76,6 +79,7 @@ export const createProjectRequestSchema = z.strictObject({
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 export const createSessionRequestSchema = z.strictObject({
   title: z.string().min(1),
+  reviewedBrief: reviewedBriefSchema.optional(),
   prompt: z.string().min(1),
   agent: agentKindSchema,
   model: z.string().min(1).optional(),
@@ -255,6 +259,52 @@ const sessionParams = z.strictObject({ id: sessionIdSchema });
  * Import/export use raw UTF-8 JSON Lines, application/x-helixlog (not a JSON wrapper).
  */
 export const routes = {
+  discoveryIntake: {
+    method: 'GET',
+    path: '/api/discovery',
+    request: empty,
+    response: intakeResponseSchema,
+    status: 200,
+  },
+  changeDiscovery: {
+    method: 'POST',
+    path: '/api/discovery',
+    request: intakeRequestSchema,
+    response: intakeResponseSchema,
+    status: 200,
+  },
+  changeOutput: {
+    method: 'POST',
+    path: '/api/sessions/:id/output',
+    params: sessionParams,
+    request: outputRequestSchema,
+    response: outputResponseSchema,
+    status: 200,
+  },
+  outputLease: {
+    method: 'GET',
+    path: '/api/sessions/:id/output/lease',
+    params: sessionParams,
+    request: empty,
+    response: outputLeaseResponseSchema,
+    status: 200,
+  },
+  projectIntake: {
+    method: 'GET',
+    path: '/api/projects/:id/intake',
+    params: projectParams,
+    request: empty,
+    response: intakeResponseSchema,
+    status: 200,
+  },
+  changeIntake: {
+    method: 'POST',
+    path: '/api/projects/:id/intake',
+    params: projectParams,
+    request: intakeRequestSchema,
+    response: intakeResponseSchema,
+    status: 200,
+  },
   sessionDesign: {
     method: 'GET',
     path: '/api/sessions/:id/design',

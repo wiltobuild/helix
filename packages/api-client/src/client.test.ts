@@ -53,3 +53,21 @@ it('returns typed API errors and sanitizes non-JSON failures', async () => {
     message: 'Invalid daemon error response',
   });
 });
+
+it('routes repository-free discovery without a project parameter', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(() => Promise.resolve(Response.json({ draft: null })));
+  const client = createHelixClient({ baseUrl: 'http://localhost:4317', fetch: fetcher });
+  await client.discoveryIntake();
+  await client.changeDiscovery({
+    action: 'new',
+    mode: 'interview',
+    id: 'new',
+    revision: 0,
+    requestId: 'standalone',
+  });
+  expect(fetcher.mock.calls[0]?.[0]).toEqual(new URL('http://localhost:4317/api/discovery'));
+  expect(fetcher.mock.calls[1]?.[0]).toEqual(new URL('http://localhost:4317/api/discovery'));
+  expect(fetcher.mock.calls[1]?.[1]?.body).toContain('standalone');
+});

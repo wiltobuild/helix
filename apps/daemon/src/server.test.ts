@@ -36,6 +36,30 @@ const planBody = {
   nodes: plan.nodes,
 };
 const cases = [
+  { name: 'outputLease', method: 'outputLease' },
+  {
+    name: 'changeOutput',
+    method: 'changeOutput',
+    payload: { requestId: 'output-start', revision: 0, action: 'start' },
+  },
+  { name: 'discoveryIntake', method: 'discoveryIntake' },
+  {
+    name: 'changeDiscovery',
+    method: 'changeDiscovery',
+    payload: {
+      action: 'new',
+      mode: 'direct',
+      id: 'new',
+      revision: 0,
+      requestId: 'discovery-command',
+    },
+  },
+  { name: 'projectIntake', method: 'projectIntake' },
+  {
+    name: 'changeIntake',
+    method: 'changeIntake',
+    payload: { action: 'new', mode: 'direct', id: 'new', revision: 0, requestId: 'intake-command' },
+  },
   { name: 'sessionDesign', method: 'sessionDesign' },
   {
     name: 'changeDesign',
@@ -106,7 +130,9 @@ describe('contract routes', () => {
             ? approval.id
             : item.name === 'decidePlan'
               ? plan.id
-              : item.name === 'projectEvents' ||
+              : item.name === 'projectIntake' ||
+                  item.name === 'changeIntake' ||
+                  item.name === 'projectEvents' ||
                   item.name === 'createSession' ||
                   item.name === 'stopProjectAgents'
                 ? project.id
@@ -388,4 +414,19 @@ it('stop-all uses project IDs and rejects hostile Host/Origin before dispatch', 
   expect(response.statusCode).toBe(200);
   expect(response.json()).toEqual({ stopped: [session.id] });
   expect(core.stopAll).toHaveBeenCalledExactlyOnceWith(project.id);
+});
+
+it('rejects iframe navigation into the daemon UI and API', async () => {
+  const { core } = createFakeCore();
+  const app = await createServer({ core, port: 0 });
+  cleanup.push(() => app.close());
+  for (const url of ['/api/health', '/']) {
+    const result = await app.inject({
+      method: 'GET',
+      url,
+      headers: { host: '127.0.0.1', 'sec-fetch-dest': 'iframe' },
+    });
+    expect(result.statusCode).toBe(403);
+    expect(result.headers['x-frame-options']).toBe('DENY');
+  }
 });

@@ -116,6 +116,10 @@ export function createFakeCore() {
     list: () => [session.id],
   } satisfies TerminalHost;
   const core = {
+    outputLease: vi.fn<NonNullable<HelixCore['outputLease']>>().mockResolvedValue({ lease: null }),
+    changeOutput: vi
+      .fn<NonNullable<HelixCore['changeOutput']>>()
+      .mockResolvedValue({ output: null }),
     sessionDesign: vi
       .fn<NonNullable<HelixCore['sessionDesign']>>()
       .mockResolvedValue({ design: null }),
@@ -127,6 +131,18 @@ export function createFakeCore() {
     terminals,
     start: vi.fn<HelixCore['start']>().mockResolvedValue(undefined),
     shutdown: vi.fn<HelixCore['shutdown']>().mockResolvedValue(undefined),
+    projectIntake: vi
+      .fn<NonNullable<HelixCore['projectIntake']>>()
+      .mockResolvedValue({ draft: null }),
+    changeIntake: vi
+      .fn<NonNullable<HelixCore['changeIntake']>>()
+      .mockResolvedValue({ draft: null }),
+    discoveryIntake: vi
+      .fn<NonNullable<HelixCore['discoveryIntake']>>()
+      .mockResolvedValue({ draft: null }),
+    changeDiscovery: vi
+      .fn<NonNullable<HelixCore['changeDiscovery']>>()
+      .mockResolvedValue({ draft: null }),
     health: vi.fn<HelixCore['health']>().mockResolvedValue({ status: 'ok', version: 'test' }),
     harnesses: vi
       .fn<HelixCore['harnesses']>()

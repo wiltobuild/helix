@@ -1,3 +1,5 @@
+import { outputSchema } from './output.js';
+import { planReviewSchema } from './plan-review.js';
 import { z } from 'zod';
 import { visualDesignSchema } from './visual-design.js';
 import {
@@ -40,6 +42,7 @@ function event<const T extends string, S extends z.ZodType>(type: T, payload: S)
 
 /** Full envelope schemas keyed by type; payload schemas are available via .shape.payload. */
 export const eventSchemas = {
+  'output.updated': event('output.updated', z.strictObject({ output: outputSchema })),
   'design.updated': event('design.updated', z.strictObject({ design: visualDesignSchema })),
   'project.added': event('project.added', z.strictObject({ project: projectSchema })),
   'scheduling.changed': event('scheduling.changed', z.strictObject({ paused: z.boolean() })).refine(
@@ -64,10 +67,21 @@ export const eventSchemas = {
     'reasoning.summary',
     z.strictObject({ text: z.string(), source: z.enum(['agent', 'orchestrator']) }),
   ),
+  'plan.reviewed': event(
+    'plan.reviewed',
+    z.strictObject({ planId: planIdSchema, review: planReviewSchema }),
+  ),
   'plan.submitted': event('plan.submitted', z.strictObject({ plan: planSchema })),
   'plan.approved': event(
     'plan.approved',
-    z.strictObject({ planId: planIdSchema, approvedBy: z.literal('human') }),
+    z.strictObject({
+      planId: planIdSchema,
+      approvedBy: z.literal('human'),
+      reviewHash: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    }),
   ),
   'plan.rejected': event(
     'plan.rejected',

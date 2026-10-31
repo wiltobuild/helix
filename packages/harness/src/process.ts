@@ -45,7 +45,7 @@ export function environment(
   options: HarnessOptions,
   additions?: Record<string, string>,
 ): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = options.inheritEnv === false ? {} : { ...process.env };
   for (const [key, value] of [
     ...Object.entries(options.env ?? {}),
     ...Object.entries(additions ?? {}),

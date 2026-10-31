@@ -1,3 +1,4 @@
+import type { VisualPalette } from '@helix/contracts';
 /** Presentation boundary. The daemon adapter maps the shared design contract into this view. */
 export interface VisualConceptView {
   id: string;
@@ -10,6 +11,7 @@ export interface VisualConceptView {
 }
 
 export interface VisualRoundView {
+  palette?: VisualPalette;
   id: string;
   revision: number;
   status:
@@ -42,7 +44,13 @@ export interface VisualWorkspaceView {
     revision: number;
     references?: readonly { url: string; label?: string }[];
   }[];
-  decisions: readonly { id: string; revision: number; text: string; rationale: string }[];
+  decisions: readonly {
+    id: string;
+    revision: number;
+    text: string;
+    rationale: string;
+    palette?: VisualPalette;
+  }[];
   checkpoint?: {
     id: string;
     revision: number;
@@ -60,6 +68,7 @@ export interface VisualWorkspaceView {
 export type VisualAction =
   'feedback' | 'regenerate' | 'approve' | 'cancel' | 'retry' | 'approve_checkpoint';
 export interface VisualCommand {
+  palette?: VisualPalette | null;
   workspaceId: string;
   revision: number;
   roundId: string;

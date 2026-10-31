@@ -3,6 +3,8 @@ import s from './BuildStages.module.css';
 
 function describe(stage: BuildStage): string {
   switch (stage.kind) {
+    case 'output':
+      return `Output: ${stage.running}/${stage.previews} recorded previews running (live lease required)`;
     case 'planning':
       return `Planning: ${stage.status.replaceAll('_', ' ')}`;
     case 'design':

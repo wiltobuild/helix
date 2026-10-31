@@ -4,6 +4,7 @@ import { fixtures, projectUpTo } from '@helix/contracts';
 import { TooltipProvider } from '@helix/ui';
 import type { HelixSource } from '../data/useHelixSource';
 import { SessionHeader } from './Chrome';
+import { DesignReturnBanner } from './DesignReturnBanner';
 
 test('the integrated session header exposes Design alongside Plan, Board, Files and Commits', () => {
   const events = fixtures.passwordResetRun;
@@ -30,4 +31,11 @@ test('the integrated session header exposes Design alongside Plan, Board, Files 
   );
   expect(html).toMatch(/aria-selected="true"[^>]*>Design/);
   for (const label of ['Plan', 'Board', 'Files', 'Commits']) expect(html).toContain(`>${label}`);
+});
+
+test('Plan shows a return path for a pending Design decision', () => {
+  const html = renderToStaticMarkup(<DesignReturnBanner pending onOpen={() => {}} />);
+  expect(html).toContain('A visual direction needs your input.');
+  expect(html).toContain('Open design workspace');
+  expect(html).toContain('role="status"');
 });

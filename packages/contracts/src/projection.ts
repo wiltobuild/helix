@@ -1,3 +1,5 @@
+import { projectBuilds } from './builds.js';
+import type { Output } from './output.js';
 import type { VisualDesign } from './visual-design.js';
 import {
   crossReviewerFor,
@@ -18,6 +20,7 @@ import { deriveStatus, type DisplayStatus } from './status.js';
 export type Worktree = PayloadFor<'worktree.created'>;
 export type WorktreeState = Worktree & { diff?: PayloadFor<'worktree.diff_updated'> };
 export type SessionState = {
+  output?: Output;
   design?: VisualDesign;
   session: Session;
   activity: AgentActivity;
@@ -40,6 +43,7 @@ export type AgentReviewState = {
   review?: AgentReview;
 };
 export type PlanState = Plan & {
+  submittedSeq?: number;
   status: PlanStatus;
   nodeStatus: Record<PlanNodeId, DisplayStatus>;
   waitingNodes: Record<PlanNodeId, 'worker_slot'>;
@@ -110,6 +114,39 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (Object.hasOwn(state.sessions, e.payload.session.id))
         throw new Error('Session already exists');
       break;
+    case 'output.updated': {
+      const output = e.payload.output;
+      const worker = sessionFor(state, output.workerSessionId);
+      const build = projectBuilds(state).find(
+        (b) =>
+          b.rootSessionId === output.buildSessionId &&
+          b.sessionIds.includes(output.workerSessionId),
+      );
+      if (
+        e.sessionId !== output.workerSessionId ||
+        worker.session.role !== 'worker' ||
+        !worker.worktree ||
+        !build
+      )
+        throw new Error('Output ownership mismatch');
+      const previous = worker.output;
+      if (
+        output.revision !== (previous?.revision ?? 0) &&
+        output.revision !== (previous?.revision ?? 0) + 1
+      )
+        throw new Error('Output revision out of order');
+      if (
+        previous?.revision === output.revision &&
+        (previous.headSha !== output.headSha ||
+          previous.branch !== output.branch ||
+          previous.briefHash !== output.briefHash ||
+          previous.designHash !== output.designHash ||
+          previous.buildSessionId !== output.buildSessionId ||
+          (previous.artifactHash && previous.artifactHash !== output.artifactHash))
+      )
+        throw new Error('Output revision binding changed');
+      break;
+    }
     case 'design.updated':
       sessionFor(state, e.payload.design.sessionId);
       if (e.sessionId !== e.payload.design.sessionId) throw new Error('Design session mismatch');
@@ -136,6 +173,20 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (Object.hasOwn(state.plans, e.payload.plan.id)) throw new Error('Plan already submitted');
       sessionFor(state, e.payload.plan.orchestratorSessionId);
       break;
+    case 'plan.reviewed': {
+      const plan = state.plans[e.payload.planId];
+      if (
+        !plan ||
+        e.sessionId !== plan.orchestratorSessionId ||
+        plan.review?.hash !== e.payload.review.hash ||
+        plan.review.attempt !== e.payload.review.attempt ||
+        plan.review.status !== 'reviewing'
+      )
+        throw new Error('Stale plan review');
+      if (e.payload.review.status === 'passed' && e.payload.review.result?.verdict !== 'passed')
+        throw new Error('Missing passing verdict');
+      break;
+    }
     case 'plan.approved':
     case 'plan.rejected': {
       const plan = Object.hasOwn(state.plans, e.payload.planId)
@@ -145,6 +196,23 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (e.sessionId !== undefined && e.sessionId !== plan.orchestratorSessionId)
         throw new Error('Plan decision session mismatch');
       if (plan.status !== 'awaiting_approval') throw new Error('Plan already decided');
+      if (e.type === 'plan.approved' && plan.review) {
+        const latest = Object.values(state.plans)
+          .filter((p) => p.orchestratorSessionId === plan.orchestratorSessionId)
+          .reduce<PlanState | undefined>(
+            (latest, candidate) =>
+              !latest || (candidate.submittedSeq ?? 0) > (latest.submittedSeq ?? 0)
+                ? candidate
+                : latest,
+            undefined,
+          );
+        if (
+          latest?.id !== plan.id ||
+          plan.review.status !== 'passed' ||
+          e.payload.reviewHash !== plan.review.hash
+        )
+          throw new Error('Plan approval requires the latest reviewed revision');
+      }
       break;
     }
     case 'plan.node_updated': {
@@ -245,6 +313,10 @@ function reduceInto(
   const next = state;
   const getSession = () => sessionFor(next, e.sessionId);
   switch (e.type) {
+    case 'output.updated':
+      getSession().output = structuredClone(e.payload.output);
+      getSession().lastEventSeq = e.seq;
+      break;
     case 'design.updated':
       getSession().design = structuredClone(e.payload.design);
       getSession().lastEventSeq = e.seq;
@@ -345,7 +417,13 @@ function reduceInto(
         if (!node.sessionId && s) node.sessionId = s.session.id;
       }
       Object.defineProperty(next.plans, plan.id, {
-        value: { ...plan, status: 'awaiting_approval', nodeStatus: {}, waitingNodes: {} },
+        value: {
+          ...plan,
+          submittedSeq: e.seq,
+          status: 'awaiting_approval',
+          nodeStatus: {},
+          waitingNodes: {},
+        },
         enumerable: true,
         writable: true,
         configurable: true,
@@ -355,6 +433,9 @@ function reduceInto(
       s.lastEventSeq = e.seq;
       break;
     }
+    case 'plan.reviewed':
+      next.plans[e.payload.planId]!.review = structuredClone(e.payload.review);
+      break;
     case 'plan.approved':
     case 'plan.rejected': {
       const plan = next.plans[e.payload.planId]!;

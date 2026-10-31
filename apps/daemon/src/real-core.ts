@@ -1,3 +1,6 @@
+import { createOutputHost } from './output-host.js';
+import { createIntakeService } from './intake.js';
+import { createIntakeWriter } from './intake-writer.js';
 import { createCodexVisualProvider } from './visual-images.js';
 import { resolveExecutable } from '@helix/harness';
 import {
@@ -113,6 +116,7 @@ export async function createRealCore(options: {
         }
       : undefined;
     const core = createHelixCore({
+      outputHost: createOutputHost(),
       ...(visualImages ? { visualImages } : {}),
       store,
       worktrees: new GitWorktreeManager({ dataDir, projects: store }),
@@ -143,13 +147,34 @@ export async function createRealCore(options: {
       ids: (prefix) => `${prefix}_${randomUUID().replaceAll('-', '')}`,
       log: consoleLog,
     });
+    const intakeHarness = createHarness('codex', {
+      ...harnessOptions,
+      codexSandbox: 'read-only',
+      codexApprovalPolicy: 'never',
+      autoApproveSafeCommands: false,
+      ...(codexArgs.length ? { extraArgs: codexArgs } : {}),
+    });
+    const intake = createIntakeService(store, core, {
+      generate: async (draft, signal, projectId) => {
+        return createIntakeWriter(intakeHarness, dataDir, projectId).generate(
+          draft,
+          signal,
+          projectId,
+        );
+      },
+    });
     let closing: Promise<void> | undefined;
     return {
       ...core,
+      discoveryIntake: intake.discoveryIntake,
+      changeDiscovery: intake.changeDiscovery,
+      projectIntake: intake.projectIntake,
+      changeIntake: intake.changeIntake,
       setup: createSetupChecks({ env, dataDir, resolveToken: () => resolveGitHubToken(env, 2500) }),
       shutdown: () =>
         (closing ??= (async () => {
           try {
+            intake.closeIntake();
             await core.shutdown();
           } finally {
             try {
