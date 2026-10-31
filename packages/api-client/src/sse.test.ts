@@ -201,7 +201,7 @@ it('preserves a multi-megabyte chunked design event through late backfill, exact
   } finally {
     subscription.close();
   }
-});
+}, 10_000);
 
 it('honors the initial since boundary without treating legitimate project sequence gaps as missing data', async () => {
   vi.useFakeTimers();

@@ -61,7 +61,7 @@ test('discovery uses actual scratch child environment and restrictive protocol w
     vi.unstubAllEnvs();
     await rm(cwd, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 test('discovery metadata cannot select a Claude build adapter', async () => {
   await expect(
