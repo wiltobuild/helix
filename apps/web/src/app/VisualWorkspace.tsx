@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import type { VisualPalette } from '@helix/contracts';
+import { designPalettes, samePalette } from '../data/designPalettes';
 import { Button } from '@helix/ui';
 import {
   canChooseRound,
@@ -69,6 +71,8 @@ function WorkspaceRevision({
   const active = workspace.rounds.find((round) => round.id === workspace.activeRoundId);
   const [roundId, setRoundId] = useState(workspace.activeRoundId);
   const round = workspace.rounds.find((item) => item.id === roundId) ?? active;
+  const [palette, setPalette] = useState<VisualPalette | null>(active?.palette ?? null);
+  const paletteChanged = !samePalette(palette, active?.palette);
   const [selected, setSelected] = useState<string[]>([]);
   const [feedback, setFeedback] = useState('');
   const [references, setReferences] = useState('');
@@ -137,6 +141,10 @@ function WorkspaceRevision({
       return;
     }
     const approving = action === 'approve' || action === 'approve_checkpoint';
+    if (paletteChanged && action !== 'regenerate') {
+      setActionError('Generate with the selected palette or discard the palette change first.');
+      return;
+    }
     if (approving && (!ready || selected.length === 0)) return;
     if (approving && selected.length > 1 && !feedback.trim()) {
       setActionError('Describe which aspects to combine before approving the direction.');
@@ -150,6 +158,7 @@ function WorkspaceRevision({
           revision: workspace.revision,
           roundId: round.id,
           action,
+          ...(action === 'regenerate' ? { palette } : {}),
           conceptIds: selected,
           feedback: feedback.trim(),
           references: [...links, ...images.map((image) => image.url)],
@@ -234,10 +243,10 @@ function WorkspaceRevision({
       )}
       {round ? (
         <>
-          <div className={s.brief}>
-            <h3>Design brief</h3>
+          <details className={s.brief}>
+            <summary>Design brief & constraints</summary>
             <p>{round.brief}</p>
-          </div>
+          </details>
           <RoundStatus round={round} />
           {round.recommendation && (
             <aside className={s.recommendation}>
@@ -281,6 +290,70 @@ function WorkspaceRevision({
       )}
 
       <div className={s.collaboration}>
+        <section className={s.palettePanel} aria-label="Color palette">
+          <span className={s.eyebrow}>ART DIRECTION</span>
+          <h3>Color palette</h3>
+          <p className={s.caption}>
+            Try tokens here, then generate three renders to review the result. Existing concept
+            images and working previews stay unchanged.
+          </p>
+          <fieldset disabled={!actionable || generating} className={s.paletteChoices}>
+            <legend>Palette for the next render round</legend>
+            <label>
+              <input
+                disabled={!actionable || generating}
+                type="radio"
+                name="design-palette"
+                checked={!(historical ? round?.palette : palette)}
+                onChange={() => setPalette(null)}
+              />{' '}
+              Follow the brief
+            </label>
+            {designPalettes.map((option) => (
+              <label key={option.name}>
+                <input
+                  disabled={!actionable || generating}
+                  type="radio"
+                  name="design-palette"
+                  checked={samePalette(historical ? round?.palette : palette, option)}
+                  onChange={() => setPalette(option)}
+                />
+                <span className={s.swatches} aria-hidden="true">
+                  {[option.background, option.foreground, option.primary, option.accent].map(
+                    (color) => (
+                      <i key={color} style={{ backgroundColor: color }} />
+                    ),
+                  )}
+                </span>
+                {option.name}
+              </label>
+            ))}
+          </fieldset>
+          {(historical ? round?.palette : palette) && (
+            <PaletteSample palette={(historical ? round?.palette : palette)!} />
+          )}
+          <p className={s.caption} role="status">
+            {historical
+              ? 'Recorded round palette'
+              : paletteChanged
+                ? 'Unsaved token preview — generate new renders before approval.'
+                : 'Palette matches this round.'}
+            : {(historical ? round?.palette : palette)?.name ?? 'Follow the brief'}
+          </p>
+          {paletteChanged && !historical && (
+            <div className={s.actions}>
+              <Button
+                disabled={!actionable || generating}
+                onClick={() => void submit('regenerate')}
+              >
+                Generate three with this palette
+              </Button>
+              <Button disabled={!actionable} onClick={() => setPalette(active?.palette ?? null)}>
+                Discard palette change
+              </Button>
+            </div>
+          )}
+        </section>
         <section className={s.composer} aria-label="Refine the design">
           <h3>Make it yours</h3>
           <p>
@@ -296,46 +369,50 @@ function WorkspaceRevision({
             rows={4}
             placeholder="Keep the typography from direction 1, bring in the color of direction 3, and make the hero feel more playful…"
           />
-          <label htmlFor="visual-references">
-            Reference images or websites · one link per line
-          </label>
-          <textarea
-            id="visual-references"
-            value={references}
-            disabled={!actionable}
-            onChange={(event) => setReferences(event.target.value)}
-            rows={2}
-            placeholder="https://example.com/reference.png"
-          />
-          <label htmlFor="visual-image-files">Attach reference images · PNG, JPEG, WebP</label>
-          <input
-            id="visual-image-files"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            multiple
-            disabled={!actionable}
-            onChange={(event) => {
-              void attachImages(event.target.files);
-              event.target.value = '';
-            }}
-          />
-          {readingImages && <p role="status">Reading reference images…</p>}
-          {images.map((image, index) => (
-            <div key={`${image.name}:${index}`} className={s.attachment}>
-              <img src={image.url} alt={`Reference: ${image.name}`} />
-              <span>{image.name}</span>
-              <Button
-                disabled={!actionable}
-                onClick={() => setImages((previous) => previous.filter((_, i) => i !== index))}
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
+          <details className={s.details}>
+            <summary>References & attachments</summary>
+            <label htmlFor="visual-references">
+              Reference images or websites · one link per line
+            </label>
+            <textarea
+              id="visual-references"
+              value={references}
+              disabled={!actionable}
+              onChange={(event) => setReferences(event.target.value)}
+              rows={2}
+              placeholder="https://example.com/reference.png"
+            />
+            <label htmlFor="visual-image-files">Attach reference images · PNG, JPEG, WebP</label>
+            <input
+              id="visual-image-files"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              disabled={!actionable}
+              onChange={(event) => {
+                void attachImages(event.target.files);
+                event.target.value = '';
+              }}
+            />
+            {readingImages && <p role="status">Reading reference images…</p>}
+            {images.map((image, index) => (
+              <div key={`${image.name}:${index}`} className={s.attachment}>
+                <img src={image.url} alt={`Reference: ${image.name}`} />
+                <span>{image.name}</span>
+                <Button
+                  disabled={!actionable}
+                  onClick={() => setImages((previous) => previous.filter((_, i) => i !== index))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </details>
           <div className={s.actions}>
             <Button
               disabled={
                 !actionable ||
+                paletteChanged ||
                 generating ||
                 (!feedback.trim() && !references.trim() && images.length === 0)
               }
@@ -345,7 +422,7 @@ function WorkspaceRevision({
             </Button>
             <Button
               variant="primary"
-              disabled={!actionable || !ready || selected.length === 0}
+              disabled={!actionable || !ready || selected.length === 0 || paletteChanged}
               onClick={() => void submit('approve')}
             >
               {selected.length > 1 ? 'Approve combined direction' : 'Approve selected direction'}
@@ -364,7 +441,7 @@ function WorkspaceRevision({
             {(round?.status === 'failed' ||
               round?.status === 'cancelled' ||
               round?.status === 'unavailable') && (
-              <Button disabled={!actionable} onClick={() => void submit('retry')}>
+              <Button disabled={!actionable || paletteChanged} onClick={() => void submit('retry')}>
                 Retry generation
               </Button>
             )}
@@ -430,6 +507,7 @@ function WorkspaceRevision({
               <span className={s.eyebrow}>DECISION · REV {decision.revision}</span>
               <h4>{decision.text}</h4>
               <p>{decision.rationale}</p>
+              {decision.palette && <PaletteSample palette={decision.palette} />}
             </article>
           ))}
         </section>
@@ -439,6 +517,7 @@ function WorkspaceRevision({
           checkpoint={workspace.checkpoint}
           canApprove={
             actionable &&
+            !paletteChanged &&
             ready &&
             selected.length > 0 &&
             workspace.checkpoint.status === 'ready' &&
@@ -514,13 +593,15 @@ function Concept({
         </span>
         <h3>{concept.title}</h3>
         <p>{concept.rationale}</p>
-        <h4>Tradeoffs</h4>
-        <ul>
-          {concept.tradeoffs.map((tradeoff, index) => (
-            <li key={index}>{tradeoff}</li>
-          ))}
-        </ul>
-        {concept.motionNote && <p className={s.caption}>Motion intent: {concept.motionNote}</p>}
+        <details className={s.details}>
+          <summary>Tradeoffs & motion</summary>
+          <ul>
+            {concept.tradeoffs.map((tradeoff, index) => (
+              <li key={index}>{tradeoff}</li>
+            ))}
+          </ul>
+          {concept.motionNote && <p className={s.caption}>Motion intent: {concept.motionNote}</p>}
+        </details>
         <label className={s.select}>
           <input
             type="checkbox"
@@ -620,5 +701,32 @@ function PreviewCheckpoint({
         conversation to request changes before continuing.
       </p>
     </section>
+  );
+}
+
+function PaletteSample({ palette }: { palette: VisualPalette }) {
+  return (
+    <div
+      className={s.paletteSample}
+      style={{ backgroundColor: palette.background, color: palette.foreground }}
+    >
+      <span className={s.eyebrow}>TOKEN PREVIEW · {palette.name}</span>
+      <strong>A considered first impression.</strong>
+      <p>Surface, text, primary and accent tokens. This sample is not a generated concept.</p>
+      <div className={s.swatches}>
+        {[palette.background, palette.foreground, palette.primary, palette.accent].map((color) => (
+          <span key={color}>
+            <i style={{ backgroundColor: color }} />
+            {color}
+          </span>
+        ))}
+      </div>
+      <span
+        className={s.sampleAction}
+        style={{ borderColor: palette.primary, color: palette.primary }}
+      >
+        Explore the direction
+      </span>
+    </div>
   );
 }
