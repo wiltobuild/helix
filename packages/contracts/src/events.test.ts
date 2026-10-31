@@ -90,7 +90,26 @@ samples['plan.reviewed'] = eventSchemas['plan.reviewed'].parse({
     },
   },
 });
+samples['output.updated'] = eventSchemas['output.updated'].parse({
+  ...base,
+  type: 'output.updated',
+  payload: {
+    output: {
+      workerSessionId: base.sessionId,
+      buildSessionId: base.sessionId,
+      revision: 1,
+      branch: 'helix/task',
+      headSha: 'a'.repeat(40),
+      briefHash: 'b'.repeat(64),
+      designHash: 'c'.repeat(64),
+      status: 'stopped',
+      message: 'Stopped',
+      feedback: [],
+    },
+  },
+});
 const invalid: Record<EventType, unknown> = {
+  'output.updated': { output: { revision: -1 } },
   'plan.reviewed': { planId: '', review: {} },
   'design.updated': { design: { revision: -1 } },
   'project.added': { project: { ...fixtures.passwordResetProject, id: '' } },

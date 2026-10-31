@@ -1,3 +1,5 @@
+import { projectBuilds } from './builds.js';
+import type { Output } from './output.js';
 import type { VisualDesign } from './visual-design.js';
 import {
   crossReviewerFor,
@@ -18,6 +20,7 @@ import { deriveStatus, type DisplayStatus } from './status.js';
 export type Worktree = PayloadFor<'worktree.created'>;
 export type WorktreeState = Worktree & { diff?: PayloadFor<'worktree.diff_updated'> };
 export type SessionState = {
+  output?: Output;
   design?: VisualDesign;
   session: Session;
   activity: AgentActivity;
@@ -111,6 +114,39 @@ function assertApplicable(state: ProjectState, e: HelixEvent): void {
       if (Object.hasOwn(state.sessions, e.payload.session.id))
         throw new Error('Session already exists');
       break;
+    case 'output.updated': {
+      const output = e.payload.output;
+      const worker = sessionFor(state, output.workerSessionId);
+      const build = projectBuilds(state).find(
+        (b) =>
+          b.rootSessionId === output.buildSessionId &&
+          b.sessionIds.includes(output.workerSessionId),
+      );
+      if (
+        e.sessionId !== output.workerSessionId ||
+        worker.session.role !== 'worker' ||
+        !worker.worktree ||
+        !build
+      )
+        throw new Error('Output ownership mismatch');
+      const previous = worker.output;
+      if (
+        output.revision !== (previous?.revision ?? 0) &&
+        output.revision !== (previous?.revision ?? 0) + 1
+      )
+        throw new Error('Output revision out of order');
+      if (
+        previous?.revision === output.revision &&
+        (previous.headSha !== output.headSha ||
+          previous.branch !== output.branch ||
+          previous.briefHash !== output.briefHash ||
+          previous.designHash !== output.designHash ||
+          previous.buildSessionId !== output.buildSessionId ||
+          (previous.artifactHash && previous.artifactHash !== output.artifactHash))
+      )
+        throw new Error('Output revision binding changed');
+      break;
+    }
     case 'design.updated':
       sessionFor(state, e.payload.design.sessionId);
       if (e.sessionId !== e.payload.design.sessionId) throw new Error('Design session mismatch');
@@ -277,6 +313,10 @@ function reduceInto(
   const next = state;
   const getSession = () => sessionFor(next, e.sessionId);
   switch (e.type) {
+    case 'output.updated':
+      getSession().output = structuredClone(e.payload.output);
+      getSession().lastEventSeq = e.seq;
+      break;
     case 'design.updated':
       getSession().design = structuredClone(e.payload.design);
       getSession().lastEventSeq = e.seq;

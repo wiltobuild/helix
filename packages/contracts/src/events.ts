@@ -1,3 +1,4 @@
+import { outputSchema } from './output.js';
 import { planReviewSchema } from './plan-review.js';
 import { z } from 'zod';
 import { visualDesignSchema } from './visual-design.js';
@@ -41,6 +42,7 @@ function event<const T extends string, S extends z.ZodType>(type: T, payload: S)
 
 /** Full envelope schemas keyed by type; payload schemas are available via .shape.payload. */
 export const eventSchemas = {
+  'output.updated': event('output.updated', z.strictObject({ output: outputSchema })),
   'design.updated': event('design.updated', z.strictObject({ design: visualDesignSchema })),
   'project.added': event('project.added', z.strictObject({ project: projectSchema })),
   'scheduling.changed': event('scheduling.changed', z.strictObject({ paused: z.boolean() })).refine(
