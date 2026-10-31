@@ -66,6 +66,53 @@ describe.skipIf(process.env.HELIX_E2E !== '1')('real Git', () => {
     if (!target.startsWith(resolve(tmpdir()) + sep)) throw new Error('Unsafe cleanup');
     await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
+  test('reads exact bytes from the committed blob rather than mutable workspace files', async () => {
+    const sha = await manager.headSha(repo);
+    expect(await manager.readCommittedFile(repo, sha, 'tracked.txt')).toEqual(
+      Buffer.from('one\ntwo\nthree\n'),
+    );
+    await writeFile(join(repo, 'tracked.txt'), 'changed without committing\n');
+    expect(await manager.readCommittedFile(repo, sha, 'tracked.txt')).toEqual(
+      Buffer.from('one\ntwo\nthree\n'),
+    );
+    expect(await manager.readCommittedFile(repo, sha, 'missing.txt')).toBeUndefined();
+    for (const path of [
+      '../tracked.txt',
+      '/tracked.txt',
+      'C:/tracked.txt',
+      'src/*.ts',
+      'src\\file',
+      ':(glob)tracked.txt',
+      '-tracked.txt',
+      'folder//file',
+    ]) {
+      await expect(manager.readCommittedFile(repo, sha, path)).rejects.toMatchObject({
+        code: 'INVALID_REQUEST',
+      });
+    }
+    await expect(manager.readCommittedFile(repo, 'HEAD', 'tracked.txt')).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+    });
+  }, 90_000);
+  test('reads binary blobs and rejects symlinks, submodules and oversized blobs', async () => {
+    const bytes = Buffer.from([0, 0xff, 0x80, 10]);
+    await writeFile(join(repo, 'binary.dat'), bytes);
+    await writeFile(join(repo, 'large.dat'), Buffer.alloc(64 * 1024 + 1, 65));
+    await git(repo, 'add', 'binary.dat', 'large.dat');
+    await writeFile(join(repo, 'link-target'), 'tracked.txt');
+    const linkOid = await git(repo, 'hash-object', '-w', 'link-target');
+    await git(repo, 'update-index', '--add', '--cacheinfo', `120000,${linkOid},link.txt`);
+    const commitOid = await manager.headSha(repo);
+    await git(repo, 'update-index', '--add', '--cacheinfo', `160000,${commitOid},submodule`);
+    await git(repo, 'commit', '-m', 'blob modes and size');
+    const sha = await manager.headSha(repo);
+    expect(await manager.readCommittedFile(repo, sha, 'binary.dat')).toEqual(bytes);
+    expect(await manager.readCommittedFile(repo, sha, 'link.txt')).toBeUndefined();
+    expect(await manager.readCommittedFile(repo, sha, 'submodule')).toBeUndefined();
+    await expect(manager.readCommittedFile(repo, sha, 'large.dat')).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+    });
+  }, 90_000);
   test('fetchBase observes remote advancement while preserving local main, index and files', async () => {
     const origin = join(root, 'bare origin');
     await git(root, 'clone', '--bare', repo, origin);

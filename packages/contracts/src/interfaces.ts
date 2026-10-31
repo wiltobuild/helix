@@ -144,6 +144,13 @@ export interface GitHelpers {
   /** `origin` remote URL, or undefined when there is none. */
   remoteUrl(repoPath: string, remote?: string): Promise<string | undefined>;
   headSha(path: string): Promise<string>;
+  /** Read at the immutable commit, not the mutable worktree. Missing, symlink and submodule
+   * entries return undefined; invalid paths or oversized blobs fail closed. */
+  readCommittedFile(
+    path: string,
+    headSha: string,
+    literalRepoPath: string,
+  ): Promise<Uint8Array | undefined>;
   /** Number of commits on HEAD that are not on the given base ref. */
   commitsAhead(path: string, base: string): Promise<number>;
   /** Records refs/helix/<sessionId>/last-turn at HEAD + working tree for `last_turn` diffs. */
@@ -224,7 +231,8 @@ export interface ApprovingHarnessSession extends HarnessSession {
 
 /** Builds the concise message routed back to a worker after CI/review/conflict feedback. */
 export type FeedbackMessageBuilder = (input: {
-  reason: 'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings';
+  reason:
+    'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings' | 'acceptance_failed';
   pr: PullRequestFacts;
   details?: string;
 }) => string;

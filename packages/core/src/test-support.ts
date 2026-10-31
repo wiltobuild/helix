@@ -154,6 +154,10 @@ export class FakeGit implements GitService {
   defaultBranch = vi.fn<GitService['defaultBranch']>(() => Promise.resolve('main'));
   remoteUrl = vi.fn<GitService['remoteUrl']>(() => Promise.resolve(this.remote));
   headSha = vi.fn<GitService['headSha']>(() => Promise.resolve('head-1'));
+  committedFiles = new Map<string, Uint8Array>();
+  readCommittedFile = vi.fn<GitService['readCommittedFile']>((_path, headSha, literalRepoPath) =>
+    Promise.resolve(this.committedFiles.get(`${headSha}:${literalRepoPath}`)),
+  );
   commitsAhead = vi.fn<GitService['commitsAhead']>(() => Promise.resolve(this.ahead));
   markTurn = vi.fn<GitService['markTurn']>(() => Promise.resolve());
   commitAll = vi.fn<GitService['commitAll']>(() => {
