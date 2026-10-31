@@ -16,7 +16,7 @@ const narration = read('script/narration.json');
 const edit = read('script/edit.json');
 const FPS = 30;
 const OPENING_SILENCE = 1.5;
-const TAIL = 2.0;
+const TAIL = 9.0; // the HELIX end card holds before the live demo
 
 /** Slow, deliberate reading pace: about 150 words a minute plus settle time, never under 1.4s. */
 const readTime = (text) => {
@@ -30,7 +30,7 @@ let t = OPENING_SILENCE;
 const cues = [];
 for (const p of phrases) {
   const dur = readTime(p.text);
-  const gap = narration.pauses[p.pause];
+  const gap = typeof p.pause === 'number' ? p.pause : narration.pauses[p.pause];
   cues.push({ ...p, start: +t.toFixed(3), end: +(t + dur).toFixed(3), gap });
   t += dur + gap;
   if (p.id === until) break;
@@ -40,9 +40,16 @@ const total = +(t + TAIL).toFixed(3);
 const byId = Object.fromEntries(cues.map((c) => [c.id, c]));
 const segments = [];
 for (const s of edit.segments) {
-  const cue = byId[s.from];
+  // `from` is a phrase id (start just before it) or `id+seconds` (that long after the phrase ends).
+  const [fromId, after] = s.from.split('+');
+  const cue = byId[fromId];
   if (!cue) continue;
-  const start = s.type === 'shaw' ? 0 : Math.max(0, cue.start - edit.lead);
+  const start =
+    s.type === 'shaw'
+      ? 0
+      : after !== undefined
+        ? cue.end + Number(after)
+        : Math.max(0, cue.start - edit.lead);
   segments.push({ ...s, start: +start.toFixed(3) });
 }
 segments.forEach((s, i) => (s.end = segments[i + 1]?.start ?? total));

@@ -18,7 +18,7 @@ const only = process.argv.slice(2);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
     const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
+      viewport: source.viewport ?? { width: 1920, height: 1080 },
       deviceScaleFactor: 2,
       colorScheme: 'dark',
     });

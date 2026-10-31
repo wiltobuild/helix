@@ -11,11 +11,22 @@ const lerp = (a, b, k) => a + (b - a) * k;
 /** Stage rectangles for panes. Captions live below y 862, so no pane reaches them. */
 const RECTS = {
   full: { x: 96, y: 56, w: 1728, h: 798 },
+  wide: { x: 96, y: 186, w: 1728, h: 520 },
   left: { x: 96, y: 56, w: 1060, h: 798 },
   right: { x: 1180, y: 56, w: 644, h: 798 },
   third1: { x: 96, y: 56, w: 540, h: 798 },
   third2: { x: 690, y: 56, w: 540, h: 798 },
   third3: { x: 1284, y: 56, w: 540, h: 798 },
+};
+/** Default 3D drift per pane: rotateY eases from ry[0] to ry[1] degrees across the segment. */
+const TILT = {
+  full: [3.2, -3.2],
+  wide: [4, -4],
+  left: [5, 2],
+  right: [-5, -2],
+  third1: [7, 4],
+  third2: [0, 0],
+  third3: [-7, -4],
 };
 const STRAND = {
   codex: 'var(--codex)',
@@ -23,12 +34,21 @@ const STRAND = {
   orch: 'var(--orch)',
   review: 'var(--review)',
 };
+const GLOW = {
+  codex: '67 194 187',
+  claude: '217 119 87',
+  orch: '227 165 63',
+  review: '169 140 247',
+};
 const SOURCES = {
   dc: { dir: '../footage/stills/dc/', ext: '.jpg', size: { w: 1920, h: 1080 } },
+  lap: { dir: '../footage/stills/lap/', ext: '.jpg', size: { w: 5600, h: 1080 } },
   daybreak: { dir: '../footage/daybreak/', ext: '.webp', size: null },
 };
-const XFADE = 0.7;
-const STATE_FADE = 0.45;
+/** How strongly the living DNA backdrop shows behind each kind of segment. */
+const BACKDROP = { shaw: 0.55, end: 1, title: 0.9, evidence: 0.45, footage: 0.35 };
+const XFADE = 1.4;
+const STATE_FADE = 0.85;
 
 let TL;
 let OPT;
@@ -74,6 +94,45 @@ function dnaSvg(size, phase) {
 }
 const dnaPhase = (t) => ((t / 8.726646) * 60) % 60;
 
+/** A huge, slow double helix drifting behind everything, in the mark's teal and coral. */
+function backdrop(t, level) {
+  if (level <= 0.01) return '';
+  const W = 2400;
+  const cy = 540;
+  const amp = 210;
+  const wave = 1100;
+  const shift = t * 38;
+  let rungs = '';
+  let dots = '';
+  for (let x = -60; x <= W + 60; x += 46) {
+    const ph = ((x + shift) / wave) * Math.PI * 2;
+    const y = Math.sin(ph) * amp;
+    const depth = Math.cos(ph);
+    rungs += `<line x1="${x}" x2="${x}" y1="${cy + y}" y2="${cy - y}" stroke="#8fa3bd" stroke-width="1.4" opacity="${0.1 + 0.08 * Math.abs(depth)}"/>`;
+    for (const sign of [1, -1]) {
+      const d = sign * depth;
+      dots += `<circle cx="${x}" cy="${cy + sign * y}" r="${5 + 4 * d}" fill="${sign === 1 ? '#43c2bb' : '#d97757'}" opacity="${0.35 + 0.35 * d}"/>`;
+    }
+  }
+  const tilt = -8 + Math.sin(t / 14) * 2;
+  return `<svg class="backdrop" width="${W}" height="1080" style="opacity:${0.22 * level};transform:rotate(${tilt}deg);filter:blur(1.2px)">${rungs}${dots}</svg>`;
+}
+
+function background(t, level) {
+  const o1x = 22 + Math.sin(t / 11) * 8;
+  const o1y = 30 + Math.cos(t / 13) * 8;
+  const o2x = 78 + Math.cos(t / 12) * 8;
+  const o2y = 70 + Math.sin(t / 10) * 8;
+  const o3x = 50 + Math.sin(t / 17) * 20;
+  const boost = 0.6 + 0.4 * level;
+  return (
+    `<div class="orb" style="left:${o1x}%;top:${o1y}%;width:900px;height:700px;margin:-350px 0 0 -450px;background:rgb(67 194 187 / ${0.13 * boost})"></div>` +
+    `<div class="orb" style="left:${o2x}%;top:${o2y}%;width:900px;height:700px;margin:-350px 0 0 -450px;background:rgb(217 119 87 / ${0.12 * boost})"></div>` +
+    `<div class="orb" style="left:${o3x}%;top:50%;width:700px;height:500px;margin:-250px 0 0 -350px;background:rgb(77 141 255 / ${0.05 * boost})"></div>` +
+    backdrop(t, level)
+  );
+}
+
 const cue = (id) => TL.cues.find((c) => c.id === id);
 /** Segment-local time of a marker: a number, or a cue id (optionally `id+offset`). */
 function localAt(seg, at) {
@@ -82,32 +141,28 @@ function localAt(seg, at) {
   const c = cue(id);
   return c ? c.start - seg.start + Number(off ?? 0) : Infinity;
 }
+/** Position of a shine band: sweeps from right to left once, starting at `start`. */
+const sweepPos = (t, start, dur = 2.4) => `${lerp(140, -40, ease(ramp(t, start, start + dur)))}%`;
 
+/** A line that rises out of a blur and settles its tracking. */
+function riseLine(text, top, start, t, cls = '', dur = 2.0) {
+  const k = easeOut(ramp(t, start, start + dur));
+  if (k <= 0) return '';
+  return `<div class="quote ${cls}" style="top:${top}px;opacity:${k};transform:translateY(${(1 - k) * 26}px);filter:blur(${(1 - k) * 14}px);--sx:${sweepPos(t, start + 0.7)}">${text}</div>`;
+}
+
+/** The full Shaw quote builds line by line and stays on screen until it hands over to HELIX. */
 function shaw(t) {
   const [c1, c2, c3, c4, c5] = ['s01', 's02', 's03', 's04', 's05'].map(cue);
-  const line = (text, top, c, cls = '') => {
-    if (!c) return '';
-    const k = easeOut(ramp(t, c.start, c.start + 1.1));
-    return `<div class="quote ${cls}" style="top:${top}px;opacity:${k};transform:translateY(${(1 - k) * 18}px)">${text}</div>`;
-  };
   let html = '';
-  // Stanza one clears before the dream begins.
-  const out1 = c3 ? 1 - ramp(t, c3.start - 0.9, c3.start - 0.1) : 1;
-  html += `<div class="layer" style="opacity:${out1}">${line('You see things…', 380, c1)}${line('and you say, ‘<em class="why">Why?</em>’', 480, c2)}</div>`;
-  if (c3 && t >= c3.start - 0.2) {
-    let big = '';
-    if (c5) {
-      const k = easeOut(ramp(t, c5.start, c5.start + 1.6));
-      big = `<div class="quote big" style="top:520px;opacity:${k};transform:scale(${lerp(1.06, 1, k)})"><span class="whynot">‘Why not?’</span></div>`;
-    }
-    html += `<div class="layer">${line('But I dream things that never were…', 300, c3)}${line('and I say…', 400, c4)}${big}`;
-    if (c5) {
-      const a = easeOut(ramp(t, c5.end + 0.3, c5.end + 1.5));
-      html += `<div class="attrib" style="opacity:${a}">George Bernard Shaw</div>`;
-      const m = ease(ramp(t, c5.end + 1.0, c5.end + 2.6)) * 0.55;
-      html += `<div class="mark" style="opacity:${m}">${dnaSvg(44, dnaPhase(t))}</div>`;
-    }
-    html += `</div>`;
+  if (c1) html += riseLine('You see things…', 215, c1.start, t);
+  if (c2) html += riseLine('and you say, ‘<em>Why?</em>’', 301, c2.start, t);
+  if (c3) html += riseLine('But I dream things that never were…', 437, c3.start, t);
+  if (c4) html += riseLine('and I say…', 523, c4.start, t);
+  if (c5) {
+    html += riseLine('<span class="shine">‘Why not?’</span>', 625, c5.start, t, 'big', 2.4);
+    const a = easeOut(ramp(t, c5.end + 0.8, c5.end + 2.6));
+    html += `<div class="attrib" style="opacity:${a};letter-spacing:${lerp(0.4, 0.22, a)}em">— George Bernard Shaw</div>`;
   }
   return html;
 }
@@ -118,11 +173,12 @@ const srcOf = (ref) => {
   return { url: s.dir + name + s.ext, size: s.size ?? sizes.get(s.dir + name + s.ext) };
 };
 
-/** One framed window onto real footage: crossfades between states, eases its crop c0 -> c1. */
+/** One framed window onto footage: 3D drift, light sweep, crossfading states, crop easing c0 -> c1. */
 function pane(seg, p, t) {
-  const r = typeof p.rect === 'string' ? RECTS[p.rect] : (p.rect ?? RECTS.full);
+  const rectName = typeof p.rect === 'string' ? p.rect : 'full';
+  const r = typeof p.rect === 'object' ? p.rect : RECTS[rectName];
   const local = t - seg.start;
-  const k = ease(ramp(t, seg.start, seg.end));
+  const k = (p.linear ? (x) => x : ease)(ramp(t, seg.start, seg.end));
   const c1 = p.c1 ?? p.c0;
   const w = lerp(p.c0.w, c1.w, k);
   const x = lerp(p.c0.x, c1.x, k);
@@ -142,21 +198,25 @@ function pane(seg, p, t) {
   for (const c of p.callouts ?? []) {
     const at = localAt(seg, c.at ?? 0);
     const until = c.until === undefined ? Infinity : localAt(seg, c.until);
-    const a = Math.min(easeOut(ramp(local, at, at + 0.6)), 1 - ramp(local, until - 0.3, until));
+    const a = Math.min(easeOut(ramp(local, at, at + 0.8)), 1 - ramp(local, until - 0.4, until));
     if (a <= 0) continue;
     const px = (c.x - x) * scale;
     const py = (c.y - y) * scale;
     const anchor =
       c.align === 'right' ? 'translateX(-100%)' : c.align === 'center' ? 'translateX(-50%)' : '';
-    callouts += `<div class="callout" style="left:${px}px;top:${py}px;opacity:${a};transform:${anchor} translateY(${(1 - a) * 10}px)"><span class="dot" style="background:${STRAND[c.strand] ?? 'var(--text-2)'}"></span>${c.text}</div>`;
+    callouts += `<div class="callout" style="left:${px}px;top:${py}px;opacity:${a};transform:${anchor} translateY(${(1 - a) * 14}px) scale(${lerp(0.94, 1, a)})"><span class="dot" style="background:${STRAND[c.strand] ?? 'var(--text-2)'};box-shadow:0 0 14px ${STRAND[c.strand] ?? 'transparent'}"></span>${c.text}</div>`;
   }
-  const edge = p.edge
-    ? `border-color:${STRAND[p.edge]};box-shadow:0 0 0 1px ${STRAND[p.edge]},0 30px 80px rgb(0 0 0 / 0.55)`
-    : '';
+  const [ry0, ry1] = p.tilt ?? TILT[rectName] ?? [0, 0];
+  const ry = lerp(ry0, ry1, ease(ramp(t, seg.start, seg.end)));
+  const glow = p.edge
+    ? `border-color:${STRAND[p.edge]};box-shadow:0 0 0 1px ${STRAND[p.edge]},0 0 70px rgb(${GLOW[p.edge]} / 0.35),0 40px 90px rgb(0 0 0 / 0.6)`
+    : 'box-shadow:0 40px 90px rgb(0 0 0 / 0.6),0 0 60px rgb(67 194 187 / 0.08)';
+  const sweepX = lerp(-50, 150, ease(ramp(local, 0.3, 2.1)));
+  const sweep = local < 2.2 ? `<div class="sweep" style="left:${sweepX}%"></div>` : '';
   const chip = p.chip
     ? `<div class="chip ${p.chipAt ?? 'tl'}"><span class="dot"></span>${p.chip}</div>`
     : '';
-  return `<div class="frame" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;${edge}">${imgs}${callouts}${chip}</div>`;
+  return `<div class="tilt" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;transform:perspective(2600px) rotateY(${ry}deg) rotateX(1.2deg)"><div class="frame" style="${glow}">${imgs}<div class="reflection"></div>${sweep}${callouts}${chip}</div></div>`;
 }
 
 function footage(t, seg) {
@@ -169,18 +229,17 @@ function title(t, seg) {
   let html = '';
   for (const l of seg.lines) {
     const at = localAt(seg, l.at ?? 0);
-    const k = easeOut(ramp(local, at, at + 1.0));
     const out =
       l.until === undefined
         ? 1
-        : 1 - ramp(local, localAt(seg, l.until) - 0.6, localAt(seg, l.until));
-    html += `<div class="quote ${l.cls ?? ''}" style="top:${l.top}px;opacity:${Math.min(k, out)};transform:translateY(${(1 - k) * 18}px)">${l.html}</div>`;
+        : 1 - ramp(local, localAt(seg, l.until) - 0.8, localAt(seg, l.until));
+    if (out <= 0) continue;
+    html += `<div style="opacity:${out}">${riseLine(l.html, l.top, seg.start + at, t, l.cls ?? '', 1.8)}</div>`;
   }
   if (seg.mark) {
-    const m =
-      ease(ramp(local, localAt(seg, seg.mark.at), localAt(seg, seg.mark.at) + 1.6)) *
-      (seg.mark.opacity ?? 0.8);
-    html += `<div class="mark" style="top:${seg.mark.top}px;opacity:${m}">${dnaSvg(seg.mark.size ?? 44, dnaPhase(t))}</div>`;
+    const at = localAt(seg, seg.mark.at);
+    const m = ease(ramp(local, at, at + 1.8)) * (seg.mark.opacity ?? 0.9);
+    html += `<div class="mark" style="top:${seg.mark.top}px;opacity:${m};filter:drop-shadow(0 0 30px rgb(67 194 187 / 0.35))">${dnaSvg(seg.mark.size ?? 52, dnaPhase(t))}</div>`;
   }
   return html;
 }
@@ -191,19 +250,32 @@ function evidence(t, seg) {
   const rows = seg.rows
     .map((row) => {
       const at = localAt(seg, row.at ?? 0);
-      const a = easeOut(ramp(local, at, at + 0.7));
-      return `<div class="row" style="opacity:${a};transform:translateX(${(1 - a) * 16}px)"><span class="dot" style="background:${STRAND[row.strand] ?? 'var(--text-2)'}"></span><div><div class="what">${row.text}</div><div class="src">${row.source}</div></div></div>`;
+      const a = easeOut(ramp(local, at, at + 0.9));
+      return `<div class="row" style="opacity:${a};transform:translateX(${(1 - a) * 20}px)"><span class="dot" style="background:${STRAND[row.strand] ?? 'var(--text-2)'};box-shadow:0 0 16px ${STRAND[row.strand] ?? 'transparent'}"></span><div><div class="what">${row.text}</div><div class="src">${row.source}</div></div></div>`;
     })
     .join('');
-  const edge = seg.edge ? `border-color:${STRAND[seg.edge]}` : '';
-  return `<div class="evidence" style="${edge}"><div class="eyebrow">${seg.eyebrow}</div><div class="head">${seg.heading}</div>${rows}<div class="foot">${seg.footnote}</div></div>`;
+  const ry = lerp(3, -2, ease(ramp(t, seg.start, seg.end)));
+  const edge = seg.edge
+    ? `border-color:${STRAND[seg.edge]};box-shadow:0 0 70px rgb(${GLOW[seg.edge]} / 0.3),0 40px 90px rgb(0 0 0 / 0.6)`
+    : '';
+  return `<div class="evidence" style="${edge};transform:perspective(2600px) rotateY(${ry}deg)"><div class="eyebrow">${seg.eyebrow}</div><div class="head">${seg.heading}</div>${rows}<div class="foot">${seg.footnote}</div></div>`;
 }
 
+/** The HELIX title card: used right after the quote and again to close. */
 function endCard(t, seg) {
   const local = t - seg.start;
-  const a = easeOut(ramp(local, 0.3, 1.8));
-  const w = easeOut(ramp(local, 1.0, 2.4));
-  return `<div class="mark" style="top:330px;opacity:${a}">${dnaSvg(80, dnaPhase(t))}</div><div class="wordmark" style="opacity:${w};letter-spacing:${lerp(0.5, 0.32, w)}em">HELIX</div>`;
+  const m = easeOut(ramp(local, 0.2, 2.2));
+  const w = easeOut(ramp(local, 0.9, 3.0));
+  const r = ease(ramp(local, 1.8, 3.4));
+  const g = easeOut(ramp(local, 2.6, 4.0));
+  const pulse = 0.3 + 0.1 * Math.sin(local * 1.4);
+  const spacing = lerp(0.62, 0.2, w);
+  return (
+    `<div class="mark" style="top:${lerp(300, 250, m)}px;opacity:${m};filter:drop-shadow(0 0 ${lerp(10, 46, m)}px rgb(67 194 187 / ${pulse}))">${dnaSvg(118, dnaPhase(t))}</div>` +
+    `<div class="wordmark" style="top:420px;opacity:${w};filter:blur(${(1 - w) * 16}px)"><span style="letter-spacing:${spacing}em;padding-left:${spacing}em;background-position:${sweepPos(local, 2.4, 2.6)} 0,0 0">HELIX</span></div>` +
+    `<div class="rule" style="top:648px;width:${lerp(0, 760, r)}px;opacity:${r}"></div>` +
+    `<div class="tagline" style="top:682px;opacity:${g};transform:translateY(${(1 - g) * 12}px)">Coding agent orchestrator</div>`
+  );
 }
 
 const RENDER = { shaw, footage, title, evidence, end: endCard };
@@ -224,7 +296,7 @@ function captionHtml(t) {
   const c = TL.cues[i];
   if (!c || ownedByTitle(c)) return '';
   const end = until(c, i);
-  const a = Math.min(easeOut(ramp(t, c.start, c.start + 0.3)), 1 - ramp(t, end - 0.25, end));
+  const a = Math.min(easeOut(ramp(t, c.start, c.start + 0.4)), 1 - ramp(t, end - 0.3, end));
   let text = c.text;
   for (const e of c.emphasis ?? []) {
     const cls = /claude/i.test(e)
@@ -236,7 +308,7 @@ function captionHtml(t) {
           : '';
     text = text.replace(e, `<b class="${cls}">${e}</b>`);
   }
-  return `<span style="opacity:${a}">${text}</span>`;
+  return `<span style="display:inline-block;opacity:${a};transform:translateY(${(1 - a) * 10}px)">${text}</span>`;
 }
 
 window.load = async (timeline, options = {}) => {
@@ -262,13 +334,22 @@ window.load = async (timeline, options = {}) => {
 
 window.renderAt = async (t) => {
   let html = '';
+  let level = 0;
   TL.segments.forEach((seg, i) => {
     const prev = TL.segments[i - 1];
-    // Each segment fades in over the previous one; the outgoing one stays until covered.
-    if (t < seg.start || t >= seg.end + XFADE) return;
-    const a = prev ? ease(ramp(t, seg.start, seg.start + XFADE)) : 1;
-    html += `<div class="layer" style="opacity:${a}">${RENDER[seg.type](t, seg)}</div>`;
+    const next = TL.segments[i + 1];
+    if (t < seg.start || (next && t >= next.start + XFADE)) return;
+    // Incoming segments sharpen and settle; outgoing ones soften and recede.
+    const inK = prev ? ease(ramp(t, seg.start, seg.start + XFADE)) : 1;
+    const outK = next ? ease(ramp(t, next.start, next.start + XFADE)) : 0;
+    const a = inK * (1 - outK);
+    if (a <= 0.001) return;
+    const scale = lerp(1.04, 1, inK) * lerp(1, 0.97, outK);
+    const blur = (1 - inK) * 12 + outK * 8;
+    level = Math.max(level, (BACKDROP[seg.type] ?? 0.4) * a);
+    html += `<div class="layer" style="opacity:${a};transform:scale(${scale});${blur > 0.05 ? `filter:blur(${blur}px)` : ''}">${RENDER[seg.type](t, seg)}</div>`;
   });
+  document.getElementById('bg').innerHTML = background(t, level);
   document.getElementById('layers').innerHTML = html;
   document.getElementById('caption').innerHTML = captionHtml(t);
   await Promise.all([...document.images].map((img) => img.decode().catch(() => {})));

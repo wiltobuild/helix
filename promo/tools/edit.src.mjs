@@ -21,6 +21,7 @@ const INSPECTOR = (y) => ({ x: 1524, y, w: 392 });
 
 const segments = [
   { id: 'shaw', from: 's01', type: 'shaw' },
+  { id: 'helix-intro', from: 's05+2.6', type: 'end' },
   {
     id: 'roster',
     from: 's06',
@@ -59,22 +60,35 @@ const segments = [
     ],
   },
   {
-    id: 'team',
+    id: 'many',
     from: 's08',
+    type: 'footage',
+    panes: [
+      {
+        rect: 'wide',
+        states: [{ still: 'lap/strip-mid' }],
+        c0: { x: 640, y: 386, w: 1560 },
+        c1: { x: 2500, y: 386, w: 1560 },
+      },
+    ],
+  },
+  {
+    id: 'team',
+    from: 's09',
     type: 'footage',
     panes: [
       full(
         [st('codex-working')],
-        PLAN_WIDE,
-        { x: 520, y: 236, w: 720 },
+        { x: 400, y: 240, w: 960 },
+        { x: 600, y: 246, w: 560 },
         {
           callouts: [
             {
-              at: 's09',
+              at: 0.6,
               text: 'Helix · plans and coordinates the team',
               strand: 'orch',
               x: 880,
-              y: 222,
+              y: 214,
               align: 'center',
             },
           ],
@@ -338,11 +352,16 @@ const segments = [
     from: 's21',
     type: 'footage',
     panes: [
-      full([st('codex-working'), st('pr1-open', 's22'), st('ci-running', 's22+1.6')], PLAN_WIDE, {
-        x: 300,
-        y: 250,
-        w: 1150,
-      }),
+      {
+        rect: 'full',
+        states: [
+          { still: 'lap/strip-early' },
+          { still: 'lap/strip-mid', at: 's22' },
+          { still: 'lap/strip-late', at: 's22+3.2' },
+        ],
+        c0: { x: 620, y: 362, w: 1080 },
+        c1: { x: 4080, y: 362, w: 1080 },
+      },
     ],
   },
   {
@@ -483,19 +502,19 @@ const segments = [
     type: 'title',
     lines: [
       {
-        top: 380,
+        top: 400,
         cls: 'title',
-        html: 'You bring the <b class="claude">idea</b>.',
+        html: 'You bring the <span class="shine claude">idea</span>.',
         until: 's34+-0.2',
       },
       {
         at: 's34',
-        top: 380,
+        top: 400,
         cls: 'title',
-        html: '<b class="helix">Helix</b> brings the <b>team together</b>.',
+        html: '<span class="shine helix">Helix</span> brings the <span class="shine">team together</span>.',
       },
     ],
-    mark: { at: 's34+0.6', top: 560, size: 52, opacity: 0.85 },
+    mark: { at: 's34+0.8', top: 590, size: 64, opacity: 0.95 },
   },
   { id: 'end', from: 's35', type: 'end' },
 ];

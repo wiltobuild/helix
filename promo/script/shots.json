@@ -1,10 +1,18 @@
 {
-  "note": "Named stills of real Helix UI states. Source `dc` = bundled replay of the real discount-codes run recorded 2026-10-28. The Daybreak recording will be added as another source once supplied. Steps run in order; `still` saves the current screen.",
+  "note": "Named stills of Helix UI states. `dc` = bundled replay of the real discount-codes run recorded 2026-10-28; `lap` = the app's built-in 12-agent scenario, captured in a 5600px-wide viewport so all agents sit in one strip. Steps run in order; `still` saves the current screen.",
   "base": "http://localhost:5317",
   "sources": {
     "dc": {
       "url": "/?demo",
       "simulated": false
+    },
+    "lap": {
+      "url": "/?demo=laptop",
+      "simulated": true,
+      "viewport": {
+        "width": 5600,
+        "height": 1080
+      }
     }
   },
   "shots": [
@@ -86,6 +94,26 @@
         {
           "click": "Pull requests",
           "still": "prs-page"
+        }
+      ]
+    },
+    {
+      "source": "lap",
+      "steps": [
+        {
+          "click": "Hide inspector"
+        },
+        {
+          "milestone": "16",
+          "still": "strip-early"
+        },
+        {
+          "milestone": "34",
+          "still": "strip-mid"
+        },
+        {
+          "milestone": "46",
+          "still": "strip-late"
         }
       ]
     }

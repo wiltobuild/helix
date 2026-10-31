@@ -1,5 +1,5 @@
 {
-  "note": "Approved baseline script split into on-screen caption phrases (no voice). pauseAfter maps bracketed directions: pause 1.2s, longer pause 2.0s, hold 2.8s. Hold times come from a reading-pace model in tools/timeline.mjs and are PROVISIONAL until a narration recording is supplied as the master timing track.",
+  "note": "Approved baseline script split into on-screen caption phrases (no voice). pauseAfter maps bracketed directions: pause 1.2s, longer pause 2.0s, hold 2.8s. Hold times come from a reading-pace model in tools/timeline.mjs and are PROVISIONAL until a narration recording is supplied as the master timing track. A numeric pause is a custom hold in seconds (after 'Why not?' for the HELIX title card; after 'you can see it happening' for the 12-agent pan).",
   "pauses": {
     "phrase": 0.55,
     "sentence": 0.75,
@@ -42,7 +42,7 @@
       "text": "‘Why not?’",
       "speak": "Why not?",
       "emphasis": ["Why not?"],
-      "pause": "hold"
+      "pause": 9.0
     },
     {
       "id": "s06",
@@ -56,7 +56,7 @@
       "scene": 2,
       "text": "Tools like Claude Code and Codex can build software.",
       "emphasis": ["Claude Code", "Codex"],
-      "pause": "sentence"
+      "pause": "paragraph"
     },
     {
       "id": "s08",
@@ -207,7 +207,7 @@
       "scene": 6,
       "text": "you can see it happening.",
       "emphasis": ["see it"],
-      "pause": "sentence"
+      "pause": 4.5
     },
     {
       "id": "s23",
