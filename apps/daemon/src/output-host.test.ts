@@ -1,5 +1,6 @@
 import { trustedGit } from '@helix/git';
 import { get } from 'node:http';
+import { runInNewContext } from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -128,4 +129,80 @@ test('canceled startups, invalid revisions, unsupported files and git symlinks f
   await expect(
     readOutputArtifact(f.dir, f.git('rev-parse', 'HEAD'), new AbortController().signal),
   ).rejects.toThrow('symlink');
+});
+
+test('fresh and reset wrapper documents wait for application load and fail closed on timeout', async () => {
+  const f = await artifact();
+  const host = createOutputHost();
+  const id = sessionIdSchema.parse('worker-wrapper-lifecycle');
+  const preview = await host.start({
+    workerSessionId: id,
+    path: f.dir,
+    headSha: f.sha,
+    signal: new AbortController().signal,
+  });
+  try {
+    for (const load of ['#1-0', '#1-1', '#1-2']) {
+      const html = await (await fetch(preview.url)).text();
+      const script = /<script nonce="[a-f0-9]+">([\s\S]*?)<\/script>/.exec(html)![1]!;
+      const messages: unknown[] = [];
+      const status = { textContent: '', remove() {} };
+      const frame = {
+        title: '',
+        src: '',
+        referrerPolicy: '',
+        onload: undefined as (() => void) | undefined,
+        onerror: undefined as (() => void) | undefined,
+        removed: false,
+        setAttribute() {},
+        remove() {
+          this.removed = true;
+        },
+      };
+      let appended = false;
+      let timeout: (() => void) | undefined;
+      let cleared = false;
+      // Execute the actual served wrapper script. This tests handshake ordering,
+      // not browser document navigation, CSP enforcement or React mounting.
+      runInNewContext(script, {
+        document: {
+          getElementById: () => status,
+          createElement: () => frame,
+          body: {
+            appendChild: () => {
+              appended = true;
+            },
+          },
+        },
+        location: { hash: load },
+        parent: { postMessage: (message: unknown) => messages.push(message) },
+        setTimeout: (callback: () => void) => {
+          timeout = callback;
+          return 1;
+        },
+        clearTimeout: () => {
+          cleared = true;
+        },
+        fetch: async (url: string, init: RequestInit) =>
+          fetch(url, { ...init, headers: { Origin: 'null' } }),
+      });
+      await expect.poll(() => appended).toBe(true);
+      expect(messages).toEqual([]);
+      expect(frame.src).toMatch(/\/app\/[a-f0-9]{48}\/index\.html$/);
+      if (load === '#1-1') {
+        timeout!();
+        frame.onload!();
+        expect(frame.removed).toBe(true);
+        expect(messages).toEqual([{ type: 'helix-output-unavailable', load }]);
+      } else {
+        frame.onload!();
+        timeout!();
+        expect(frame.removed).toBe(false);
+        expect(messages).toEqual([{ type: 'helix-output-ready', load }]);
+      }
+      expect(cleared).toBe(true);
+    }
+  } finally {
+    await host.stop(id);
+  }
 });
