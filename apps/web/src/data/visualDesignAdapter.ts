@@ -15,6 +15,7 @@ export function visualDesignView(
     return {
       id: round.jobId,
       revision: round.revision,
+      ...(round.palette ? { palette: round.palette } : {}),
       status: current ? design.status : round.concepts.length === 3 ? 'ready' : 'superseded',
       brief: design.brief,
       concepts: round.concepts.map((concept) => ({
@@ -67,6 +68,7 @@ export function visualDesignView(
             revision: design.decision.revision,
             text: `Approved ${design.decision.conceptIds.length > 1 ? 'combined direction' : 'direction'}: ${design.decision.conceptIds.map((id) => design.rounds.flatMap((round) => round.concepts).find((concept) => concept.id === id)?.title ?? id).join(' + ')}`,
             rationale: design.decision.rationale,
+            ...(design.decision.palette ? { palette: design.decision.palette } : {}),
           },
         ]
       : [],
@@ -92,6 +94,9 @@ export function visualDesignRequest(command: VisualCommand): VisualDesignRequest
   const approving = command.action === 'approve' || command.action === 'approve_checkpoint';
   return {
     requestId: command.requestId,
+    ...(command.action === 'regenerate' && command.palette !== undefined
+      ? { palette: command.palette }
+      : {}),
     revision: command.revision,
     action:
       command.action === 'feedback'

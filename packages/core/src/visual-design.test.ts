@@ -161,6 +161,37 @@ test('automatic exploration, idempotent regenerate, replay and revision-bound ap
     await f.core.shutdown();
   }
 });
+test('an approved website brief keeps one render round across replay', async () => {
+  const f = await visualFixture();
+  try {
+    const first = (await f.core.sessionDesign!(f.owner.id)).design!;
+    expect(first.rounds).toHaveLength(1);
+    expect(f.provider).toHaveBeenCalledTimes(1);
+    await f.core.changeDesign!(f.owner.id, {
+      requestId: 'approve-single-round',
+      revision: first.revision,
+      action: 'approve',
+      conceptIds: [first.rounds[0]!.concepts[0]!.id],
+      text: 'Use this direction for the approved website brief',
+    });
+    const approved = (await f.core.sessionDesign!(f.owner.id)).design!;
+    expect(approved.status).toBe('approved');
+    expect(approved.rounds).toHaveLength(1);
+    expect(approved.decision?.revision).toBe(approved.revision);
+
+    const reloaded = createHelixCore(f.deps);
+    try {
+      const replayed = (await reloaded.sessionDesign!(f.owner.id)).design!;
+      expect(replayed).toEqual(approved);
+      expect(replayed.rounds).toHaveLength(1);
+      expect(f.provider).toHaveBeenCalledTimes(1);
+    } finally {
+      await reloaded.shutdown();
+    }
+  } finally {
+    await f.core.shutdown();
+  }
+});
 test('unavailable is honest and an independent backend node starts while visual node waits', async () => {
   const f = fixture();
   try {

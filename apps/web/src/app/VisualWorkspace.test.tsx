@@ -105,3 +105,34 @@ test('checkpoint starts with an opt-in preview and binds approval to its revisio
       ?.find((button) => button.includes('Approve checkpoint')),
   ).toContain('disabled');
 });
+
+test('palette sample is explicit and read-only history retains its approved tokens', () => {
+  const palette = {
+    name: 'Teal & rust',
+    background: '#F6F4EF',
+    foreground: '#183430',
+    primary: '#0E7672',
+    accent: '#B64D31',
+  };
+  const html = renderToStaticMarkup(
+    <VisualWorkspace
+      workspace={{
+        ...workspace,
+        rounds: workspace.rounds.map((round) => ({ ...round, palette })),
+        decisions: [{ id: 'd', revision: 1, text: 'Approved', rationale: 'Use teal', palette }],
+      }}
+      connection="replay"
+    />,
+  );
+  expect(html).toContain('TOKEN PREVIEW');
+  expect(html).toContain('Existing concept images and working previews stay unchanged');
+  expect(html).toContain('#0E7672');
+  expect(html.match(/<img /g)).toHaveLength(3);
+  expect(html).toContain('References &amp; attachments');
+  expect(html).toContain('Tradeoffs &amp; motion');
+  expect(
+    (html.match(/<input[^>]+type="radio"[^>]*>/g) ?? []).every((input) =>
+      input.includes('disabled'),
+    ),
+  ).toBe(true);
+});
