@@ -1,3 +1,4 @@
+import { createOutputHost } from './output-host.js';
 import { createIntakeService } from './intake.js';
 import { createIntakeWriter } from './intake-writer.js';
 import { createCodexVisualProvider } from './visual-images.js';
@@ -115,6 +116,7 @@ export async function createRealCore(options: {
         }
       : undefined;
     const core = createHelixCore({
+      outputHost: createOutputHost(),
       ...(visualImages ? { visualImages } : {}),
       store,
       worktrees: new GitWorktreeManager({ dataDir, projects: store }),

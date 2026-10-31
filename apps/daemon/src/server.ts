@@ -78,6 +78,13 @@ export async function createServer(options: ServerOptions) {
     void reply.code(status).send(body);
   });
   app.addHook('onRequest', async (request, reply) => {
+    reply.header('X-Frame-Options', 'DENY');
+    // Untrusted Output frames must never navigate into daemon API/UI routes.
+    if (
+      request.headers['sec-fetch-dest'] === 'iframe' ||
+      request.headers['sec-fetch-dest'] === 'frame'
+    )
+      throw new HelixError('FORBIDDEN', 'Helix cannot be loaded inside a preview frame');
     if (!loopbackHost(request.headers.host))
       throw new HelixError('FORBIDDEN', 'Host must be loopback');
     const address = app.server.address();
