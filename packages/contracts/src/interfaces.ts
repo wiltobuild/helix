@@ -235,6 +235,11 @@ export interface HelixCore {
   changeDiscovery?(
     request: import('./intake.js').IntakeRequest,
   ): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
+  changeOutput?(
+    id: SessionId,
+    request: import('./output.js').OutputRequest,
+  ): Promise<{ output: import('./output.js').Output | null }>;
+  outputLease?(id: SessionId): Promise<{ lease: import('./output.js').OutputLease | null }>;
   projectIntake?(id: ProjectId): Promise<{ draft: import('./intake.js').IntakeDraft | null }>;
   changeIntake?(
     id: ProjectId,

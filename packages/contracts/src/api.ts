@@ -1,3 +1,4 @@
+import { outputRequestSchema, outputResponseSchema, outputLeaseResponseSchema } from './output.js';
 import { intakeRequestSchema, intakeResponseSchema } from './intake.js';
 import { reviewedBriefSchema } from './intake.js';
 import { z } from 'zod';
@@ -270,6 +271,22 @@ export const routes = {
     path: '/api/discovery',
     request: intakeRequestSchema,
     response: intakeResponseSchema,
+    status: 200,
+  },
+  changeOutput: {
+    method: 'POST',
+    path: '/api/sessions/:id/output',
+    params: sessionParams,
+    request: outputRequestSchema,
+    response: outputResponseSchema,
+    status: 200,
+  },
+  outputLease: {
+    method: 'GET',
+    path: '/api/sessions/:id/output/lease',
+    params: sessionParams,
+    request: empty,
+    response: outputLeaseResponseSchema,
     status: 200,
   },
   projectIntake: {

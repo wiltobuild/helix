@@ -36,6 +36,12 @@ const planBody = {
   nodes: plan.nodes,
 };
 const cases = [
+  { name: 'outputLease', method: 'outputLease' },
+  {
+    name: 'changeOutput',
+    method: 'changeOutput',
+    payload: { requestId: 'output-start', revision: 0, action: 'start' },
+  },
   { name: 'discoveryIntake', method: 'discoveryIntake' },
   {
     name: 'changeDiscovery',
