@@ -49,6 +49,7 @@ import { Board } from './Board';
 import { Dock } from './Dock';
 import { Inspector } from './Inspector';
 import { PlanView } from './PlanView';
+import { OutputWorkspace } from './OutputWorkspace';
 import { VisualDesignPanel } from './VisualDesignPanel';
 import { NavPage } from './Pages';
 import { CommitsView, FilesView } from './SessionViews';
@@ -586,6 +587,15 @@ function ProjectedWorkspace({
                     Open design workspace
                   </Button>
                 </div>
+              )}
+              {tab === 'output' && (
+                <OutputWorkspace
+                  state={state}
+                  events={run.events}
+                  isLive={live && run.isLive}
+                  connected={source.stream === 'live'}
+                  {...(live && source.client ? { client: source.client } : {})}
+                />
               )}
               {tab === 'visual' && (
                 <VisualDesignPanel

@@ -20,6 +20,7 @@ export interface BuildView {
 /** Evidence summaries may overlap (independent implementation can run during design).
  * No global completion is inferred from an exited agent, CI, or a static render. */
 export type BuildStage =
+  | { kind: 'output'; previews: number; running: number }
   | { kind: 'planning'; status: PlanStatus | 'preparing'; planId?: PlanId }
   | {
       kind: 'design';
@@ -99,6 +100,13 @@ export function projectBuilds(state: ProjectState): BuildView[] {
           tasks: plan?.nodes.length ?? workers.length,
           started: workers.filter((w) => w.worktree !== undefined).length,
           merged: workers.filter((w) => w.pr?.state === 'merged').length,
+        });
+      const outputs = workers.filter((w) => w.output);
+      if (outputs.length)
+        stages.push({
+          kind: 'output',
+          previews: outputs.length,
+          running: outputs.filter((w) => w.output?.status === 'running').length,
         });
       const prs = workers.filter((w) => w.pr);
       if (prs.length)

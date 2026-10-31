@@ -254,7 +254,7 @@ export function NavRail({
 
 /* ------------------------------------------------------------- session header */
 
-export type SessionTab = 'board' | 'plan' | 'visual' | 'files' | 'commits';
+export type SessionTab = 'board' | 'plan' | 'visual' | 'output' | 'files' | 'commits';
 
 export function SessionHeader({
   state,
@@ -437,6 +437,7 @@ export function SessionTabs({
           ['board', 'Board'],
           ['plan', 'Plan'],
           ['visual', 'Design'],
+          ['output', 'Output'],
           ['files', 'Files'],
           ['commits', 'Commits'],
         ] as const
