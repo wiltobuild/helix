@@ -69,14 +69,14 @@
       "scene": 3,
       "text": "someone still has to manage that team.",
       "emphasis": ["manage"],
-      "pause": "paragraph"
+      "pause": 3.6
     },
     {
       "id": "s10",
       "scene": 3,
       "text": "Explain the goal.",
       "emphasis": ["goal"],
-      "pause": "beat"
+      "pause": 3.2
     },
     {
       "id": "s11",
@@ -164,7 +164,7 @@
       "scene": 5,
       "text": "Imagine building an online store.",
       "emphasis": ["online store"],
-      "pause": "sentence"
+      "pause": 13.0
     },
     {
       "id": "s16",
@@ -242,19 +242,19 @@
       "scene": 6,
       "text": "And where your decision can move it forward.",
       "emphasis": ["your decision"],
-      "pause": "paragraph"
+      "pause": 3.4
     },
     {
       "id": "s28",
       "scene": 7,
       "text": "You stay involved in shaping the product,",
-      "pause": "phrase"
+      "pause": 2.4
     },
     {
       "id": "s29",
       "scene": 7,
       "text": "while Helix handles the coordination",
-      "pause": "phrase"
+      "pause": 4.2
     },
     {
       "id": "s30",

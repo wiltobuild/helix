@@ -22,6 +22,15 @@ const only = process.argv.slice(2);
       deviceScaleFactor: 2,
       colorScheme: 'dark',
     });
+    // A recording kept in promo/ is served at the URL the app fetches, without touching the app.
+    if (source.serve)
+      await context.route(`**/recordings/${path.basename(source.serve)}`, (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'text/plain',
+          body: fs.readFileSync(path.join(root, source.serve), 'utf8'),
+        }),
+      );
     const page = await context.newPage();
     await page.goto(plan.base + source.url, { waitUntil: 'networkidle' });
     await page.waitForTimeout(1500);
@@ -43,6 +52,29 @@ const only = process.argv.slice(2);
           .getByText(step.text, { exact: true })
           .first()
           .click();
+      if (step.end)
+        await page
+          .getByRole('button', { name: /^Jump to end/ })
+          .first()
+          .click();
+      if (step.inject) {
+        // Replay never opens preview servers, so show the storefront image inside Output's preview frame.
+        const image = `data:image/webp;base64,${fs.readFileSync(path.join(root, step.inject)).toString('base64')}`;
+        await page.evaluate((src) => {
+          const box = [...document.querySelectorAll('div,p,section')]
+            .filter((el) => el.textContent?.trim().startsWith('Historical preview servers'))
+            .pop()
+            ?.closest('div');
+          if (!box) throw new Error('Output preview frame not found');
+          box.innerHTML = `<img src="${src}" style="width:100%;display:block">`;
+          Object.assign(box.style, {
+            height: '560px',
+            overflow: 'hidden',
+            padding: '0',
+            background: '#fff',
+          });
+        }, image);
+      }
       for (let i = 0; i < (step.next ?? 0); i++)
         await page
           .getByRole('button', { name: /^Next event/ })

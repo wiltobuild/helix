@@ -13,6 +13,18 @@
         "width": 5600,
         "height": 1080
       }
+    },
+    "db": {
+      "url": "/?demo=daybreak-storefront",
+      "serve": "footage/recordings/daybreak-storefront.helixlog"
+    },
+    "dbw": {
+      "url": "/?demo=daybreak-storefront",
+      "serve": "footage/recordings/daybreak-storefront.helixlog",
+      "viewport": {
+        "width": 5600,
+        "height": 1080
+      }
     }
   },
   "shots": [
@@ -114,6 +126,118 @@
         {
           "milestone": "46",
           "still": "strip-late"
+        }
+      ]
+    },
+    {
+      "source": "db",
+      "steps": [
+        {
+          "milestone": "6",
+          "still": "plan-review-1"
+        },
+        {
+          "next": 1,
+          "still": "plan-review-changes"
+        },
+        {
+          "milestone": "8",
+          "still": "plan-ready"
+        },
+        {
+          "milestone": "10",
+          "still": "plan-approved"
+        },
+        {
+          "milestone": "35",
+          "next": 3,
+          "still": "parallel"
+        },
+        {
+          "milestone": "67",
+          "still": "midrun"
+        },
+        {
+          "milestone": "90",
+          "still": "changes-requested"
+        },
+        {
+          "text": "Shopping bag",
+          "within": "main",
+          "still": "bag-selected"
+        },
+        {
+          "click": "Review",
+          "role": "tab",
+          "still": "bag-review-changes"
+        },
+        {
+          "click": "Builds",
+          "milestone": "98",
+          "still": "bag-approved"
+        },
+        {
+          "text": "Shopping bag",
+          "within": "main"
+        },
+        {
+          "click": "Review",
+          "role": "tab",
+          "still": "bag-review-approved"
+        },
+        {
+          "click": "Builds",
+          "milestone": "121",
+          "still": "midrun2"
+        },
+        {
+          "click": "Agents",
+          "still": "agents"
+        },
+        {
+          "click": "Tasks",
+          "still": "tasks-page"
+        },
+        {
+          "click": "Builds",
+          "end": true,
+          "still": "complete"
+        },
+        {
+          "click": "Design",
+          "role": "tab",
+          "still": "design"
+        },
+        {
+          "click": "Output",
+          "role": "tab",
+          "inject": "footage/daybreak/design-1.webp",
+          "still": "output"
+        }
+      ]
+    },
+    {
+      "source": "dbw",
+      "steps": [
+        {
+          "milestone": "40",
+          "still": "strip-parallel"
+        },
+        {
+          "milestone": "67",
+          "still": "strip-early"
+        },
+        {
+          "milestone": "121",
+          "still": "strip-mid"
+        },
+        {
+          "milestone": "181",
+          "still": "strip-late"
+        },
+        {
+          "end": true,
+          "still": "strip-done"
         }
       ]
     }

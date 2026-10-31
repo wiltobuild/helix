@@ -17,6 +17,10 @@ const RECTS = {
   third1: { x: 96, y: 56, w: 540, h: 798 },
   third2: { x: 690, y: 56, w: 540, h: 798 },
   third3: { x: 1284, y: 56, w: 540, h: 798 },
+  vale: { x: 96, y: 56, w: 600, h: 798 },
+  app: { x: 724, y: 56, w: 1100, h: 798 },
+  valeTalk: { x: 96, y: 56, w: 820, h: 798 },
+  intake: { x: 946, y: 56, w: 878, h: 798 },
 };
 /** Default 3D drift per pane: rotateY eases from ry[0] to ry[1] degrees across the segment. */
 const TILT = {
@@ -43,10 +47,12 @@ const GLOW = {
 const SOURCES = {
   dc: { dir: '../footage/stills/dc/', ext: '.jpg', size: { w: 1920, h: 1080 } },
   lap: { dir: '../footage/stills/lap/', ext: '.jpg', size: { w: 5600, h: 1080 } },
+  db: { dir: '../footage/stills/db/', ext: '.jpg', size: { w: 1920, h: 1080 } },
+  dbw: { dir: '../footage/stills/dbw/', ext: '.jpg', size: { w: 5600, h: 1080 } },
   daybreak: { dir: '../footage/daybreak/', ext: '.webp', size: null },
 };
 /** How strongly the living DNA backdrop shows behind each kind of segment. */
-const BACKDROP = { shaw: 0.55, end: 1, title: 0.9, evidence: 0.45, footage: 0.35 };
+const BACKDROP = { shaw: 0.55, end: 1, title: 0.9, evidence: 0.45, footage: 0.4 };
 const XFADE = 1.4;
 const STATE_FADE = 0.85;
 
@@ -219,8 +225,149 @@ function pane(seg, p, t) {
   return `<div class="tilt" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;transform:perspective(2600px) rotateY(${ry}deg) rotateX(1.2deg)"><div class="frame" style="${glow}">${imgs}<div class="reflection"></div>${sweep}${callouts}${chip}</div></div>`;
 }
 
+/** Deterministic pseudo-noise for waveform bars. */
+const wobble = (i, t) =>
+  0.5 + 0.5 * Math.sin(t * 9.1 + i * 1.7) * Math.sin(t * 4.3 + i * 0.6 + Math.sin(i * 3.1));
+
+/** Glassy panel chrome shared by V.A.L.E., the intake card and the live feed. */
+function glass(seg, p, t, inner, accent = '67 194 187') {
+  const rectName = p.rect;
+  const r = RECTS[rectName];
+  const [ry0, ry1] = p.tilt ?? TILT[rectName] ?? [3, 1];
+  const ry = lerp(ry0, ry1, ease(ramp(t, seg.start, seg.end)));
+  return `<div class="tilt" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;transform:perspective(2600px) rotateY(${ry}deg) rotateX(1.2deg)"><div class="glass" style="box-shadow:0 0 0 1px rgb(${accent} / 0.55),0 0 80px rgb(${accent} / 0.22),0 40px 90px rgb(0 0 0 / 0.6)">${inner}</div></div>`;
+}
+
+/** Typed progress of a spoken line: characters revealed and whether it is still being spoken. */
+function spoken(line, local) {
+  const dur = line.dur ?? Math.max(1.1, line.text.length / 24);
+  const k = clamp((local - line.at) / dur);
+  return { k, speaking: local >= line.at && k < 1, dur };
+}
+
+/** V.A.L.E.: the voice assistant, connected to Helix through the Codex Dot extension. */
+function valePane(seg, p, t) {
+  const local = t - seg.start;
+  const lines = p.lines.map((l) => ({ ...l, at: localAt(seg, l.at ?? 0) }));
+  const active = lines.find((l) => spoken(l, local).speaking);
+  const who = active?.who ?? 'idle';
+  const level = who === 'idle' ? 0.12 : 1;
+  const hue = who === 'you' ? '217 119 87' : '67 194 187';
+  const orbScale = 1 + 0.08 * level * wobble(3, t);
+  const rings = [0, 1, 2]
+    .map((i) => {
+      const ph = (t * 0.7 + i / 3) % 1;
+      return `<div class="ring" style="transform:scale(${1 + ph * 0.9 * (0.4 + level)});opacity:${(1 - ph) * (0.15 + 0.45 * level)};border-color:rgb(${hue} / 0.8)"></div>`;
+    })
+    .join('');
+  const bars = Array.from({ length: 44 }, (_, i) => {
+    const centre = 1 - Math.abs(i - 21.5) / 24;
+    const h = 6 + (level * 70 * centre + 8) * wobble(i, t);
+    return `<span style="height:${h}px;background:rgb(${hue} / ${0.45 + 0.5 * centre})"></span>`;
+  }).join('');
+  const shown = lines.filter((l) => local >= l.at).slice(-(p.keep ?? 5));
+  const bubbles = shown
+    .map((l, i) => {
+      const { k } = spoken(l, local);
+      const a = easeOut(ramp(local, l.at, l.at + 0.5)) * (i < shown.length - 4 ? 0.45 : 1);
+      const n = Math.max(1, Math.round(l.text.length * k));
+      const caret = k < 1 ? '<i class="caret"></i>' : '';
+      const sentK = l.sent
+        ? easeOut(ramp(local, l.at + spoken(l, local).dur, l.at + spoken(l, local).dur + 0.6))
+        : 0;
+      const sent =
+        l.sent && sentK > 0
+          ? `<div class="sent" style="opacity:${sentK};transform:translateX(${(1 - sentK) * 12}px)">→ Sent to Helix · ${l.sent}</div>`
+          : '';
+      return `<div class="bubble b-${l.who}" style="opacity:${a};transform:translateY(${(1 - a) * 14}px)"><div class="who">${l.who === 'you' ? 'You' : 'V.A.L.E'}</div><div class="said">${l.text.slice(0, n)}${caret}</div>${sent}</div>`;
+    })
+    .join('');
+  const inner = `<div class="vale">
+    <div class="vhead"><div class="orbwrap"><div class="vorb" style="transform:scale(${orbScale});box-shadow:0 0 ${40 + 60 * level}px rgb(${hue} / ${0.35 + 0.35 * level})"></div>${rings}</div>
+      <div><div class="vname">V.A.L.E</div><div class="vsub">Connected to Helix · Dot for Codex</div></div>
+      <div class="live"><span style="opacity:${0.5 + 0.5 * Math.abs(Math.sin(t * 2.4))}"></span>${who === 'you' ? 'Listening' : who === 'vale' ? 'Speaking' : 'Live'}</div></div>
+    <div class="wave">${bars}</div>
+    <div class="transcript">${bubbles}</div></div>`;
+  return glass(seg, p, t, inner, hue);
+}
+
+/** Helix guided intake as V.A.L.E. fills it in from the conversation. */
+function intakePane(seg, p, t) {
+  const local = t - seg.start;
+  const rows = p.rows
+    .map((row) => {
+      const at = localAt(seg, row.at);
+      if (local < at)
+        return `<div class="irow pending"><div class="q">${row.q}</div><div class="a">Waiting for your answer…</div></div>`;
+      const k = clamp((local - at) / Math.max(0.8, row.a.length / 40));
+      const flash = 1 - ramp(local, at, at + 1.4);
+      return `<div class="irow" style="box-shadow:0 0 0 1px rgb(67 194 187 / ${0.25 + 0.6 * flash}),0 0 ${30 * flash}px rgb(67 194 187 / ${0.5 * flash})"><div class="q">${row.q}</div><div class="a">${row.a.slice(0, Math.max(1, Math.round(row.a.length * k)))}</div></div>`;
+    })
+    .join('');
+  const ready =
+    p.readyAt === undefined
+      ? 0
+      : easeOut(ramp(local, localAt(seg, p.readyAt), localAt(seg, p.readyAt) + 0.8));
+  const launch =
+    p.readyAt === undefined
+      ? ''
+      : `<div class="launch" style="opacity:${ready};transform:scale(${lerp(0.96, 1, ready)})"><span>Brief ready · 12 tasks proposed</span><b style="box-shadow:0 0 ${20 + 30 * Math.abs(Math.sin(t * 2))}px rgb(35 165 90 / 0.6)">Launch build</b></div>`;
+  const inner = `<div class="intake"><div class="ihead"><div><div class="eyebrow">New build · guided intake</div><div class="ititle">${p.title}</div></div><div class="via"><span></span>Voice via V.A.L.E</div></div>${rows}${launch}</div>`;
+  return glass(seg, p, t, inner, '67 194 187');
+}
+
+/** V.A.L.E.'s real-time update feed: newest first. */
+function feedPane(seg, p, t) {
+  const local = t - seg.start;
+  const rows = p.rows
+    .map((row) => ({ ...row, at: localAt(seg, row.at) }))
+    .filter((row) => local >= row.at)
+    .reverse()
+    .map((row) => {
+      const a = easeOut(ramp(local, row.at, row.at + 0.6));
+      const flash = 1 - ramp(local, row.at, row.at + 1.2);
+      return `<div class="frow" style="opacity:${a};transform:translateX(${(1 - a) * 40}px);background:rgb(${GLOW[row.strand] ?? '120 130 150'} / ${0.06 + 0.14 * flash})"><span class="dot" style="background:${STRAND[row.strand] ?? 'var(--text-2)'};box-shadow:0 0 14px ${STRAND[row.strand] ?? 'transparent'}"></span><div><div class="ft">${row.title}</div><div class="fd">${row.detail}</div></div></div>`;
+    })
+    .join('');
+  const inner = `<div class="feed"><div class="fhead"><div class="vorb small"></div><div><div class="vname small">V.A.L.E</div><div class="vsub">Live updates from Helix</div></div><div class="live"><span style="opacity:${0.5 + 0.5 * Math.abs(Math.sin(t * 2.4))}"></span>Live</div></div>${rows}</div>`;
+  return glass(seg, p, t, inner, '169 140 247');
+}
+
+/** Light travelling from V.A.L.E. into the app when something is sent to Helix. */
+function beams(seg, t) {
+  const local = t - seg.start;
+  let svg = '';
+  for (const b of seg.beams ?? []) {
+    const at = localAt(seg, b.at);
+    const k = (local - at) / 1.1;
+    if (k < 0 || k > 1.3) continue;
+    const [x1, y1] = b.from;
+    const [x2, y2] = b.to;
+    const cx = (x1 + x2) / 2;
+    const cy = Math.min(y1, y2) - 160;
+    const pt = (u) => [
+      (1 - u) * (1 - u) * x1 + 2 * (1 - u) * u * cx + u * u * x2,
+      (1 - u) * (1 - u) * y1 + 2 * (1 - u) * u * cy + u * u * y2,
+    ];
+    const head = clamp(ease(clamp(k)));
+    const fade = 1 - ramp(k, 1, 1.3);
+    let path = '';
+    for (let i = 0; i <= 24; i++) {
+      const [x, y] = pt(head * (i / 24));
+      path += `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+    const [hx, hy] = pt(head);
+    svg += `<path d="${path}" stroke="url(#beam)" stroke-width="4" fill="none" opacity="${0.9 * fade}" stroke-linecap="round"/><circle cx="${hx}" cy="${hy}" r="${10 + 6 * Math.sin(t * 20)}" fill="#bff3ee" opacity="${fade}" filter="url(#glow)"/>`;
+  }
+  return svg
+    ? `<svg class="beams" width="1920" height="1080"><defs><linearGradient id="beam" x1="0" x2="1"><stop offset="0" stop-color="#43c2bb" stop-opacity="0"/><stop offset="1" stop-color="#9ff0e8"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="6"/></filter></defs>${svg}</svg>`
+    : '';
+}
+
+const PANES = { vale: valePane, intake: intakePane, feed: feedPane };
+
 function footage(t, seg) {
-  return seg.panes.map((p) => pane(seg, p, t)).join('');
+  return seg.panes.map((p) => (PANES[p.kind] ?? pane)(seg, p, t)).join('') + beams(seg, t);
 }
 
 /** Large typographic beats, one or more lines revealed at their cues. */
@@ -317,7 +464,7 @@ window.load = async (timeline, options = {}) => {
   await document.fonts.ready;
   const refs = new Set();
   for (const seg of TL.segments)
-    for (const p of seg.panes ?? []) for (const s of p.states) refs.add(s.still);
+    for (const p of seg.panes ?? []) for (const s of p.states ?? []) refs.add(s.still);
   await Promise.all(
     [...refs].map(async (ref) => {
       const [source, name] = ref.split('/');

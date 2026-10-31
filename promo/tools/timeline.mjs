@@ -83,10 +83,16 @@ const segFor = (c) => segments.find((s) => c.start >= s.start && c.start < s.end
 /** What a segment shows, for the cue sheet: real replay stills, Daybreak designs or typography. */
 const describe = (s) => {
   if (!s?.panes) return [s?.type === 'evidence' ? 'recorded facts card' : 'typography', ''];
-  const refs = [...new Set(s.panes.flatMap((p) => p.states.map((x) => x.still)))];
-  const kind = refs.every((r) => r.startsWith('dc/'))
-    ? 'real Helix replay (discount-codes run)'
-    : 'Daybreak storefront design images';
+  const refs = [...new Set(s.panes.flatMap((p) => (p.states ?? []).map((x) => x.still)))];
+  const kinds = [...new Set(s.panes.map((p) => p.kind).filter(Boolean))];
+  const kind = [
+    refs.some((r) => r.startsWith('db')) && 'Helix UI replaying the invented Daybreak build',
+    refs.some((r) => r.startsWith('dc/')) && 'real Helix replay (discount-codes run)',
+    refs.some((r) => r.startsWith('daybreak/')) && 'Daybreak storefront design images',
+    kinds.length && `stage graphics (${kinds.join(', ')})`,
+  ]
+    .filter(Boolean)
+    .join(' + ');
   return [kind, refs.join(' > ')];
 };
 fs.writeFileSync(
