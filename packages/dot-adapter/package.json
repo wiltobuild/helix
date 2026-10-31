@@ -1,0 +1,26 @@
+{
+  "name": "@helix/dot-adapter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "format": "prettier --write src README.md package.json tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "test": "vitest run --config ../../vitest.config.ts --project @helix/dot-adapter",
+    "demo": "tsx src/demo.ts",
+    "mcp:stdio": "tsx src/stdio.ts --stdio",
+    "mcp:mock": "tsx src/stdio.ts --mock",
+    "mcp:proof": "tsx src/mcp-proof.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1"
+  }
+}

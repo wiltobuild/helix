@@ -1,0 +1,109 @@
+SYNTHETIC MOCK ONLY ΓÇö no live Helix or Dot connection
+{
+  "ok": true,
+  "data": {
+    "stages": {
+      "discovery": [
+        {
+          "seq": 1,
+          "stage": "discovery",
+          "claim": "Session creation recorded",
+          "assurance": "recorded"
+        },
+        {
+          "seq": 1,
+          "stage": "discovery",
+          "claim": "1 user answers; 1 accepted recommendations recorded",
+          "assurance": "accepted"
+        },
+        {
+          "seq": 1,
+          "stage": "discovery",
+          "claim": "1 assumptions remain distinct from confirmed answers",
+          "assurance": "generated"
+        }
+      ],
+      "design": [
+        {
+          "seq": 11,
+          "stage": "design",
+          "claim": "Generated concepts await a decision",
+          "assurance": "generated"
+        }
+      ],
+      "execution": [
+        {
+          "seq": 21,
+          "stage": "execution",
+          "claim": "Execution started",
+          "assurance": "recorded"
+        },
+        {
+          "seq": 31,
+          "stage": "execution",
+          "claim": "Generated workspace changes recorded",
+          "assurance": "generated"
+        }
+      ],
+      "handoff": [
+        {
+          "seq": 41,
+          "stage": "handoff",
+          "claim": "Passing CI reported in history; current revision not verified",
+          "assurance": "verified"
+        }
+      ]
+    },
+    "executionState": "active",
+    "decisionNeeded": [
+      "Inspect design decision in Helix; adapter cannot approve",
+      "Inspect discovery brief in Helix; adapter cannot approve"
+    ],
+    "blockers": [],
+    "limits": [
+      "Read-only observations; no current-head verification or budget guarantees."
+    ],
+    "current": {
+      "discovery": {
+        "state": "review",
+        "mode": "interview",
+        "revision": 2,
+        "userAnswers": 0,
+        "acceptedRecommendations": 0,
+        "acceptedBrief": false,
+        "generatedConfirmedClaims": 0,
+        "assumptions": 1,
+        "unknowns": 0,
+        "decisionNeeded": true,
+        "blocked": false,
+        "sourceTimestamp": null,
+        "freshness": "unknown"
+      },
+      "design": {
+        "state": "ready",
+        "revision": 1,
+        "rounds": 1,
+        "concepts": 3,
+        "accepted": false,
+        "decisionNeeded": true,
+        "blocked": false,
+        "preview": "absent",
+        "sourceTimestamp": null,
+        "freshness": "unknown"
+      }
+    }
+  },
+  "provenance": {
+    "instance": "synthetic-demo",
+    "instanceVerified": false,
+    "projectId": "mock-project",
+    "sessionId": "mock-session",
+    "revision": null,
+    "cursor": 41,
+    "timestamp": "2026-10-31T00:00:00.000Z",
+    "sourceTimestamp": "2026-10-31T00:00:00.000Z",
+    "stale": false,
+    "partial": false,
+    "untrustedContent": true
+  }
+}
