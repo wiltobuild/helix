@@ -32,7 +32,7 @@ import { useRun, type RunView } from '../data/useRun';
 import { buildWorkspace } from '../data/buildWorkspace';
 import { HistoryUnavailable } from './HistoryUnavailable';
 import { replayStart } from '../data/recordings';
-import { boardCards, relativeTo, type BoardCard } from '../data/describe';
+import { boardCards, projectAttention, relativeTo, type BoardCard } from '../data/describe';
 import { formatDuration, planTree } from '../data/observatory';
 import { StopAll, runningAgents } from './StopAll';
 import {
@@ -337,6 +337,15 @@ function ProjectedWorkspace({
   const repoList: readonly Project[] =
     source.projects.length > 0 ? source.projects : [state.project];
   const mode = live && run.isLive ? 'live' : run.playing ? 'replaying' : 'paused';
+  const switchProject = (id: string) => {
+    if (id === state.project.id) return;
+    setSelected(null);
+    setSelectedBuild(undefined);
+    setInspectorHidden(true);
+    setTab(null);
+    setPage('sessions');
+    source.selectProject(id);
+  };
 
   const orch = tree
     ? state.sessions[tree.orchestrator.sessionId as keyof typeof state.sessions]
@@ -449,6 +458,8 @@ function ProjectedWorkspace({
       />
       <NavRail
         project={state.project}
+        projects={repoList}
+        onSelectProject={switchProject}
         page={page}
         onPage={setPage}
         counts={{
@@ -460,6 +471,8 @@ function ProjectedWorkspace({
         recent={recent}
         onOpenSession={openFromPage}
         onSettings={() => setSettingsOpen(true)}
+        // Keep attention across every build in this project, not only the selected build.
+        {...(live && run.isLive ? { attention: projectAttention(run.state, run.events) } : {})}
       />
 
       <main className={s.main}>
@@ -479,10 +492,7 @@ function ProjectedWorkspace({
               counts={{ board: activeCount, files: undefined, commits: undefined }}
               onNewTask={() => setNewTask(true)}
               onAddRepo={() => setAddRepoOpen(true)}
-              onSelectRepo={(id) => {
-                setSelected(null);
-                source.selectProject(id);
-              }}
+              onSelectRepo={switchProject}
               stopAll={stopAll}
               repos={repoList}
               activeCount={activeCount}

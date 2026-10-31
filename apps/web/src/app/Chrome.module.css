@@ -151,6 +151,68 @@
   padding: 0 var(--space-2);
 }
 
+.projectSwitch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectSwitch:hover,
+.projectSwitch:focus-visible {
+  background: var(--surface-3);
+  outline: 2px solid var(--border);
+  outline-offset: 2px;
+}
+
+.projectSwitch strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.projectAttention {
+  display: grid;
+  gap: 4px;
+  margin: 0 var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectAttention:hover,
+.projectAttention:focus-visible {
+  background: var(--surface-3);
+  outline: 2px solid var(--border);
+  outline-offset: 2px;
+}
+
+.projectAttention strong {
+  font-size: var(--text-sm);
+}
+
+.projectAttention span {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
 .repoRow {
   display: flex;
   align-items: center;

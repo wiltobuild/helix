@@ -2,7 +2,7 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test, vi } from 'vitest';
 import { fixtures, projectUpTo, type HelixEvent } from '@helix/contracts';
-import { TooltipProvider } from '@helix/ui';
+import { MenuItem, TooltipProvider } from '@helix/ui';
 import { indexIdentities, resolveIdentities, withIdentityIndex } from '../data/identity';
 import { ganttLanes, planTree } from '../data/observatory';
 import type { HelixSource } from '../data/useHelixSource';
@@ -79,6 +79,8 @@ test('Chrome shows role before task and provider, with trace IDs and original na
   const onOpenSession = vi.fn();
   const rail = NavRail({
     project: run.state.project,
+    projects: [run.state.project],
+    onSelectProject: noop,
     page: 'sessions',
     counts: {},
     active: summary(orchestrator.sessionId),
@@ -105,6 +107,62 @@ test('Chrome shows role before task and provider, with trace IDs and original na
   visit(rail);
   expect(onPage).toHaveBeenCalledExactlyOnceWith('sessions');
   expect(onOpenSession).toHaveBeenCalledExactlyOnceWith(worker.sessionId);
+});
+
+test('every page exposes a project switch and a current-project next action', () => {
+  const events = fixtures.passwordResetRun;
+  const state = projectUpTo(events, 5);
+  const other = fixtures.crossReviewProject;
+  const onSelectProject = vi.fn();
+  const onPage = vi.fn();
+  const onOpenSession = vi.fn();
+  const rail = NavRail({
+    project: state.project,
+    projects: [state.project, other],
+    onSelectProject,
+    page: 'agents',
+    counts: {},
+    recent: [],
+    onPage,
+    onOpenSession,
+    onSettings: noop,
+    attention: {
+      sessionId: fixtures.passwordResetIds.orchestrator,
+      tab: 'summary',
+      reason: 'Plan needs your approval',
+      nextAction: 'Open plan to approve or request changes',
+    },
+  });
+  const html = render(rail);
+  expect(html).toContain(`aria-label="Switch project. Current project: ${state.project.name}"`);
+  expect(html).toContain('Plan needs your approval');
+  expect(html).toContain('Open plan to approve or request changes');
+
+  function visit(node: ReactNode) {
+    Children.forEach(node, (child) => {
+      if (
+        !isValidElement<{ children?: ReactNode; onClick?: () => void; onSelect?: () => void }>(
+          child,
+        )
+      )
+        return;
+      if (
+        child.type === MenuItem &&
+        child.props.children === `${other.github!.owner}/${other.github!.repo}`
+      )
+        child.props.onSelect?.();
+      if (child.type === 'button' && render(child).includes('Plan needs your approval'))
+        child.props.onClick?.();
+      visit(child.props.children);
+    });
+  }
+  visit(rail);
+  expect(onSelectProject).toHaveBeenCalledExactlyOnceWith(other.id);
+  expect(onPage).toHaveBeenCalledExactlyOnceWith('sessions');
+  expect(onOpenSession).toHaveBeenCalledExactlyOnceWith(
+    fixtures.passwordResetIds.orchestrator,
+    'summary',
+  );
 });
 
 test('Dock exposes stable task and reviewer lanes while preserving replay controls and history', () => {

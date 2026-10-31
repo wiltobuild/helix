@@ -39,6 +39,7 @@ import {
   type DisplayStatus,
 } from '@helix/ui';
 import type { HelixSource } from '../data/useHelixSource';
+import type { ProjectAttention } from '../data/describe';
 import { DEMO_SCENARIOS } from '../data/demoScenarios';
 import { formatDuration } from '../data/observatory';
 import { traceLabel, type ActorIdentity } from '../data/identity';
@@ -135,6 +136,8 @@ const NAV: { page: Page; label: string; icon: ReactNode }[] = [
 
 export function NavRail({
   project,
+  projects,
+  onSelectProject,
   page,
   onPage,
   counts,
@@ -142,23 +145,52 @@ export function NavRail({
   recent,
   onOpenSession,
   onSettings,
+  attention,
 }: {
   project: Project;
+  projects: readonly Project[];
+  onSelectProject: (id: string) => void;
   page: Page;
   onPage: (p: Page) => void;
   counts: Partial<Record<Page, number>>;
   active?: SessionSummary;
   recent: SessionSummary[];
-  onOpenSession: (id: string) => void;
+  onOpenSession: (id: string, tab?: string) => void;
   onSettings: () => void;
+  attention?: ProjectAttention;
 }) {
   return (
     <nav className={s.nav} aria-label="Workspace">
       <div className={s.repo}>
-        <span className={s.repoRow}>
-          <FolderGit2 size={15} aria-hidden />
-          <strong>{project.name}</strong>
-        </span>
+        <Menu
+          align="start"
+          trigger={
+            <button
+              type="button"
+              className={s.projectSwitch}
+              aria-label={`Switch project. Current project: ${project.name}`}
+            >
+              <FolderGit2 size={15} aria-hidden />
+              <strong>{project.name}</strong>
+              <ChevronDown size={14} aria-hidden />
+            </button>
+          }
+        >
+          <MenuLabel>Switch project</MenuLabel>
+          {projects.map((repo) => {
+            const isCurrent = repo.id === project.id;
+            return (
+              <MenuItem
+                key={repo.id}
+                icon={repo.github ? <GitBranch size={14} /> : <FolderGit2 size={14} />}
+                shortcut={isCurrent ? 'Current' : undefined}
+                onSelect={() => !isCurrent && onSelectProject(repo.id)}
+              >
+                {repo.github ? `${repo.github.owner}/${repo.github.repo}` : repo.name}
+              </MenuItem>
+            );
+          })}
+        </Menu>
         <span className={s.repoRow} data-muted>
           {project.github ? (
             <GitBranch size={14} aria-hidden />
@@ -168,6 +200,20 @@ export function NavRail({
           {project.github ? `${project.github.owner}/${project.github.repo}` : project.repoPath}
         </span>
       </div>
+
+      {attention && (
+        <button
+          type="button"
+          className={s.projectAttention}
+          onClick={() => {
+            onPage('sessions');
+            onOpenSession(attention.sessionId, attention.tab);
+          }}
+        >
+          <strong>Current project: {attention.reason}</strong>
+          <span>{attention.nextAction}</span>
+        </button>
+      )}
 
       <ul className={s.navList}>
         {NAV.map((item) => (
