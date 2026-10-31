@@ -22,6 +22,12 @@ type Handlers = { [K in HttpName]: (input: Input<K>) => Promise<z.output<Routes[
 
 export function createDispatch(core: SetupCore) {
   const handlers: Handlers = {
+    outputLease: ({ params }) =>
+      core.outputLease ? core.outputLease(params.id) : Promise.resolve({ lease: null }),
+    changeOutput: ({ params, body }) => {
+      if (!core.changeOutput) throw new HelixError('HARNESS_UNAVAILABLE', 'Output is unavailable');
+      return core.changeOutput(params.id, body);
+    },
     discoveryIntake: () => {
       if (!core.discoveryIntake)
         throw new HelixError('HARNESS_UNAVAILABLE', 'Repository-free discovery is unavailable');
