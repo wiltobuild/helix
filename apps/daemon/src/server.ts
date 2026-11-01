@@ -6,9 +6,18 @@ import { stat } from 'node:fs/promises';
 import { resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { apiErrorSchema, HelixError, isHelixError, routes, type ErrorCode } from '@helix/contracts';
+import {
+  apiErrorSchema,
+  eventSeqSchema,
+  HelixError,
+  isHelixError,
+  projectIdSchema,
+  routes,
+  type ErrorCode,
+} from '@helix/contracts';
 import { createDispatch } from './dispatch.js';
 import { openEventStream, openTerminal } from './streams.js';
+import { ReplayAssets } from './replay-assets.js';
 
 export type ServerOptions = { core: SetupCore; port?: number; webDist?: string };
 export const DEFAULT_PORT = 4317;
@@ -49,6 +58,7 @@ export async function createServer(options: ServerOptions) {
   const port = parsePort(options.port ?? process.env.HELIX_PORT);
   const app = Fastify({ logger: false, bodyLimit: 16 * 1024 * 1024 });
   const streams = new Set<() => void>();
+  const replayAssets = new ReplayAssets();
   const dispatch = createDispatch(options.core);
   app.setErrorHandler((error, _request, reply) => {
     const badRequest =
@@ -142,7 +152,7 @@ export async function createServer(options: ServerOptions) {
         const headers = 'headers' in route ? parseRequest(route.headers, request.headers) : {};
         const body = parseRequest(route.request, request.body ?? {});
         if ('transport' in route) {
-          openEventStream(options.core, request, reply, streams);
+          openEventStream(options.core, request, reply, streams, replayAssets);
           return reply;
         }
         // Each field was validated using this route's schema; the dispatch map checks each core call.
@@ -157,6 +167,22 @@ export async function createServer(options: ServerOptions) {
       },
     });
   }
+  app.get('/api/replay-assets/:projectId/:seq/:hash', async (request, reply) => {
+    const { projectId, seq, hash } = parseRequest(
+      z.strictObject({
+        projectId: projectIdSchema,
+        seq: z.coerce.number().pipe(eventSeqSchema),
+        hash: z.string().regex(/^[a-f0-9]{64}$/),
+      }),
+      request.params,
+    );
+    const asset = await replayAssets.resolve(projectId, seq, hash, options.core.events);
+    if (!asset) throw new HelixError('NOT_FOUND', 'Visual asset not found');
+    return reply
+      .header('Cache-Control', 'private, max-age=31536000, immutable')
+      .type(asset.mimeType)
+      .send(asset.bytes);
+  });
   const webDist = resolve(
     options.webDist ??
       process.env.HELIX_WEB_DIST ??
