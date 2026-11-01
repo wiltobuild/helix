@@ -1351,7 +1351,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       base: p.defaultBranch,
       title: s.session.title,
       body,
-      draft: false,
+      draft: s.session.draftPr ?? false,
     });
     const opened = await emit('pr.opened', { pr }, context(s.session, cause));
     watch(id, opened.seq);
@@ -1582,6 +1582,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         interface: request.interface,
         createdAt: deps.clock(),
         ...(request.model ? { model: request.model } : {}),
+        ...(request.draftPr ? { draftPr: true } : {}),
         ...(node ? { planNodeId: node.id } : {}),
         ...(parent ? { parentSessionId: parent } : {}),
       };
@@ -1743,6 +1744,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             prompt: node.description || node.title,
             agent: node.agent,
             interface: 'chat',
+            draftPr: session(plan.orchestratorSessionId).session.draftPr,
           },
           `plan:${plan.id}:${node.id}`,
           node,

@@ -1,5 +1,7 @@
-import { mkdirSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { access, chmod, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Project, Session } from '@helix/contracts';
@@ -63,12 +65,63 @@ export function sessionEnvironment(dataDir: string, base: NodeJS.ProcessEnv) {
 }
 
 /**
- * The folder an orchestrator writes its plan artifact to, created on demand. A real native path:
- * on Windows, Claude Code's Write tool and its Git Bash shell disagree about where `/tmp` is.
+ * The folder an orchestrator writes its plan artifact to, created on demand.
+ * Keep it under the native OS temporary directory, which is already writable by
+ * workspace-write agents, while isolating each Helix data directory and session.
+ * On Windows, Claude Code's Write tool and Git Bash disagree about `/tmp`, so
+ * the prompt uses this native absolute path instead.
  */
-export function orchestratorScratch(dataDir: string, session: Pick<Session, 'id'>): string {
-  const dir = join(resolve(dataDir), 'scratch', session.id);
-  mkdirSync(dir, { recursive: true });
+const scratchRoots = new Map<string, string>();
+
+function privateScratchDirectory(dir: string): void {
+  const stats = lstatSync(dir);
+  if (!stats.isDirectory() || stats.isSymbolicLink())
+    throw new Error(`Unsafe Helix scratch directory: ${dir}`);
+  if (
+    process.platform !== 'win32' &&
+    (stats.uid !== process.getuid?.() || (stats.mode & 0o077) !== 0)
+  )
+    throw new Error(`Helix scratch directory is not private: ${dir}`);
+}
+
+function trustedTempRoot(root: string): string {
+  const stats = lstatSync(root);
+  if (!stats.isDirectory() || stats.isSymbolicLink())
+    throw new Error(`Unsafe Helix temporary directory: ${root}`);
+  if (process.platform !== 'win32') {
+    const privateOwner = stats.uid === process.getuid?.() && (stats.mode & 0o022) === 0;
+    const stickyShared = (stats.mode & 0o1000) !== 0 && (stats.mode & 0o002) !== 0;
+    if (!privateOwner && !stickyShared)
+      throw new Error(`Helix temporary directory is writable without a sticky bit: ${root}`);
+  }
+  return realpathSync(root);
+}
+
+export function orchestratorScratch(
+  dataDir: string,
+  session: Pick<Session, 'id'>,
+  tempRoot = tmpdir(),
+): string {
+  const root = trustedTempRoot(tempRoot);
+  const cacheKey = `${root}\0${resolve(dataDir)}`;
+  let namespace = scratchRoots.get(cacheKey);
+  if (namespace) {
+    try {
+      privateScratchDirectory(namespace);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      namespace = undefined;
+    }
+  }
+  if (!namespace) {
+    namespace = mkdtempSync(join(root, 'helix-plan-scratch-'));
+    privateScratchDirectory(namespace);
+    scratchRoots.set(cacheKey, namespace);
+  }
+  const sessionKey = createHash('sha256').update(session.id).digest('hex').slice(0, 16);
+  const dir = join(namespace, sessionKey);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  privateScratchDirectory(dir);
   return dir;
 }
 
