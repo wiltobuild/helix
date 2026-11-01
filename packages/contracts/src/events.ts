@@ -100,7 +100,14 @@ export const eventSchemas = {
     'explain.note',
     z.strictObject({
       text: z.string(),
-      code: z.enum(['turn_limit_reached', 'turn_limit_extended', 'acceptance_verified']).optional(),
+      code: z
+        .enum([
+          'turn_limit_reached',
+          'turn_limit_extended',
+          'acceptance_verified',
+          'acceptance_retry_exhausted',
+        ])
+        .optional(),
       /** Who is making the claim: Helix itself (a recorded fact), the orchestrator (plan
        * rationale) or an agent (its own unverified summary). Absent on legacy events. */
       source: z.enum(['helix', 'orchestrator', 'agent']).optional(),

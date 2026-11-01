@@ -148,6 +148,7 @@ const MESSAGE_SCOPE = 'helix:core:message:v1';
 const TURN_SCOPE = 'helix:core:turn:v1';
 const EXTENSION_SCOPE = 'helix:core:turn-extension:v1';
 const SCHEDULING_SCOPE = 'helix:core:scheduling-paused:v1';
+const VERIFICATION_SCOPE = 'helix:core:exact-file-retries:v1';
 const EXTENSION_PREFIX = 'Turn allowance extended to ';
 const META_HASH = 'v1';
 const REVIEW_REMINDER = 'Submit your verdict with `helix review submit`';
@@ -404,11 +405,19 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     history.set(ctx.projectId, list);
     return event as HelixEvent<T>;
   }
-  function reasonKey(s: Session, prNumber: number, reason: Reason): string {
-    return JSON.stringify([s.projectId, prNumber, reason]);
+  function reasonKey(s: Session, prNumber: number, reason: Reason, headSha: string): string {
+    return JSON.stringify(
+      reason === 'acceptance_failed' || reason === 'acceptance_unavailable'
+        ? [s.projectId, prNumber, reason, headSha]
+        : [s.projectId, prNumber, reason],
+    );
   }
   function feedbackKey(s: Session, prNumber: number, reason: Reason, headSha: string): string {
     return JSON.stringify([s.projectId, prNumber, reason, headSha]);
+  }
+  function clearUnavailableFeedback(s: Session, prNumber: number, headSha: string): void {
+    seenFeedback.delete(feedbackKey(s, prNumber, 'acceptance_unavailable', headSha));
+    attempts.delete(reasonKey(s, prNumber, 'acceptance_unavailable', headSha));
   }
   async function load(): Promise<void> {
     if (loaded) return;
@@ -516,13 +525,18 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         if (await deps.store.getMeta(TURN_SCOPE, String(e.seq))) turnReceipts.add(e.seq);
         if ((e.type === 'pr.opened' || e.type === 'pr.updated') && e.sessionId)
           heads.set(e.sessionId, e.payload.pr.headSha);
+        if (e.type === 'explain.note' && e.payload.code === 'acceptance_verified' && e.sessionId) {
+          const recovered = session(e.sessionId);
+          const headSha = heads.get(e.sessionId);
+          if (headSha && recovered.pr)
+            clearUnavailableFeedback(recovered.session, recovered.pr.number, headSha);
+        }
         if (e.type === 'feedback.routed') {
           const s = session(e.payload.toSessionId).session;
-          const key = reasonKey(s, e.payload.prNumber, e.payload.reason);
+          const headSha = heads.get(s.id) ?? 'unknown';
+          const key = reasonKey(s, e.payload.prNumber, e.payload.reason, headSha);
           attempts.set(key, (attempts.get(key) ?? 0) + 1);
-          seenFeedback.add(
-            feedbackKey(s, e.payload.prNumber, e.payload.reason, heads.get(s.id) ?? 'unknown'),
-          );
+          seenFeedback.add(feedbackKey(s, e.payload.prNumber, e.payload.reason, headSha));
           if (!(await readMeta(DELIVERY_SCOPE, String(e.seq))))
             hold(s.id, { text: e.payload.summary, mode: 'queue', cause: e.seq, automatic: true });
         }
@@ -949,19 +963,20 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (!node.exactFiles?.length) return undefined;
     if (!worker.pr || !worker.worktree)
       return { kind: 'unavailable', message: 'Plan worker has no PR or worktree to verify.' };
+    const headSha = worker.pr.headSha;
     for (const exact of node.exactFiles ?? []) {
       let committed: Uint8Array | undefined;
       try {
         committed = await deps.worktrees.readCommittedFile(
           worker.worktree.path,
-          worker.pr.headSha,
+          headSha,
           exact.path,
         );
       } catch (error) {
         deps.log.error('Could not verify exact committed acceptance content', error);
         return {
           kind: 'unavailable',
-          message: `Could not verify ${exact.path} on PR head ${worker.pr.headSha}. The review and merge are blocked until the committed file can be checked.`,
+          message: `Could not verify ${exact.path} on PR head ${headSha}. The review and merge are blocked until the committed file can be checked.`,
         };
       }
       const expected = new TextEncoder().encode(exact.content);
@@ -972,7 +987,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       )
         return {
           kind: 'mismatch',
-          message: `Exact committed-content check failed for ${exact.path} on PR head ${worker.pr.headSha}. Make the committed file match the approved UTF-8 content byte for byte, including punctuation and final newline, then commit the repair. Helix will rerun CI and review on the new head.`,
+          message: `Exact committed-content check failed for ${exact.path} on PR head ${headSha}. Make the committed file match the approved UTF-8 content byte for byte, including punctuation and final newline, then commit the repair. Helix will rerun CI and review on the new head.`,
         };
     }
     return undefined;
@@ -980,6 +995,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   function cancelVerificationRetry(id: SessionId): void {
     clearTimeout(verificationRetries.get(id)?.timer);
     verificationRetries.delete(id);
+  }
+  function verificationKey(id: SessionId, headSha: string): string {
+    return JSON.stringify([id, headSha]);
   }
   async function scheduleVerificationRetry(
     id: SessionId,
@@ -990,18 +1008,37 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (previous && previous.headSha !== headSha) cancelVerificationRetry(id);
     const current = verificationRetries.get(id);
     if (current?.exhausted || current?.timer) return;
-    if ((current?.attempts ?? 0) >= 3) {
+    const key = verificationKey(id, headSha);
+    const persisted = await deps.store.getMeta(VERIFICATION_SCOPE, key);
+    const attemptsUsed =
+      current?.attempts ??
+      (typeof persisted === 'number' && Number.isSafeInteger(persisted) && persisted >= 0
+        ? persisted
+        : 0);
+    if (attemptsUsed >= 3) {
       verificationRetries.set(id, { headSha, attempts: 3, exhausted: true });
-      await emit(
-        'explain.note',
-        {
-          text: `Exact-file verification could not read PR head ${headSha} after three retries. Human input is required; review and merge remain blocked.`,
-          source: 'helix',
-        },
-        context(session(id).session, cause),
-      );
+      const worker = session(id);
+      if (
+        !eventsFor(worker.session).some(
+          (e) =>
+            e.type === 'explain.note' &&
+            e.payload.code === 'acceptance_retry_exhausted' &&
+            e.payload.text.includes(`PR head ${headSha}`),
+        )
+      )
+        await emit(
+          'explain.note',
+          {
+            text: `Exact-file verification could not read PR head ${headSha} after three retries. Human input is required; review and merge remain blocked.`,
+            code: 'acceptance_retry_exhausted',
+            source: 'helix',
+          },
+          context(worker.session, cause),
+        );
       return;
     }
+    const attempts = attemptsUsed + 1;
+    await deps.store.setMeta(VERIFICATION_SCOPE, key, attempts);
     const timer = setTimeout(() => {
       background(id, async () => {
         const retry = verificationRetries.get(id);
@@ -1011,7 +1048,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       });
     }, acceptanceRetryMs);
     timer.unref();
-    verificationRetries.set(id, { headSha, attempts: (current?.attempts ?? 0) + 1, timer });
+    verificationRetries.set(id, { headSha, attempts, timer });
   }
   async function requestReview(id: SessionId, cause: EventSeq): Promise<void> {
     const worker = session(id);
@@ -1031,8 +1068,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       pr.checks.pending
     )
       return;
-    // A verdict or request for this exact head stands, even if policy/availability changes.
-    if (worker.agentReview?.headSha === pr.headSha) return;
+    // A verdict stands, but a merge-time read outage on that head must still be rechecked.
+    const existingReview = worker.agentReview?.headSha === pr.headSha;
+    if (existingReview && !worker.acceptanceFailedHeads?.includes(pr.headSha)) return;
     const exactFailure = await exactContentFailure(worker);
     if (exactFailure) {
       await feedback(
@@ -1047,6 +1085,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       return;
     }
     cancelVerificationRetry(id);
+    await deps.store.setMeta(VERIFICATION_SCOPE, verificationKey(id, pr.headSha), 0);
+    clearUnavailableFeedback(worker.session, pr.number, pr.headSha);
     if (worker.acceptanceFailedHeads?.includes(pr.headSha))
       await emit(
         'explain.note',
@@ -1057,6 +1097,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         },
         context(worker.session, cause),
       );
+    if (existingReview) return;
     if (!deps.crossReview) {
       await reviewFallback(worker, 'Cross-agent review is turned off.', cause);
       return;
@@ -1642,7 +1683,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       runtimes.get(id)?.stopped
     )
       return;
-    const key = reasonKey(s.session, pr.number, reason);
+    const key = reasonKey(s.session, pr.number, reason, pr.headSha);
     const seenKey = feedbackKey(s.session, pr.number, reason, pr.headSha);
     if (seenFeedback.has(seenKey)) return;
     if ((attempts.get(key) ?? 0) >= 3) {
@@ -2236,6 +2277,23 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
               }
             }
             watch(s.session.id);
+            const worker = session(s.session.id);
+            if (
+              worker.session.role === 'worker' &&
+              worker.activity !== 'exited' &&
+              worker.worktree &&
+              worker.pr?.state === 'open' &&
+              worker.pr.checks.total > 0 &&
+              worker.pr.checks.pending === 0 &&
+              worker.pr.checks.failed === 0 &&
+              worker.acceptanceFailedHeads?.includes(worker.pr.headSha) &&
+              !pausedProjects.has(worker.session.projectId)
+            )
+              await scheduleVerificationRetry(
+                worker.session.id,
+                worker.pr.headSha,
+                worker.lastEventSeq as EventSeq,
+              );
           }
         for (const p of states.values()) {
           const cause = history.get(p.project.id)?.at(-1)?.seq;
@@ -2579,7 +2637,10 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           throw new HelixError('MERGE_BLOCKED', 'GitHub integration is not configured');
         if (!s.pr || deriveStatus(s) !== 'ready_to_merge')
           throw new HelixError('MERGE_BLOCKED', 'PR is not ready to merge');
+        const expectedHeadSha = s.pr.headSha;
         const exactFailure = await exactContentFailure(s);
+        if (s.pr.headSha !== expectedHeadSha)
+          throw new HelixError('MERGE_BLOCKED', 'PR head changed during exact-file verification');
         if (exactFailure) {
           await feedback(
             id,
@@ -2588,13 +2649,13 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
             exactFailure.message,
           );
           if (exactFailure.kind === 'unavailable')
-            await scheduleVerificationRetry(id, s.pr.headSha, s.lastEventSeq as EventSeq);
+            await scheduleVerificationRetry(id, expectedHeadSha, s.lastEventSeq as EventSeq);
           throw new HelixError('MERGE_BLOCKED', exactFailure.message);
         }
         const result = await deps.scm.merge({
           project: project(s.session.projectId).project,
           prNumber: s.pr.number,
-          expectedHeadSha: s.pr.headSha,
+          expectedHeadSha,
           method: 'squash',
         });
         await onScm(id, {

@@ -486,6 +486,7 @@ test('a recovered Git read retries automatically on the same immutable head', as
     crossReview: true,
     harnesses: { codex, 'claude-code': claude },
     acceptanceRetryMs: 50,
+    reviewerPrompt: () => 'Review exact bytes',
   });
   const p = await f.add();
   const orchestrator = await f.core.createSession(
@@ -527,6 +528,41 @@ test('a recovered Git read retries automatically on the same immutable head', as
       (e) => e.type === 'explain.note' && e.payload.code === 'acceptance_verified',
     ),
   ).toBeTruthy();
+  expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
+  const reviewRequest = f.store.events.find(
+    (e): e is HelixEvent<'agent_review.requested'> => e.type === 'agent_review.requested',
+  )!;
+  expect(reviewRequest.payload.headSha).toBe(pr.headSha);
+  expect(f.state(p.id).sessions[workerId]!.pr?.headSha).toBe(pr.headSha);
+  expect(f.state(p.id).sessions[workerId]!.pr?.state).toBe('open');
+  expect(f.state(p.id).sessions[workerId]!.agentReview).toMatchObject({
+    status: 'reviewing',
+    headSha: pr.headSha,
+    reviewerSessionId: reviewRequest.sessionId,
+  });
+  await f.core.submitReview({
+    reviewerSessionId: reviewRequest.sessionId!,
+    headSha: pr.headSha,
+    review: { verdict: 'approve', summary: 'Exact content verified.', findings: [] },
+  });
+  claude.handles.get(reviewRequest.sessionId!)!.emit(activity('idle'));
+  await f.drain();
+  f.scm.emit(p.id, pr.number, {
+    type: 'review.updated',
+    payload: { prNumber: pr.number, review: { decision: 'approved', unresolvedThreads: 0 } },
+  });
+  await f.drain();
+  expect(deriveStatus(f.state(p.id).sessions[workerId]!)).toBe('ready_to_merge');
+  f.git.readCommittedFile.mockRejectedValueOnce(new Error('temporary merge-time Git failure'));
+  await expect(f.core.merge(workerId)).rejects.toMatchObject({ code: 'MERGE_BLOCKED' });
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain(pr.headSha);
+  await vi.waitFor(async () => {
+    await f.drain();
+    expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toBeUndefined();
+  });
+  codex.handles.get(workerId)!.emit(activity('idle'));
+  await f.drain();
+  expect(deriveStatus(f.state(p.id).sessions[workerId]!)).toBe('ready_to_merge');
   expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
 });
 
@@ -582,6 +618,93 @@ test('temporary Git read failure cannot suppress a later real mismatch on the sa
   ).toEqual(['acceptance_unavailable', 'acceptance_failed']);
   expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(0);
   expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain(pr.headSha);
+  for (let n = 2; n <= 4; n++) {
+    const headSha = `head-${n}`;
+    f.git.committedFiles.set(`${headSha}:CASE-B.md`, new TextEncoder().encode('wrong bytes\n'));
+    f.scm.emit(p.id, pr.number, {
+      type: 'pr.updated',
+      payload: { pr: { ...f.state(p.id).sessions[workerId]!.pr!, headSha, checks: green } },
+    });
+    f.scm.emit(p.id, pr.number, {
+      type: 'ci.updated',
+      payload: { prNumber: pr.number, checks: green },
+    });
+    await f.drain();
+  }
+  expect(
+    f.store.events.filter(
+      (e) => e.type === 'feedback.routed' && e.payload.reason === 'acceptance_failed',
+    ),
+  ).toHaveLength(4);
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-4');
+});
+
+test('restart resumes a pending exact-file read with its persisted retry budget', async () => {
+  const codex = new FakeHarness();
+  const claude = new FakeHarness();
+  claude.detect.mockResolvedValue({ agent: 'claude-code', installed: true, signedIn: true });
+  const f = fixture({
+    crossReview: true,
+    harnesses: { codex, 'claude-code': claude },
+    acceptanceRetryMs: 100,
+    reviewerPrompt: () => 'Review exact bytes',
+  });
+  const p = await f.add();
+  const orchestrator = await f.core.createSession(
+    p.id,
+    { ...request, title: 'Planner', planWithOrchestrator: true },
+    'restart-git-read-planner',
+  );
+  const plan = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'Verify a complete file',
+    nodes: [
+      {
+        ...nodes[0]!,
+        files: ['CASE-B.md'],
+        exactFiles: [{ path: 'CASE-B.md', content: 'Signal: orchard-17.\n' }],
+      },
+    ],
+  });
+  await f.core.decidePlan(plan.id, { decision: 'approve' });
+  const workerId = f.state(p.id).plans[plan.id]!.nodes[0]!.sessionId!;
+  f.git.ahead = 1;
+  codex.handles.get(workerId)!.emit(activity('idle'));
+  await f.drain();
+  const pr = f.state(p.id).sessions[workerId]!.pr!;
+  f.git.committedFiles.set('head-1:CASE-B.md', new TextEncoder().encode('Signal: orchard-17.\n'));
+  f.git.readCommittedFile.mockRejectedValueOnce(new Error('temporary Git read failure'));
+  f.scm.emit(p.id, pr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: pr.number, checks: green },
+  });
+  await f.drain();
+  const retryKey = JSON.stringify([workerId, pr.headSha]);
+  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toBe(1);
+  await f.core.shutdown();
+  const last = f.store.events.at(-1)!;
+  await f.store.append([
+    {
+      v: 1,
+      ts: timestamp,
+      projectId: p.id,
+      sessionId: workerId,
+      type: 'activity.changed',
+      payload: { activity: 'idle' },
+      causedBy: last.seq,
+    },
+  ]);
+  const restarted = createHelixCore(f.deps);
+  await restarted.start();
+  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toBe(2);
+  await vi.waitFor(async () => {
+    await restarted.health();
+    expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toBeUndefined();
+  });
+  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toBe(0);
+  expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
+  await restarted.shutdown();
 });
 
 test('retry sends the initial prompt even when a failed launch already captured a resume token', async () => {
