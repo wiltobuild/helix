@@ -301,7 +301,7 @@ export async function probe(
     const timer = setTimeout(() => {
       void killTree(child).catch(() => undefined);
       reject(new HelixError('HARNESS_UNAVAILABLE', 'Harness probe timed out'));
-    }, options.requestTimeoutMs ?? 10_000);
+    }, options.requestTimeoutMs ?? 45_000);
     const collect = (chunk: Buffer) => {
       output = (output + chunk.toString('utf8')).slice(-64_000);
     };

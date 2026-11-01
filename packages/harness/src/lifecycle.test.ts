@@ -15,7 +15,7 @@ import {
 } from '@helix/contracts';
 import { createHarness, detectAll } from './index.js';
 import type { HarnessOptions } from './options.js';
-import { quoteCmdArgument, resolveExecutable, spawnExecutable } from './process.js';
+import { probe, quoteCmdArgument, resolveExecutable, spawnExecutable } from './process.js';
 import { record } from './protocol.js';
 import { HELIX_GIT_INSTRUCTIONS } from './git-policy.js';
 
@@ -354,6 +354,15 @@ describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) 
 });
 
 describe('detection and executable resolution', () => {
+  it('waits for a slow Windows CLI probe before marking a signed-in agent unknown', async () => {
+    const cwd = await directory();
+    const result = await probe(process.execPath, [executable, 'codex', '--version'], {
+      cwd,
+      env: { HELIX_FAKE_PROBE_DELAY_MS: '11000' },
+    });
+    expect(result).toEqual({ code: 0, text: 'fixture-cli 1.0.0' });
+  }, 55_000);
+
   it.each(['approve-files', 'approve-permissions'])(
     'resolves Codex %s with the proper response shape',
     async (prompt) => {

@@ -4,12 +4,22 @@ const { spawn } = require('node:child_process');
 const args = process.argv.slice(2);
 const claude = args[0] === 'claude';
 if (args.includes('--version')) {
-  console.log('fixture-cli 1.0.0');
-  process.exit(0);
+  setTimeout(
+    () => {
+      console.log('fixture-cli 1.0.0');
+      process.exit(0);
+    },
+    Number(process.env.HELIX_FAKE_PROBE_DELAY_MS || 0),
+  );
 }
 if (args.includes('status')) {
-  console.log(claude ? JSON.stringify({ loggedIn: true }) : 'Logged in using ChatGPT');
-  process.exit(0);
+  setTimeout(
+    () => {
+      console.log(claude ? JSON.stringify({ loggedIn: true }) : 'Logged in using ChatGPT');
+      process.exit(0);
+    },
+    Number(process.env.HELIX_FAKE_PROBE_DELAY_MS || 0),
+  );
 }
 if (process.env.HELIX_FAKE_CHILD_FILE) {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
