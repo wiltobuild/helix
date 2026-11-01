@@ -171,10 +171,12 @@ it('lets a slow Claude initialize without extending ordinary request deadlines',
   }).start({ cwd, session: { ...template, agent: 'claude-code' } });
   sessions.push(session);
   await session.send('hold', 'queue');
-  await expect(session.interrupt()).rejects.toMatchObject({
-    code: 'HARNESS_UNAVAILABLE',
-    message: 'Harness request timed out',
-  });
+  const timeout: unknown = await session.interrupt().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(timeout).toMatchObject({ code: 'HARNESS_UNAVAILABLE' });
+  expect((timeout as Error).message).toMatch(/^Harness request timed out(?:\n|$)/);
 }, 30_000);
 
 describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) => {
