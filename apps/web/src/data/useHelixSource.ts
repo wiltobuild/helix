@@ -18,6 +18,7 @@ import {
   sourceIdentity,
 } from './sourceHistory';
 import { chooseProject } from './projectSelection';
+import { addProject as addRequestedProject } from './addProject';
 
 export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
 export type { DemoPreset } from './demoScenarios';
@@ -207,19 +208,9 @@ export function useHelixSource(): HelixSource {
     async (repoPath: string) => {
       setError(undefined);
       try {
-        const created = await client.createProject({ repoPath });
+        const created = await addRequestedProject(client, repoPath);
         await loadProjects(created.id);
       } catch (e) {
-        // The project may exist even if this request failed (a dropped response, a retry of an
-        // earlier add). Move on to the board whenever the daemon has a project.
-        const exists = await client
-          .projects()
-          .then((list) => list.length > 0)
-          .catch(() => false);
-        if (exists) {
-          await loadProjects();
-          return;
-        }
         setError(e instanceof Error ? e.message : String(e));
         throw e;
       }
