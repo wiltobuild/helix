@@ -1,5 +1,13 @@
 # Using the promo files
 
+## Videos with the cues built in
+
+- **`helix-promo-baseline-with-cues.mp4`:** the clean video with the narration inside it as a subtitle track (on by default, switchable in the player's subtitles menu) and one chapter per shot, named by cue ID and words (for example "s27 · And where your decision can move it forward. [decision]"). Use it anywhere: QuickTime and VLC show the chapters and let you jump between shots; YouTube reads the subtitle track if you upload the file. Nothing is burned in, so the picture stays clean.
+- **`helix-promo-baseline-rehearsal.mp4`:** for practice only. The captioned video with the current cue burned in at the top-left (cue ID, its start → end time, scene and shot name) and a running clock at the top-right, so you can follow along with the cue sheet line by line. Don't present this one.
+- The `insert` versions of both are the same with the teamwork passage.
+
+Rebuild them with `python3 promo/tools/embed-cues.py baseline` (or `insert`) after any re-render.
+
 ## Which video to play
 
 - **Presenting live with no voice-over:** play `helix-promo-baseline-captioned.mp4` (3:06). The words are on screen, so the room can read along. Use the `insert` file instead if you want the extra teamwork passage (3:38).
