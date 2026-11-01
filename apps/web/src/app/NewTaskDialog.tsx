@@ -83,6 +83,23 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 /** An intake request before the revision/request-ID envelope is added by `call`. */
 type Action = DistributiveOmit<IntakeRequest, 'id' | 'revision' | 'requestId'>;
 
+export function approvalAction(
+  draft: IntakeDraft,
+  selectedDraftPr: boolean,
+): Extract<Action, { action: 'approve' }> {
+  if (!draft.approved) return { action: 'approve', draftPr: selectedDraftPr };
+  // Retrying an approved launch must preserve its frozen choice, including legacy omission.
+  return draft.draftPr === undefined
+    ? { action: 'approve' }
+    : { action: 'approve', draftPr: draft.draftPr };
+}
+
+export function draftPrAfterAdopt(current: boolean, next: IntakeDraft | null): boolean {
+  // A frozen approval wins over an unsent local checkbox, including legacy ready-PR approvals.
+  if (next?.approved) return next.draftPr ?? false;
+  return next?.draftPr ?? current;
+}
+
 function BuildIntake({
   discovery,
   onDiscovery,
@@ -115,6 +132,7 @@ function BuildIntake({
   const [goal, setGoal] = useState('');
   const [answers, setAnswers] = useState<IntakeDraft['answers']>([]);
   const [brief, setBrief] = useState('');
+  const [draftPr, setDraftPr] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   /** An approval whose outcome is unknown: everything stays frozen until the daemon says. */
@@ -141,6 +159,7 @@ function BuildIntake({
     setGoal(next?.originalGoal ?? '');
     setAnswers(next?.answers ?? []);
     setBrief(next?.synthesis?.brief ?? '');
+    setDraftPr((current) => draftPrAfterAdopt(current, next));
   };
   useEffect(() => {
     if (!open || !client || (!discovery && !projectId) || loaded) return;
@@ -321,6 +340,7 @@ function BuildIntake({
     void run(async () => {
       const text = idea.trim();
       if (!text) return;
+      setDraftPr(false);
       setBeginning(mode);
       const created = await call(draft, { action: 'new', mode });
       adopt(created);
@@ -399,7 +419,7 @@ function BuildIntake({
       // Until the daemon answers, the outcome is unknown: freeze edits so a retry can only resend
       // this exact approval (same revision, same request ID), never approve something edited.
       setUncertain({ id: draft.id, revision: draft.revision });
-      const next = await call(draft, { action: 'approve' });
+      const next = await call(draft, approvalAction(draft, draftPr));
       setUncertain(null);
       adopt(next);
       if (next.sessionId && alive.current) {
@@ -540,6 +560,8 @@ function BuildIntake({
             answerNote={pendingAnswerNote(pendingAnswer, question)}
             brief={brief}
             onBrief={setBrief}
+            draftPr={draftPr}
+            onDraftPr={setDraftPr}
             dirty={dirty}
             briefEdited={briefEdited}
             approvalUnknown={approvalUnknown}
@@ -945,6 +967,8 @@ export function IntakeWorkspace({
   answerNote,
   brief,
   onBrief,
+  draftPr,
+  onDraftPr,
   dirty,
   briefEdited,
   approvalUnknown = false,
@@ -972,6 +996,8 @@ export function IntakeWorkspace({
   answerNote?: string | undefined;
   brief: string;
   onBrief: (v: string) => void;
+  draftPr: boolean;
+  onDraftPr: (v: boolean) => void;
   dirty: boolean;
   briefEdited: boolean;
   approvalUnknown?: boolean;
@@ -1252,6 +1278,8 @@ export function IntakeWorkspace({
               answers={answers}
               brief={brief}
               onBrief={onBrief}
+              draftPr={draftPr}
+              onDraftPr={onDraftPr}
               briefEdited={briefEdited}
               dirty={holds.brief}
               approvalUnknown={approvalUnknown}
@@ -1499,6 +1527,8 @@ function LivingBrief({
   answers,
   brief,
   onBrief,
+  draftPr,
+  onDraftPr,
   briefEdited,
   dirty,
   approvalUnknown,
@@ -1513,6 +1543,8 @@ function LivingBrief({
   answers: IntakeDraft['answers'];
   brief: string;
   onBrief: (v: string) => void;
+  draftPr: boolean;
+  onDraftPr: (v: boolean) => void;
   briefEdited: boolean;
   dirty: boolean;
   approvalUnknown: boolean;
@@ -1635,6 +1667,15 @@ function LivingBrief({
       )}
       {review && (
         <div className={s.approve}>
+          <label className={s.approveHint}>
+            <input
+              type="checkbox"
+              checked={draftPr}
+              disabled={locked || busy || demo || stage !== 'review'}
+              onChange={(event) => onDraftPr(event.target.checked)}
+            />{' '}
+            Open worker pull requests as drafts
+          </label>
           {approvalUnknown ? (
             <p className={s.stale} role="status">
               Helix couldn’t confirm whether your approval was recorded. Editing is paused. Retrying

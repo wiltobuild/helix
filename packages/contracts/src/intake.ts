@@ -46,6 +46,8 @@ export const intakeDraftSchema = z.strictObject({
   error: z.string().optional(),
   sessionId: z.string().optional(),
   approved: reviewedBriefSchema.optional(),
+  /** Frozen with approval so launch retries keep the same PR publication intent. */
+  draftPr: z.boolean().optional(),
 });
 const base = { id: text, revision: z.number().int().nonnegative(), requestId: text };
 export const intakeRequestSchema = z.discriminatedUnion('action', [
@@ -61,7 +63,7 @@ export const intakeRequestSchema = z.discriminatedUnion('action', [
   z.strictObject({ ...base, action: z.literal('generate') }),
   z.strictObject({ ...base, action: z.literal('cancel') }),
   z.strictObject({ ...base, action: z.literal('brief'), text }),
-  z.strictObject({ ...base, action: z.literal('approve') }),
+  z.strictObject({ ...base, action: z.literal('approve'), draftPr: z.boolean().optional() }),
 ]);
 export const intakeResponseSchema = z.strictObject({ draft: intakeDraftSchema.nullable() });
 export type IntakeDraft = z.infer<typeof intakeDraftSchema>;

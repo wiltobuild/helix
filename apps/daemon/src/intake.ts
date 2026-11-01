@@ -105,6 +105,8 @@ export function createIntakeService(store: HelixStore, core: HelixCore, writer: 
         if (draft.status === 'launched') return { draft };
         if (draft.status === 'launching' && request.action !== 'approve') throw conflict();
         if (request.action === 'approve') {
+          if (draft.approved && request.draftPr !== undefined && request.draftPr !== draft.draftPr)
+            throw conflict();
           const destination = id === DISCOVERY ? draft.destinationProjectId : id;
           if (!destination || !(await core.listProjects()).some((p) => p.id === destination))
             throw new HelixError(
@@ -133,6 +135,7 @@ export function createIntakeService(store: HelixStore, core: HelixCore, writer: 
             );
           }
           // Save exact authorization before launching. An uncertain response retries the same creation key.
+          if (!draft.approved && request.draftPr !== undefined) draft.draftPr = request.draftPr;
           draft.approved ??= {
             intakeId: draft.id,
             revision: draft.revision,
@@ -152,6 +155,7 @@ export function createIntakeService(store: HelixStore, core: HelixCore, writer: 
               agent: 'claude-code',
               interface: 'chat',
               planWithOrchestrator: true,
+              ...(draft.draftPr === undefined ? {} : { draftPr: draft.draftPr }),
             },
             `intake:${draft.id}:${draft.approved.revision}`,
           );

@@ -90,7 +90,63 @@ test('direct path reviews exact prompt before one idempotent launch with origina
   expect(launch[1].reviewedBrief?.text).toBe(reviewed.originalGoal);
   expect(launch[1].reviewedBrief?.revision).toBe(reviewed.revision);
   expect(launch[1].planWithOrchestrator).toBe(true);
+  expect(launch[1]).not.toHaveProperty('draftPr');
   expect(launch[2]).toBe(`intake:${draft.id}:${reviewed.revision}`);
+});
+
+test('draft PR choice survives a failed launch and cannot change on retry', async () => {
+  const t = setup();
+  let draft = await t.start('direct');
+  draft = await t.command(draft, { action: 'brief', text: draft.originalGoal });
+  vi.mocked(t.core.createSession).mockRejectedValueOnce(new Error('lost connection'));
+
+  await expect(
+    t.command(draft, { action: 'approve', draftPr: true }, 'approve-draft'),
+  ).rejects.toThrow('lost connection');
+  const frozen = await t.current();
+  expect(frozen.status).toBe('launching');
+  expect(frozen.draftPr).toBe(true);
+  await expect(
+    t.command(frozen, { action: 'approve', draftPr: false }, 'changed-choice'),
+  ).rejects.toThrow('The brief changed');
+
+  const launched = await t.command(frozen, { action: 'approve' }, 'retry-draft');
+  expect(launched.status).toBe('launched');
+  expect(vi.mocked(t.core.createSession).mock.calls).toHaveLength(2);
+  for (const [, request] of vi.mocked(t.core.createSession).mock.calls)
+    expect(request.draftPr).toBe(true);
+});
+
+test('an explicit ready-PR choice remains false on launch', async () => {
+  const t = setup();
+  let draft = await t.start('direct');
+  draft = await t.command(draft, { action: 'brief', text: draft.originalGoal });
+  const launched = await t.command(draft, { action: 'approve', draftPr: false });
+  expect(launched.draftPr).toBe(false);
+  expect(vi.mocked(t.core.createSession).mock.calls[0]![1].draftPr).toBe(false);
+});
+
+test('legacy approval without a draft choice retries with the same absent request', async () => {
+  const t = setup();
+  let draft = await t.start('direct');
+  draft = await t.command(draft, { action: 'brief', text: draft.originalGoal });
+  vi.mocked(t.core.createSession).mockRejectedValueOnce(new Error('lost connection'));
+
+  await expect(t.command(draft, { action: 'approve' }, 'legacy-approve')).rejects.toThrow(
+    'lost connection',
+  );
+  const frozen = await t.current();
+  expect(frozen.status).toBe('launching');
+  expect(frozen).not.toHaveProperty('draftPr');
+  await expect(
+    t.command(frozen, { action: 'approve', draftPr: false }, 'changed-choice'),
+  ).rejects.toThrow('The brief changed');
+
+  const launched = await t.command(frozen, { action: 'approve' }, 'legacy-retry');
+  expect(launched.status).toBe('launched');
+  expect(vi.mocked(t.core.createSession).mock.calls).toHaveLength(2);
+  for (const [, request] of vi.mocked(t.core.createSession).mock.calls)
+    expect(request).not.toHaveProperty('draftPr');
 });
 test('interview persists answers, recommendations, assumptions, sources and versioned generated brief', async () => {
   const t = setup();
@@ -330,10 +386,11 @@ test('binding is explicit, revision-bound, preserves concept and permits only th
   expect(t.core.createSession).not.toHaveBeenCalled();
   await expect(d.command(unbound, { action: 'approve' })).rejects.toThrow('brief changed');
   const bound = draft;
-  draft = await d.command(bound, { action: 'approve' }, 'independent-approval');
-  await d.command(bound, { action: 'approve' }, 'independent-approval');
+  draft = await d.command(bound, { action: 'approve', draftPr: true }, 'independent-approval');
+  await d.command(bound, { action: 'approve', draftPr: true }, 'independent-approval');
   expect(t.core.createSession).toHaveBeenCalledTimes(1);
   expect(vi.mocked(t.core.createSession).mock.calls[0]?.[0]).toBe(projectId);
+  expect(vi.mocked(t.core.createSession).mock.calls[0]?.[1].draftPr).toBe(true);
   expect(draft.approved?.revision).toBe(bound.revision);
 });
 

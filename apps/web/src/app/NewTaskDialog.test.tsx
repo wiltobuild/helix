@@ -4,6 +4,8 @@ import { describe, expect, test } from 'vitest';
 import { fixtures, type IntakeDraft } from '@helix/contracts';
 import { TooltipProvider } from '@helix/ui';
 import {
+  approvalAction,
+  draftPrAfterAdopt,
   DiscoveryContext,
   DiscoveryDestination,
   IntakeStart,
@@ -202,6 +204,30 @@ describe('workspace', () => {
     versions: [{ revision: 4, text: synthesis.brief, source: 'agent' }],
     status: 'review',
   };
+  test('approval retries preserve the frozen draft choice, including legacy omission', () => {
+    const approved: NonNullable<IntakeDraft['approved']> = {
+      intakeId: draft.id,
+      revision: draft.revision,
+      text: synthesis.brief,
+      approvedAt: '2026-11-01T00:00:00.000Z',
+      answers: draft.answers,
+      assumptions: synthesis.assumptions,
+    };
+    expect(approvalAction(draft, true)).toEqual({ action: 'approve', draftPr: true });
+    expect(approvalAction(draft, false)).toEqual({ action: 'approve', draftPr: false });
+    expect(approvalAction({ ...draft, status: 'launching', approved }, false)).toEqual({
+      action: 'approve',
+    });
+    expect(
+      approvalAction({ ...draft, status: 'launching', approved, draftPr: true }, false),
+    ).toEqual({ action: 'approve', draftPr: true });
+
+    expect(draftPrAfterAdopt(true, draft)).toBe(true);
+    expect(draftPrAfterAdopt(true, { ...draft, status: 'launching', approved })).toBe(false);
+    expect(
+      draftPrAfterAdopt(false, { ...draft, status: 'launching', approved, draftPr: true }),
+    ).toBe(true);
+  });
   const actions = {
     respond: noop,
     generate: noop,
@@ -228,6 +254,7 @@ describe('workspace', () => {
       answer?: string;
       answerNote?: string;
       approvalUnknown?: boolean;
+      draftPr?: boolean;
       locked?: boolean;
       pendingIdea?: string;
     } = {},
@@ -246,6 +273,8 @@ describe('workspace', () => {
       onAnswer: noop,
       brief: d.synthesis?.brief ?? '',
       onBrief: noop,
+      draftPr: false,
+      onDraftPr: noop,
       dirty: false,
       briefEdited: false,
       locked: stage === 'generating' || stage === 'launching',
@@ -276,6 +305,16 @@ describe('workspace', () => {
     expect(markup).toContain('Safer, but slow inboxes may expire it.');
     expect(markup).toContain('Recommend something');
     expect(markup).toContain('Your answers so far (1)');
+  });
+
+  test('makes draft publication an explicit choice and freezes it during launch', () => {
+    const ready = render(draft, 'review', { draftPr: true });
+    expect(ready).toContain('Open worker pull requests as drafts');
+    expect(ready).toMatch(/<input[^>]*type="checkbox"[^>]*checked/);
+    const launching = render({ ...draft, status: 'launching', draftPr: true }, 'launching', {
+      draftPr: true,
+    });
+    expect(launching).toMatch(/<input[^>]*type="checkbox"[^>]*disabled/);
   });
 
   test('keeps the actual conversation visible and progressively reveals the concept', () => {
