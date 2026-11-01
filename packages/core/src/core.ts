@@ -938,8 +938,6 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     worker: SessionState,
   ): Promise<{ kind: 'mismatch' | 'unavailable'; message: string } | undefined> {
     if (!worker.session.planNodeId) return undefined;
-    if (!worker.pr || !worker.worktree)
-      return { kind: 'unavailable', message: 'Plan worker has no PR or worktree to verify.' };
     const node = Object.values(project(worker.session.projectId).plans)
       .flatMap((plan) => plan.nodes)
       .find((candidate) => candidate.sessionId === worker.session.id);
@@ -948,6 +946,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         kind: 'unavailable',
         message: 'The approved plan node for this worker could not be found.',
       };
+    if (!node.exactFiles?.length) return undefined;
+    if (!worker.pr || !worker.worktree)
+      return { kind: 'unavailable', message: 'Plan worker has no PR or worktree to verify.' };
     for (const exact of node.exactFiles ?? []) {
       let committed: Uint8Array | undefined;
       try {
@@ -1034,7 +1035,12 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     if (worker.agentReview?.headSha === pr.headSha) return;
     const exactFailure = await exactContentFailure(worker);
     if (exactFailure) {
-      await feedback(id, 'acceptance_failed', cause, exactFailure.message);
+      await feedback(
+        id,
+        exactFailure.kind === 'mismatch' ? 'acceptance_failed' : 'acceptance_unavailable',
+        cause,
+        exactFailure.message,
+      );
       if (exactFailure.kind === 'unavailable')
         await scheduleVerificationRetry(id, pr.headSha, cause);
       else cancelVerificationRetry(id);
@@ -1654,7 +1660,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       return;
     }
     const summary =
-      reason === 'review_findings' || reason === 'acceptance_failed'
+      reason === 'review_findings' ||
+      reason === 'acceptance_failed' ||
+      reason === 'acceptance_unavailable'
         ? details!
         : deps.buildFeedbackMessage({ reason, pr, ...(details ? { details } : {}) });
     const routed = await emit(
@@ -2572,7 +2580,17 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         if (!s.pr || deriveStatus(s) !== 'ready_to_merge')
           throw new HelixError('MERGE_BLOCKED', 'PR is not ready to merge');
         const exactFailure = await exactContentFailure(s);
-        if (exactFailure) throw new HelixError('MERGE_BLOCKED', exactFailure.message);
+        if (exactFailure) {
+          await feedback(
+            id,
+            exactFailure.kind === 'mismatch' ? 'acceptance_failed' : 'acceptance_unavailable',
+            s.lastEventSeq as EventSeq,
+            exactFailure.message,
+          );
+          if (exactFailure.kind === 'unavailable')
+            await scheduleVerificationRetry(id, s.pr.headSha, s.lastEventSeq as EventSeq);
+          throw new HelixError('MERGE_BLOCKED', exactFailure.message);
+        }
         const result = await deps.scm.merge({
           project: project(s.session.projectId).project,
           prNumber: s.pr.number,

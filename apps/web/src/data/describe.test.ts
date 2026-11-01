@@ -113,6 +113,11 @@ test('acceptance failure feedback names the correction and rerun step', () => {
   const project = projectUpTo(events, fixtures.crossReviewMilestones.routed);
   expect(describeEvent(acceptance, project)).toContain('failed acceptance checks');
   expect(describeEvent(acceptance, project)).toContain('correct the work and rerun them');
+  const unavailable = helixEventSchema.parse({
+    ...feedback,
+    payload: { ...feedback.payload, reason: 'acceptance_unavailable' },
+  });
+  expect(describeEvent(unavailable, project)).toContain('will retry before review or merge');
 });
 
 test('same-head acceptance failure stays visible even when CI and GitHub review are green', () => {
@@ -125,10 +130,15 @@ test('same-head acceptance failure stays visible even when CI and GitHub review 
   expect(deriveStatus(worker)).toBe('changes_requested');
   expect(projectAttention(project, fixtures.crossReviewRun)).toMatchObject({
     sessionId: worker.session.id,
-    reason: 'Exact file check failed',
+    reason: 'Exact file check blocked',
     tab: 'activity',
   });
-  expect(statusLine(worker, 'changes_requested', project)).toContain('correcting before review');
+  expect(statusLine(worker, 'changes_requested', project)).toContain('open Activity for details');
+  worker.pr!.state = 'merged';
+  expect(projectAttention(project, fixtures.crossReviewRun)?.reason).not.toBe(
+    'Exact file check blocked',
+  );
+  expect(statusLine(worker, 'ready_to_merge', project)).toBeUndefined();
 });
 
 test('limit-note text is display-only and finds the latest matching system message', () => {

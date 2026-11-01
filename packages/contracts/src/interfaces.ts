@@ -232,7 +232,12 @@ export interface ApprovingHarnessSession extends HarnessSession {
 /** Builds the concise message routed back to a worker after CI/review/conflict feedback. */
 export type FeedbackMessageBuilder = (input: {
   reason:
-    'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings' | 'acceptance_failed';
+    | 'ci_failed'
+    | 'changes_requested'
+    | 'merge_conflict'
+    | 'review_findings'
+    | 'acceptance_failed'
+    | 'acceptance_unavailable';
   pr: PullRequestFacts;
   details?: string;
 }) => string;

@@ -15,6 +15,7 @@ export const buildFeedbackMessage: FeedbackMessageBuilder = ({ reason, pr, detai
     merge_conflict: 'Resolve the merge conflicts',
     review_findings: 'Address the cross-agent review findings',
     acceptance_failed: 'Match the approved exact file content',
+    acceptance_unavailable: 'Wait for Helix to retry exact-file verification',
   }[reason];
   const parts = [`PR #${pr.number}: ${action}.`];
   if (pr.checks.failingNames.length)

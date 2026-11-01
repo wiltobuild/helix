@@ -552,7 +552,8 @@ function reduceInto(
     case 'feedback.routed': {
       const s = sessionFor(next, e.payload.toSessionId);
       if (
-        e.payload.reason === 'acceptance_failed' &&
+        (e.payload.reason === 'acceptance_failed' ||
+          e.payload.reason === 'acceptance_unavailable') &&
         s.pr?.number === e.payload.prNumber &&
         !s.acceptanceFailedHeads?.includes(s.pr.headSha)
       )

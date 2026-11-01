@@ -453,6 +453,14 @@ test('resubmitted plan exact bytes block review until a corrected head passes fr
   await expect(f.core.merge(workerId)).rejects.toMatchObject({ code: 'MERGE_BLOCKED' });
   expect(f.git.readCommittedFile.mock.calls.length).toBeGreaterThan(readsBeforeMerge);
   expect(f.scm.merge).not.toHaveBeenCalled();
+  const mergeFeedback = f.store.events.find(
+    (event) =>
+      event.type === 'feedback.routed' &&
+      event.payload.reason === 'acceptance_failed' &&
+      event.payload.summary.includes('unverified-head'),
+  );
+  expect(mergeFeedback).toBeDefined();
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('unverified-head');
 
   f.git.committedFiles.set('fixed-head:CASE-B.md', new TextEncoder().encode(expected));
   f.scm.emit(p.id, firstPr.number, {
@@ -520,6 +528,60 @@ test('a recovered Git read retries automatically on the same immutable head', as
     ),
   ).toBeTruthy();
   expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
+});
+
+test('temporary Git read failure cannot suppress a later real mismatch on the same head', async () => {
+  const codex = new FakeHarness();
+  const claude = new FakeHarness();
+  claude.detect.mockResolvedValue({ agent: 'claude-code', installed: true, signedIn: true });
+  const f = fixture({
+    crossReview: true,
+    harnesses: { codex, 'claude-code': claude },
+    acceptanceRetryMs: 50,
+  });
+  const p = await f.add();
+  const orchestrator = await f.core.createSession(
+    p.id,
+    { ...request, title: 'Planner', planWithOrchestrator: true },
+    'git-outage-before-mismatch',
+  );
+  const plan = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'Verify a complete file',
+    nodes: [
+      {
+        ...nodes[0]!,
+        files: ['CASE-B.md'],
+        exactFiles: [{ path: 'CASE-B.md', content: 'Signal: orchard-17.\n' }],
+      },
+    ],
+  });
+  await f.core.decidePlan(plan.id, { decision: 'approve' });
+  const workerId = f.state(p.id).plans[plan.id]!.nodes[0]!.sessionId!;
+  f.git.ahead = 1;
+  codex.handles.get(workerId)!.emit(activity('idle'));
+  await f.drain();
+  const pr = f.state(p.id).sessions[workerId]!.pr!;
+  f.git.committedFiles.set('head-1:CASE-B.md', new TextEncoder().encode('Signal: orchard-17\n'));
+  f.git.readCommittedFile.mockRejectedValueOnce(new Error('temporary Git read failure'));
+  f.scm.emit(p.id, pr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: pr.number, checks: green },
+  });
+  await f.drain();
+  expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(0);
+  await vi.waitFor(async () => {
+    await f.drain();
+    expect(f.store.events.filter((e) => e.type === 'feedback.routed')).toHaveLength(2);
+  });
+  expect(
+    f.store.events
+      .filter((e) => e.type === 'feedback.routed')
+      .map((e) => (e.type === 'feedback.routed' ? e.payload.reason : '')),
+  ).toEqual(['acceptance_unavailable', 'acceptance_failed']);
+  expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(0);
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain(pr.headSha);
 });
 
 test('retry sends the initial prompt even when a failed launch already captured a resume token', async () => {

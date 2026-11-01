@@ -194,14 +194,17 @@ export function projectAttention(
     };
 
   const failedAcceptance = sessions.find(
-    (s) => s.pr?.state === 'open' && s.acceptanceFailedHeads?.includes(s.pr.headSha),
+    (s) =>
+      s.pr?.state === 'open' &&
+      s.activity !== 'exited' &&
+      s.acceptanceFailedHeads?.includes(s.pr.headSha),
   );
   if (failedAcceptance)
     return {
       sessionId: failedAcceptance.session.id,
       tab: 'activity',
-      reason: 'Exact file check failed',
-      nextAction: 'Open Activity to see the required correction',
+      reason: 'Exact file check blocked',
+      nextAction: 'Open Activity to see whether verification needs a retry or a correction',
     };
 
   const stoppedReview = sessions.find((s) => reviewStopReason(s, events, state.lastSeq));
@@ -319,6 +322,8 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
         return `Helix sent the review findings back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)} for “${sessionTitle(state, e.payload.toSessionId)}”.`;
       if (e.payload.reason === 'acceptance_failed')
         return `Helix sent failed acceptance checks back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)} to correct the work and rerun them.`;
+      if (e.payload.reason === 'acceptance_unavailable')
+        return 'Helix could not read the committed file for exact-file verification. It will retry before review or merge.';
       return `Helix sent the ${reasonLabel(e.payload.reason)} back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)}, which owns the branch.`;
     case 'agent_review.requested':
       return `Helix asked ${who} to review “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber}.`;
@@ -336,7 +341,13 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
 }
 
 const reasonLabel = (
-  r: 'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings' | 'acceptance_failed',
+  r:
+    | 'ci_failed'
+    | 'changes_requested'
+    | 'merge_conflict'
+    | 'review_findings'
+    | 'acceptance_failed'
+    | 'acceptance_unavailable',
 ) =>
   r === 'ci_failed'
     ? 'CI failure'
@@ -346,7 +357,9 @@ const reasonLabel = (
         ? 'review findings'
         : r === 'acceptance_failed'
           ? 'failed acceptance checks'
-          : 'merge conflict';
+          : r === 'acceptance_unavailable'
+            ? 'unavailable exact-file verification'
+            : 'merge conflict';
 
 export function truncate(text: string, max: number): string {
   const t = text.replace(/\s+/g, ' ').trim();
@@ -428,8 +441,12 @@ export function statusLine(
   // The review chip already shows the verdict; the status line says what happens next.
   if (status === 'changes_requested' && crossReview(s, state)?.status === 'changes_requested')
     return `Findings sent back to ${agentName(s.session.agent)}`;
-  if (s.pr && s.acceptanceFailedHeads?.includes(s.pr.headSha))
-    return 'Exact file check failed · correcting before review';
+  if (
+    s.pr?.state === 'open' &&
+    s.activity !== 'exited' &&
+    s.acceptanceFailedHeads?.includes(s.pr.headSha)
+  )
+    return 'Exact file check blocked · open Activity for details';
   if (status === 'changes_requested')
     return `Changes requested · ${s.pr?.review.unresolvedThreads ?? 0} threads`;
   if (reviewStopped) return `Reviewer stopped: ${truncate(reviewStopped, 48)} · open Review`;

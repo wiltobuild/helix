@@ -138,6 +138,7 @@ export const eventSchemas = {
         'merge_conflict',
         'review_findings',
         'acceptance_failed',
+        'acceptance_unavailable',
       ]),
       summary: z.string(),
       toSessionId: sessionIdSchema,
