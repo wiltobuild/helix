@@ -29,6 +29,11 @@ test('UI requests automatically trigger exploration, backend-only requests do no
   expect(needsVisualDesign('Build a storefront for a coffee shop')).toBe(true);
   expect(needsVisualDesign('Build a landing page')).toBe(true);
   expect(needsVisualDesign('Repair database migrations')).toBe(false);
+  expect(needsVisualDesign('Build a TypeScript library, not a website')).toBe(false);
+  expect(needsVisualDesign('Build a library without a UI or CSS')).toBe(false);
+  expect(needsVisualDesign('Build a library without a UI or a dashboard')).toBe(false);
+  expect(needsVisualDesign('Build a library without UI and CSS')).toBe(false);
+  expect(needsVisualDesign('Build a library, not a website, with a small dashboard')).toBe(true);
 });
 test('reject all generates a fresh round, retains history and rejects stale choices', () => {
   const old = completeVisualRound(newVisualDesign(id, 'A storefront', true), concepts());
@@ -225,12 +230,16 @@ test('unavailable is honest and an independent backend node starts while visual 
       nodes: [
         node('node-ui', 'Build frontend', ['apps/web/**']),
         node('node-db', 'Database constraints', ['db/**']),
+        node('node-library', 'TypeScript library, NOT a website or UI', ['src/slots.ts']),
       ],
     });
     await f.core.decidePlan(plan.id, { decision: 'approve' });
     const state = f.state(p.id);
     expect(state.plans[plan.id]!.nodes.find((n) => n.id === 'node-ui')?.sessionId).toBeUndefined();
     expect(state.plans[plan.id]!.nodes.find((n) => n.id === 'node-db')?.sessionId).toBeDefined();
+    expect(
+      state.plans[plan.id]!.nodes.find((n) => n.id === 'node-library')?.sessionId,
+    ).toBeDefined();
   } finally {
     await f.core.shutdown();
   }
