@@ -969,9 +969,14 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         );
       } catch (error) {
         deps.log.error('Could not verify exact committed acceptance content', error);
+        if (isHelixError(error) && error.code === 'INVALID_REQUEST')
+          return {
+            kind: 'mismatch',
+            message: `Exact committed-content check failed for ${exact.path} on PR head ${headSha}: ${error.message} Commit a valid file matching the approved UTF-8 content byte for byte, then rerun CI and review on the new head.`,
+          };
         return {
           kind: 'unavailable',
-          message: `Could not verify ${exact.path} on PR head ${headSha}. The review and merge are blocked until the committed file can be checked.`,
+          message: `Could not verify ${exact.path} on PR head ${headSha}. Ensure that exact commit is available in the worker worktree and Git access works; review and merge remain blocked until the committed file can be checked.`,
         };
       }
       const expected = new TextEncoder().encode(exact.content);
@@ -1034,7 +1039,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await emit(
           'explain.note',
           {
-            text: `Exact-file verification could not read PR head ${headSha} after three retries. Restore Git access and refresh the PR checks or push a new head; review and merge remain blocked.`,
+            text: `Exact-file verification could not read PR head ${headSha} after three retries. Ensure the PR commit is available locally, then rerun its checks or push a new head; review and merge remain blocked.`,
             code: 'acceptance_retry_exhausted',
             source: 'helix',
           },
@@ -1721,17 +1726,27 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     const seenKey = feedbackKey(s.session, pr.number, reason, pr.headSha);
     if (seenFeedback.has(seenKey)) return;
     if ((attempts.get(key) ?? 0) >= 3) {
-      if (!escalated.has(key)) {
+      if (
+        (reason === 'acceptance_failed' || reason === 'acceptance_unavailable') &&
+        !s.acceptanceFailedHeads?.includes(pr.headSha)
+      )
         await emit(
           'explain.note',
           {
-            text: `Automatic ${reason} repairs stopped after 3 attempts for PR #${pr.number}; human input is required.`,
-            ...((reason === 'acceptance_failed' || reason === 'acceptance_unavailable') && {
-              code: 'acceptance_retry_exhausted' as const,
-            }),
+            text: `Exact-file verification blocked PR head ${pr.headSha}. Automatic ${reason} feedback has reached its limit for PR #${pr.number}.`,
+            code: 'acceptance_retry_exhausted',
           },
           context(s.session, cause),
         );
+      if (reason !== 'acceptance_unavailable' && !escalated.has(key)) {
+        if (reason !== 'acceptance_failed')
+          await emit(
+            'explain.note',
+            {
+              text: `Automatic ${reason} repairs stopped after 3 attempts for PR #${pr.number}; human input is required.`,
+            },
+            context(s.session, cause),
+          );
         await emit('activity.changed', { activity: 'waiting_input' }, context(s.session, cause));
         escalated.add(key);
       }

@@ -618,7 +618,7 @@ test('temporary Git read failure cannot suppress a later real mismatch on the sa
   ).toEqual(['acceptance_unavailable', 'acceptance_failed']);
   expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(0);
   expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain(pr.headSha);
-  for (let n = 2; n <= 4; n++) {
+  for (let n = 2; n <= 5; n++) {
     const headSha = `head-${n}`;
     f.git.committedFiles.set(`${headSha}:CASE-B.md`, new TextEncoder().encode('wrong bytes\n'));
     f.scm.emit(p.id, pr.number, {
@@ -640,10 +640,61 @@ test('temporary Git read failure cannot suppress a later real mismatch on the sa
     f.store.events.some(
       (e) =>
         e.type === 'explain.note' &&
-        e.payload.text.includes('Automatic acceptance_failed repairs stopped after 3 attempts'),
+        e.payload.text.includes('Automatic acceptance_failed feedback has reached its limit'),
     ),
   ).toBe(true);
   expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-4');
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-5');
+  expect(deriveStatus(f.state(p.id).sessions[workerId]!)).not.toBe('ready_to_merge');
+});
+
+test('an invalid committed exact file is a mismatch, not a transient Git outage', async () => {
+  const codex = new FakeHarness();
+  const f = fixture({ harnesses: { codex }, acceptanceRetryMs: 50 });
+  const p = await f.add();
+  const orchestrator = await f.core.createSession(
+    p.id,
+    { ...request, title: 'Planner', planWithOrchestrator: true },
+    'invalid-blob-planner',
+  );
+  const plan = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'Verify exact bytes',
+    nodes: [
+      {
+        ...nodes[0]!,
+        files: ['CASE-B.md'],
+        exactFiles: [{ path: 'CASE-B.md', content: 'Signal: orchard-17.\n' }],
+      },
+    ],
+  });
+  await f.core.decidePlan(plan.id, { decision: 'approve' });
+  const workerId = f.state(p.id).plans[plan.id]!.nodes[0]!.sessionId!;
+  f.git.ahead = 1;
+  codex.handles.get(workerId)!.emit(activity('idle'));
+  await f.drain();
+  const pr = f.state(p.id).sessions[workerId]!.pr!;
+  f.git.readCommittedFile.mockRejectedValueOnce(
+    new HelixError('INVALID_REQUEST', 'Committed exact file exceeds 64 KiB.'),
+  );
+  f.scm.emit(p.id, pr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: pr.number, checks: green },
+  });
+  await f.drain();
+  expect(
+    f.store.events
+      .filter((e) => e.type === 'feedback.routed')
+      .map((e) => (e.type === 'feedback.routed' ? e.payload.reason : '')),
+  ).toContain('acceptance_failed');
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain(pr.headSha);
+  expect(
+    await f.store.getMeta(
+      'helix:core:exact-file-retries:v1',
+      JSON.stringify([workerId, pr.headSha]),
+    ),
+  ).toEqual({ attempts: 0, pending: false });
 });
 
 test('restart resumes a pending exact-file read with its persisted retry budget', async () => {
