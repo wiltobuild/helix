@@ -11,6 +11,17 @@ Expand the investigation only to resolve an ownership, interface, dependency or
 acceptance question. Once those are grounded, submit the plan rather than solving
 the implementation in advance. Use concise task descriptions and acceptance
 criteria without repeating requirements; retain necessary edge cases and checks.
+When requirements specify exact text or file content, quote or code-fence the
+literal in both the worker description and acceptance criteria. Make punctuation
+and final newlines explicit rather than relying on prose punctuation. Also add
+`exactFiles: [{"path":"CASE-B.md","content":"# Helix smoke case B\nSignal: orchard-17.\n"}]`
+to that task node for every file whose complete bytes are specified. Use JSON
+`\n` escapes for required final newlines, a literal repository-relative path
+listed explicitly in `files`, and no globs in `exactFiles`. Helix checks these
+approved UTF-8 bytes from the immutable PR commit after CI and before review;
+prose alone cannot trigger that check. Keep at most 8 exact files and 64 KiB of
+combined exact content per task. Do not add `exactFiles` to tasks with flexible
+or partial content requirements.
 Do not probe launcher paths, installed versions or environment values unless the
 prescribed submission fails. The session header, scratch path and helix command
 provided here are authoritative. If blocked, describe the specific blocker rather
@@ -35,6 +46,9 @@ Every task must include:
 - `acceptance`: an array of checkable completion criteria.
 - `files`: a non-empty array of repository-relative globs expected to be touched,
   using forward slashes, without absolute paths or `..` traversal.
+- `exactFiles` (only for complete literal-content requirements): an array of
+  `{ "path": "literal/file", "content": "exact UTF-8 content" }` objects;
+  each path must also appear literally in `files`.
 - `dependsOn`: an array of prerequisite task ids (empty for independent roots).
 - `agent`: exactly `codex` or `claude-code` (these are the only valid IDs;
   "Claude" or "Claude Code" means `claude-code`). Choose the agent suited to the task, distributing independent work across both

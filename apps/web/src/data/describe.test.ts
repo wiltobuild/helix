@@ -1,9 +1,10 @@
 import { expect, test } from 'vitest';
-import { fixtures, helixEventSchema, projectUpTo } from '@helix/contracts';
+import { deriveStatus, fixtures, helixEventSchema, projectUpTo } from '@helix/contracts';
 import {
   boardCards,
   describeEvent,
   eventTone,
+  projectAttention,
   provenance,
   slotWaitNote,
   slotWaiting,
@@ -24,6 +25,120 @@ test('turn-cap detection follows the flag even when wording and activity change'
     'Turn limit reached · send a message to continue',
   );
   expect(turnLimitNote(session)).toBeUndefined();
+});
+
+test('current-project attention points to an awaiting plan or command decision', () => {
+  const awaitingPlan = projectUpTo(run, 5);
+  expect(projectAttention(awaitingPlan, run.slice(0, 5))).toEqual({
+    sessionId: ids.orchestrator,
+    tab: 'summary',
+    reason: 'Plan needs your approval',
+    nextAction: 'Open plan to approve or request changes',
+  });
+
+  const awaitingCommand = projectUpTo(run, 17);
+  expect(projectAttention(awaitingCommand, run.slice(0, 17))).toEqual({
+    sessionId: ids.ui,
+    tab: 'summary',
+    reason: 'A command needs your decision',
+    nextAction: 'Open task to approve, reject, or request changes',
+  });
+});
+
+test('current-project attention distinguishes CI wait, failed checks, and a stopped reviewer', () => {
+  const events = fixtures.crossReviewRun;
+  const workerId = fixtures.crossReviewIds.worker;
+  const pending = projectUpTo(events, 7);
+  expect(projectAttention(pending, events.slice(0, 7))).toEqual({
+    sessionId: workerId,
+    tab: 'pr',
+    reason: 'Waiting for CI',
+    nextAction: 'Checks are running · open PR & CI',
+  });
+
+  const failed = projectUpTo(events, 7);
+  const worker = failed.sessions[workerId]!;
+  worker.pr!.checks = { total: 1, passed: 0, failed: 1, pending: 0, failingNames: ['tests'] };
+  expect(projectAttention(failed, events.slice(0, 7))).toEqual({
+    sessionId: workerId,
+    tab: 'pr',
+    reason: 'CI failed',
+    nextAction: 'Open PR & CI to see the failing check',
+  });
+
+  const reviewed = projectUpTo(events, fixtures.crossReviewMilestones.approved);
+  const reviewedWorker = reviewed.sessions[workerId]!;
+  reviewedWorker.pr!.state = 'open';
+  reviewedWorker.pr!.draft = false;
+  delete reviewedWorker.agentReview;
+  const stopped = helixEventSchema.parse({
+    v: 1,
+    seq: events.length + 1,
+    ts: events.at(-1)!.ts,
+    projectId: reviewed.project.id,
+    sessionId: fixtures.crossReviewIds.reviewer,
+    type: 'agent_review.abandoned',
+    payload: {
+      workerSessionId: workerId,
+      prNumber: reviewedWorker.pr!.number,
+      headSha: reviewedWorker.pr!.headSha,
+      reason: 'Reviewer unavailable',
+    },
+  });
+  expect(projectAttention(reviewed, [...events, stopped])?.reason).not.toBe(
+    'Reviewer stopped without a verdict',
+  );
+  reviewed.lastSeq = stopped.seq;
+  expect(projectAttention(reviewed, [...events, stopped])).toEqual({
+    sessionId: workerId,
+    tab: 'review',
+    reason: 'Reviewer stopped without a verdict',
+    nextAction: 'Open Review: Reviewer unavailable',
+  });
+  expect(deriveStatus(reviewedWorker)).toBe('ready_to_merge');
+  expect(statusLine(reviewedWorker, 'ready_to_merge', reviewed, 'Reviewer unavailable')).toBe(
+    'Reviewer stopped: Reviewer unavailable · open Review',
+  );
+});
+
+test('acceptance failure feedback names the correction and rerun step', () => {
+  const events = fixtures.crossReviewRun;
+  const feedback = events.find((e) => e.type === 'feedback.routed');
+  expect(feedback?.type).toBe('feedback.routed');
+  if (feedback?.type !== 'feedback.routed') return;
+  const acceptance = helixEventSchema.parse({
+    ...feedback,
+    payload: { ...feedback.payload, reason: 'acceptance_failed' },
+  });
+  const project = projectUpTo(events, fixtures.crossReviewMilestones.routed);
+  expect(describeEvent(acceptance, project)).toContain('failed acceptance checks');
+  expect(describeEvent(acceptance, project)).toContain('correct the work and rerun them');
+  const unavailable = helixEventSchema.parse({
+    ...feedback,
+    payload: { ...feedback.payload, reason: 'acceptance_unavailable' },
+  });
+  expect(describeEvent(unavailable, project)).toContain('will retry before review or merge');
+});
+
+test('same-head acceptance failure stays visible even when CI and GitHub review are green', () => {
+  const project = projectUpTo(fixtures.crossReviewRun, fixtures.crossReviewMilestones.approved);
+  const worker = project.sessions[fixtures.crossReviewIds.worker]!;
+  worker.pr!.state = 'open';
+  worker.pr!.draft = false;
+  delete worker.agentReview;
+  worker.acceptanceFailedHeads = [worker.pr!.headSha];
+  expect(deriveStatus(worker)).toBe('changes_requested');
+  expect(projectAttention(project, fixtures.crossReviewRun)).toMatchObject({
+    sessionId: worker.session.id,
+    reason: 'Exact file check blocked',
+    tab: 'activity',
+  });
+  expect(statusLine(worker, 'changes_requested', project)).toContain('open Activity for details');
+  worker.pr!.state = 'merged';
+  expect(projectAttention(project, fixtures.crossReviewRun)?.reason).not.toBe(
+    'Exact file check blocked',
+  );
+  expect(statusLine(worker, 'ready_to_merge', project)).toBeUndefined();
 });
 
 test('limit-note text is display-only and finds the latest matching system message', () => {
@@ -147,6 +262,7 @@ test('statusLine distinguishes starting, thinking, running tools, and idle state
   session.activity = 'idle';
   delete session.session.planNodeId;
   expect(statusLine(session, 'pending', project)).toBe('Idle · turn complete');
+  expect(statusLine(session, 'exited', project)).toBe('Worker stopped · open Activity for details');
 });
 
 test('boardCards surfaces the orchestrator while planning or awaiting review', () => {
@@ -159,7 +275,7 @@ test('boardCards surfaces the orchestrator while planning or awaiting review', (
   const orchCard = awaitingCards.find((c) => c.id === ids.orchestrator);
   expect(orchCard).toBeDefined();
   expect(orchCard?.column).toBe('needs_you');
-  expect(orchCard?.card.statusLabel).toBe('Approve plan · 3 tasks');
+  expect(orchCard?.card.statusLabel).toBe('Approve plan · 3 tasks · open to review');
 
   // Once approved and workers are delegated (seq 44), orchestrator steps off the board unless it needs attention
   const finalState = state();

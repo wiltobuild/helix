@@ -24,6 +24,7 @@ type Facts = {
   mergeable?: PullRequestFacts['mergeable'];
   draft?: boolean;
   threads?: number;
+  acceptanceFailure?: boolean;
 };
 function state(f: Facts): SessionState {
   const s = projectUpTo(fixtures.passwordResetRun, 9).sessions[fixtures.passwordResetIds.api]!;
@@ -49,6 +50,7 @@ function state(f: Facts): SessionState {
               : { total: 3, passed: 3, failed: 0, pending: 0, failingNames: [] },
       review: { decision: f.review ?? 'approved', unresolvedThreads: f.threads ?? 0 },
     });
+  if (f.acceptanceFailure) s.acceptanceFailedHeads = ['sha'];
   return s;
 }
 const rows: [string, Facts, DisplayStatus][] = [
@@ -168,6 +170,11 @@ const rows: [string, Facts, DisplayStatus][] = [
   ['unknown with ready PR', { activity: 'unknown', pr: 'open' }, 'ready_to_merge'],
   ['unknown with pending PR', { activity: 'unknown', pr: 'open', checks: 'pending' }, 'in_review'],
   ['draft blocks readiness', { pr: 'open', draft: true }, 'in_review'],
+  [
+    'exact file failure blocks green PR readiness',
+    { pr: 'open', acceptanceFailure: true },
+    'changes_requested',
+  ],
   ['unresolved threads block readiness', { pr: 'open', threads: 1 }, 'in_review'],
   [
     'draft with no required review still blocks readiness',
@@ -187,6 +194,14 @@ const rows: [string, Facts, DisplayStatus][] = [
   ],
 ];
 it.each(rows)('%s', (_name, facts, expected) => expect(deriveStatus(state(facts))).toBe(expected));
+it('retains a failed exact-check head across head changes and revisits', () => {
+  const worker = state({ pr: 'open', acceptanceFailure: true });
+  expect(deriveStatus(worker)).toBe('changes_requested');
+  worker.pr!.headSha = 'next-head';
+  expect(deriveStatus(worker)).toBe('ready_to_merge');
+  worker.pr!.headSha = 'sha';
+  expect(deriveStatus(worker)).toBe('changes_requested');
+});
 const mapping: Record<DisplayStatus, BoardColumn> = {
   pending: 'pending',
   working: 'working',

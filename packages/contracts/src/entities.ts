@@ -102,6 +102,18 @@ export const repoRelativeGlobSchema = z
       !path.split('/').some((part) => part === '' || part === '.' || part === '..'),
     'Expected a positive repository-relative glob using forward slashes without traversal',
   );
+/** Exact-content checks use literal repository paths, never Git pathspecs or globs. */
+export const repoRelativeFileSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine(
+    (path) =>
+      repoRelativeGlobSchema.safeParse(path).success &&
+      !path.startsWith('-') &&
+      !['!', '?', '*', '[', ']', '{', '}', ':'].some((char) => path.includes(char)),
+    'Expected a literal repository-relative file path without traversal or glob syntax',
+  );
 /**
  * Cross-agent review (#reviewer). A reviewer session (role 'reviewer') is always the other agent
  * kind from the worker it reviews: Claude Code reviews Codex and Codex reviews Claude Code.
@@ -138,6 +150,24 @@ export const planNodeSchema = z.strictObject({
   description: z.string(),
   acceptance: z.array(z.string().min(1)),
   files: z.array(repoRelativeGlobSchema),
+  exactFiles: z
+    .array(
+      z.strictObject({
+        path: repoRelativeFileSchema,
+        content: z
+          .string()
+          .max(65_536)
+          .refine((content) => new TextEncoder().encode(content).length <= 65_536),
+      }),
+    )
+    .max(8)
+    .refine(
+      (files) =>
+        files.reduce((total, file) => total + new TextEncoder().encode(file.content).length, 0) <=
+        65_536,
+      'Exact file content checks must total at most 64 KiB',
+    )
+    .optional(),
   dependsOn: z.array(planNodeIdSchema),
   agent: agentKindSchema,
   rationale: z.string(),
@@ -146,6 +176,20 @@ export const planNodeSchema = z.strictObject({
 export type PlanNode = z.infer<typeof planNodeSchema>;
 /** Graph integrity (unique IDs, known dependencies and DAG) is validated at submission. */
 const validatePlanGraph = (nodes: PlanNode[], ctx: z.RefinementCtx) => {
+  for (const node of nodes) {
+    const seen = new Set<string>();
+    for (const exact of node.exactFiles ?? []) {
+      const folded = exact.path.toLowerCase();
+      if (seen.has(folded))
+        ctx.addIssue({ code: 'custom', message: `Duplicate exact file check: ${exact.path}` });
+      seen.add(folded);
+      if (!node.files.includes(exact.path))
+        ctx.addIssue({
+          code: 'custom',
+          message: `Exact file check ${exact.path} must be explicitly listed in task files`,
+        });
+    }
+  }
   const ids = new Set(nodes.map((n) => n.id));
   if (ids.size !== nodes.length)
     ctx.addIssue({ code: 'custom', message: 'Duplicate plan node ID' });

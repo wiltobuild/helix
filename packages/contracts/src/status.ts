@@ -39,6 +39,7 @@ export function deriveStatus(s: SessionState): DisplayStatus {
   if (s.activity === 'active' || s.activity === 'starting') return 'working';
   if (s.pr?.state === 'open') {
     if (s.pr.checks.failed > 0) return 'ci_failed';
+    if (s.acceptanceFailedHeads?.includes(s.pr.headSha)) return 'changes_requested';
     if (s.pr.review.decision === 'changes_requested') return 'changes_requested';
     const agentReview = s.agentReview?.headSha === s.pr.headSha ? s.agentReview : undefined;
     if (agentReview?.status === 'changes_requested') return 'changes_requested';

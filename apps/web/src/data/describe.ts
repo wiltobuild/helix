@@ -126,6 +126,110 @@ const sessionTitle = (state: ProjectState, id: string | undefined) =>
 const agentName = (agent: string) =>
   agent === 'claude-code' ? 'Claude Code' : agent === 'codex' ? 'Codex' : agent;
 
+function reviewStopReason(
+  s: SessionState,
+  events: readonly HelixEvent[],
+  upTo: number,
+): string | undefined {
+  if (s.pr?.state !== 'open') return undefined;
+  const latest = events.findLast(
+    (e) =>
+      e.seq <= upTo &&
+      (e.type === 'agent_review.requested' ||
+        e.type === 'agent_review.submitted' ||
+        e.type === 'agent_review.abandoned') &&
+      e.payload.workerSessionId === s.session.id &&
+      e.payload.headSha === s.pr?.headSha,
+  );
+  return latest?.type === 'agent_review.abandoned' ? latest.payload.reason : undefined;
+}
+
+export interface ProjectAttention {
+  sessionId: string;
+  reason: string;
+  nextAction: string;
+  tab: 'summary' | 'activity' | 'pr' | 'review';
+}
+
+/** One current-project blocker with a direct route to the existing details and controls. */
+export function projectAttention(
+  state: ProjectState,
+  events: readonly HelixEvent[],
+): ProjectAttention | undefined {
+  const plan = Object.values(state.plans).findLast((item) => item.status === 'awaiting_approval');
+  if (plan)
+    return {
+      sessionId: plan.orchestratorSessionId,
+      tab: 'summary',
+      reason: 'Plan needs your approval',
+      nextAction: 'Open plan to approve or request changes',
+    };
+
+  const sessions = Object.values(state.sessions).filter((s) => !s.session.archivedAt);
+  const approval = sessions.find((s) => s.pendingApprovalIds.length > 0);
+  if (approval)
+    return {
+      sessionId: approval.session.id,
+      tab: 'summary',
+      reason: 'A command needs your decision',
+      nextAction: 'Open task to approve, reject, or request changes',
+    };
+
+  const input = sessions.find((s) => s.activity === 'waiting_input' || s.turnLimited);
+  if (input)
+    return {
+      sessionId: input.session.id,
+      tab: 'activity',
+      reason: input.turnLimited ? 'Worker reached its turn limit' : 'Worker is waiting for you',
+      nextAction: 'Open Activity to reply',
+    };
+
+  const failedCi = sessions.find((s) => deriveStatus(s) === 'ci_failed');
+  if (failedCi)
+    return {
+      sessionId: failedCi.session.id,
+      tab: 'pr',
+      reason: 'CI failed',
+      nextAction: 'Open PR & CI to see the failing check',
+    };
+
+  const failedAcceptance = sessions.find(
+    (s) =>
+      s.pr?.state === 'open' &&
+      s.activity !== 'exited' &&
+      s.acceptanceFailedHeads?.includes(s.pr.headSha),
+  );
+  if (failedAcceptance)
+    return {
+      sessionId: failedAcceptance.session.id,
+      tab: 'activity',
+      reason: 'Exact file check blocked',
+      nextAction: 'Open Activity to see whether verification needs a retry or a correction',
+    };
+
+  const stoppedReview = sessions.find((s) => reviewStopReason(s, events, state.lastSeq));
+  if (stoppedReview)
+    return {
+      sessionId: stoppedReview.session.id,
+      tab: 'review',
+      reason: 'Reviewer stopped without a verdict',
+      nextAction: `Open Review: ${truncate(reviewStopReason(stoppedReview, events, state.lastSeq)!, 55)}`,
+    };
+
+  const pendingCi = sessions.find(
+    (s) => deriveStatus(s) === 'in_review' && (s.pr?.checks.pending ?? 0) > 0,
+  );
+  if (pendingCi)
+    return {
+      sessionId: pendingCi.session.id,
+      tab: 'pr',
+      reason: 'Waiting for CI',
+      nextAction: 'Checks are running · open PR & CI',
+    };
+
+  return undefined;
+}
+
 /** One plain-language sentence for an event, written from the user's side of the screen. */
 export function describeEvent(e: HelixEvent, state: ProjectState): string {
   const identities = resolveIdentities(state);
@@ -216,6 +320,10 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
     case 'feedback.routed':
       if (e.payload.reason === 'review_findings')
         return `Helix sent the review findings back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)} for “${sessionTitle(state, e.payload.toSessionId)}”.`;
+      if (e.payload.reason === 'acceptance_failed')
+        return `Helix sent failed acceptance checks back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)} to correct the work and rerun them.`;
+      if (e.payload.reason === 'acceptance_unavailable')
+        return 'Helix could not read the committed file for exact-file verification. It will retry before review or merge.';
       return `Helix sent the ${reasonLabel(e.payload.reason)} back to ${historicalActorName(state, e, true) ?? actor(e.payload.toSessionId)}, which owns the branch.`;
     case 'agent_review.requested':
       return `Helix asked ${who} to review “${sessionTitle(state, e.payload.workerSessionId)}” · PR #${e.payload.prNumber}.`;
@@ -233,7 +341,13 @@ export function describeEvent(e: HelixEvent, state: ProjectState): string {
 }
 
 const reasonLabel = (
-  r: 'ci_failed' | 'changes_requested' | 'merge_conflict' | 'review_findings',
+  r:
+    | 'ci_failed'
+    | 'changes_requested'
+    | 'merge_conflict'
+    | 'review_findings'
+    | 'acceptance_failed'
+    | 'acceptance_unavailable',
 ) =>
   r === 'ci_failed'
     ? 'CI failure'
@@ -241,7 +355,11 @@ const reasonLabel = (
       ? 'review comments'
       : r === 'review_findings'
         ? 'review findings'
-        : 'merge conflict';
+        : r === 'acceptance_failed'
+          ? 'failed acceptance checks'
+          : r === 'acceptance_unavailable'
+            ? 'unavailable exact-file verification'
+            : 'merge conflict';
 
 export function truncate(text: string, max: number): string {
   const t = text.replace(/\s+/g, ' ').trim();
@@ -309,23 +427,32 @@ export function statusLine(
   s: SessionState,
   status: DisplayStatus,
   state: ProjectState,
+  reviewStopped?: string,
 ): string | undefined {
   if (status === 'needs_you') {
     const approval = s.pendingApprovalIds.map((id) => state.approvals[id]).find(Boolean);
-    if (approval) return `Approve: ${lowerFirst(truncate(approval.summary, 48))}`;
+    if (approval)
+      return `Approval needed: ${lowerFirst(truncate(approval.summary, 40))} · open task`;
     if (s.turnLimited) return 'Turn limit reached · send a message to continue';
-    return 'Waiting for your reply';
+    return 'Waiting for your reply · open Activity';
   }
   if (status === 'ci_failed' && s.pr)
-    return `CI failed · ${s.pr.checks.failingNames[0] ?? 'checks'}`;
+    return `CI failed · ${s.pr.checks.failingNames[0] ?? 'checks'} · open PR & CI`;
   // The review chip already shows the verdict; the status line says what happens next.
   if (status === 'changes_requested' && crossReview(s, state)?.status === 'changes_requested')
     return `Findings sent back to ${agentName(s.session.agent)}`;
+  if (
+    s.pr?.state === 'open' &&
+    s.activity !== 'exited' &&
+    s.acceptanceFailedHeads?.includes(s.pr.headSha)
+  )
+    return 'Exact file check blocked · open Activity for details';
   if (status === 'changes_requested')
     return `Changes requested · ${s.pr?.review.unresolvedThreads ?? 0} threads`;
+  if (reviewStopped) return `Reviewer stopped: ${truncate(reviewStopped, 48)} · open Review`;
   if (status === 'in_review' && s.pr) {
-    if (s.pr.checks.pending > 0) return 'CI running';
-    return s.pr.draft ? 'Draft PR' : 'Awaiting review';
+    if (s.pr.checks.pending > 0) return 'Waiting for CI · checks are running';
+    return s.pr.draft ? 'Draft PR · open PR & CI' : 'Awaiting reviewer · open Review';
   }
   if (status === 'working') {
     if (s.activity === 'starting') return 'Starting up';
@@ -349,14 +476,15 @@ export function statusLine(
   if (status === 'pending') {
     if (s.session.planNodeId) {
       const plan = Object.values(state.plans).findLast((p) =>
-        p.nodes.some((n) => n.id === s.session.planNodeId),
+        p.nodes.some((n) => n.sessionId === s.session.id),
       );
-      const node = plan?.nodes.find((n) => n.id === s.session.planNodeId);
+      const node = plan?.nodes.find((n) => n.sessionId === s.session.id);
       const waiting = node?.dependsOn.filter((d) => plan?.nodeStatus[d] !== 'merged').length ?? 0;
       if (waiting) return `Waiting on ${waiting} task${waiting > 1 ? 's' : ''}`;
     }
     if (s.activity === 'idle') return 'Idle · turn complete';
   }
+  if (status === 'exited') return 'Worker stopped · open Activity for details';
   return undefined;
 }
 
@@ -377,6 +505,7 @@ export function boardCards(
   nowIso: string,
 ): BoardCard[] {
   const plans = Object.values(state.plans);
+  const events = [...bySeq.values()];
   const identities = resolveIdentities(state);
   return Object.values(state.sessions).flatMap((s) => {
     if (s.session.role === 'reviewer') return [];
@@ -402,8 +531,8 @@ export function boardCards(
 
     const lastTs = bySeq.get(s.lastEventSeq)?.ts ?? s.session.createdAt;
     const label = planNeedsReview
-      ? `Approve plan · ${orchPlan.nodes.length} task${orchPlan.nodes.length === 1 ? '' : 's'}`
-      : statusLine(s, status, state);
+      ? `Approve plan · ${orchPlan.nodes.length} task${orchPlan.nodes.length === 1 ? '' : 's'} · open to review`
+      : statusLine(s, status, state, reviewStopReason(s, events, state.lastSeq));
     const title = isOrchestrator ? `Plan: ${s.session.title}` : s.session.title;
     const review = crossReview(s, state);
     const identity = identities.get(s.session.id)!;

@@ -260,6 +260,21 @@
   line-height: var(--leading-ui);
 }
 
+.taskAcceptance,
+.taskExact {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.taskExact code {
+  display: block;
+  max-height: 8rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 400 var(--text-2xs) / 1.5 var(--font-mono);
+}
+
 .taskFiles {
   color: var(--text-3);
   font: 400 var(--text-2xs) / 1.4 var(--font-mono);

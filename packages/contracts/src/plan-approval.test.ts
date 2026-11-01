@@ -11,6 +11,7 @@ import {
   planSchema,
   projectUpTo,
   repoRelativeGlobSchema,
+  repoRelativeFileSchema,
   routes,
   submitPlanRequestSchema,
   type HelixStore,
@@ -145,6 +146,36 @@ it('requires files for new submissions but reads old stored plans without invent
   expect(projectUpTo([...run.slice(0, 4), legacyEvent], 5).plans[plan.id]!.status).toBe(
     'awaiting_approval',
   );
+});
+
+it('accepts bounded literal file checks only for explicitly owned paths', () => {
+  const node = {
+    ...plan.nodes[0]!,
+    files: ['CASE-B.md'],
+    exactFiles: [{ path: 'CASE-B.md', content: '# Helix smoke case B\nSignal: orchard-17.\n' }],
+  };
+  const request = {
+    projectId: plan.projectId,
+    orchestratorSessionId: plan.orchestratorSessionId,
+    goal: plan.goal,
+    nodes: [node],
+  };
+  expect(submitPlanRequestSchema.safeParse(request).success).toBe(true);
+  expect(planSchema.parse({ ...plan, nodes: [node] }).nodes[0]!.exactFiles).toEqual(
+    node.exactFiles,
+  );
+  for (const unsafe of ['../CASE-B.md', 'src/**', 'C:/CASE-B.md', 'src\\file', 'a:b', '-file'])
+    expect(repoRelativeFileSchema.safeParse(unsafe).success).toBe(false);
+  expect(
+    submitPlanRequestSchema.safeParse({ ...request, nodes: [{ ...node, files: ['**/*.md'] }] })
+      .success,
+  ).toBe(false);
+  expect(
+    submitPlanRequestSchema.safeParse({
+      ...request,
+      nodes: [{ ...node, exactFiles: [node.exactFiles[0], node.exactFiles[0]] }],
+    }).success,
+  ).toBe(false);
 });
 
 it('defines strict decision request/response and plan-ID route schemas', () => {

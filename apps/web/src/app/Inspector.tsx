@@ -1025,6 +1025,16 @@ function PlanPanel({
                   </span>
                 </span>
                 <span className={s.taskWhy}>{t.node.rationale}</span>
+                {t.node.acceptance.length > 0 && (
+                  <span className={s.taskAcceptance}>
+                    Acceptance: {t.node.acceptance.join(' · ')}
+                  </span>
+                )}
+                {t.node.exactFiles?.map((exact) => (
+                  <span className={s.taskExact} key={exact.path}>
+                    Exact UTF-8 file {exact.path}: <code>{JSON.stringify(exact.content)}</code>
+                  </span>
+                ))}
                 {t.node.files.length > 0 && (
                   <span className={s.taskFiles}>{t.node.files.join('  ·  ')}</span>
                 )}
