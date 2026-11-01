@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join, sep } from 'node:path';
+import { delimiter, dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 import { fixtures, sessionIdSchema } from '@helix/contracts';
@@ -36,14 +36,13 @@ test('orchestrators and reviewers receive CLI discovery, identity and a prepende
   };
   // Orchestrators also get a scratch folder for their plan artifact, created on demand.
   const scratch = orchestratorScratch(dataDir, session);
-  expect(scratch.startsWith(join(tmpdir(), 'helix-plan-scratch') + sep)).toBe(true);
+  expect(scratch.startsWith(join(tmpdir(), 'helix-plan-scratch-'))).toBe(true);
   expect(scratch.startsWith(dataDir + sep)).toBe(false);
   const unsafeIdScratch = orchestratorScratch(dataDir, {
     id: sessionIdSchema.parse('../../outside'),
   });
-  expect(unsafeIdScratch.startsWith(join(tmpdir(), 'helix-plan-scratch') + sep)).toBe(true);
+  expect(unsafeIdScratch.startsWith(join(tmpdir(), 'helix-plan-scratch-'))).toBe(true);
   expect(unsafeIdScratch).not.toContain('outside');
-  rmSync(unsafeIdScratch, { recursive: true, force: true });
   expect(env({ project, session: { ...session, role: 'orchestrator' } })).toEqual({
     ...shared,
     HELIX_SCRATCH_DIR: scratch,
@@ -60,8 +59,57 @@ test('orchestrators and reviewers receive CLI discovery, identity and a prepende
   expect(base).toEqual(
     process.platform === 'win32' ? { Path: 'base-path' } : { PATH: 'base-path' },
   );
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(dirname(scratch), { recursive: true, force: true });
 });
+
+test('orchestrator scratch ignores a planted predictable parent and stays private', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'helix-scratch-test-'));
+  try {
+    const planted = join(root, 'helix-plan-scratch');
+    mkdirSync(planted);
+    const scratch = orchestratorScratch(join(root, 'data'), session, root);
+    expect(scratch.startsWith(join(root, 'helix-plan-scratch-'))).toBe(true);
+    expect(dirname(scratch)).not.toBe(planted);
+    expect(scratch).toBe(orchestratorScratch(join(root, 'data'), session, root));
+    if (process.platform !== 'win32') {
+      expect((await stat(dirname(scratch))).mode & 0o077).toBe(0);
+      expect((await stat(scratch)).mode & 0o077).toBe(0);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(process.platform === 'win32')(
+  'orchestrator scratch rejects a shared temporary root without a sticky bit',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'helix-scratch-test-'));
+    try {
+      await chmod(root, 0o777);
+      expect(() => orchestratorScratch(join(root, 'data'), session, root)).toThrow(/sticky bit/);
+      await chmod(root, 0o1777);
+      const scratch = orchestratorScratch(join(root, 'data'), session, root);
+      expect((await stat(dirname(scratch))).mode & 0o077).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform === 'win32')(
+  'orchestrator scratch rejects a session directory whose permissions become shared',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'helix-scratch-test-'));
+    try {
+      const data = join(root, 'data');
+      const scratch = orchestratorScratch(data, session, root);
+      await chmod(scratch, 0o777);
+      expect(() => orchestratorScratch(data, session, root)).toThrow(/not private/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test('launcher templates quote workspace paths and forward all arguments', () => {
   const root = join(tmpdir(), "repo with spaces and 'quotes' 100%");
