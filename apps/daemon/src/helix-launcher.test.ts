@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { chmod, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -36,12 +36,14 @@ test('orchestrators and reviewers receive CLI discovery, identity and a prepende
   };
   // Orchestrators also get a scratch folder for their plan artifact, created on demand.
   const scratch = orchestratorScratch(dataDir, session);
-  expect(scratch.startsWith(join(tmpdir(), 'helix-plan-scratch-'))).toBe(true);
+  expect(scratch.startsWith(join(realpathSync(tmpdir()), 'helix-plan-scratch-'))).toBe(true);
   expect(scratch.startsWith(dataDir + sep)).toBe(false);
   const unsafeIdScratch = orchestratorScratch(dataDir, {
     id: sessionIdSchema.parse('../../outside'),
   });
-  expect(unsafeIdScratch.startsWith(join(tmpdir(), 'helix-plan-scratch-'))).toBe(true);
+  expect(unsafeIdScratch.startsWith(join(realpathSync(tmpdir()), 'helix-plan-scratch-'))).toBe(
+    true,
+  );
   expect(unsafeIdScratch).not.toContain('outside');
   expect(env({ project, session: { ...session, role: 'orchestrator' } })).toEqual({
     ...shared,
@@ -68,8 +70,8 @@ test('orchestrator scratch ignores a planted predictable parent and stays privat
     const planted = join(root, 'helix-plan-scratch');
     mkdirSync(planted);
     const scratch = orchestratorScratch(join(root, 'data'), session, root);
-    expect(scratch.startsWith(join(root, 'helix-plan-scratch-'))).toBe(true);
-    expect(dirname(scratch)).not.toBe(planted);
+    expect(scratch.startsWith(join(realpathSync(root), 'helix-plan-scratch-'))).toBe(true);
+    expect(dirname(scratch)).not.toBe(realpathSync(planted));
     expect(scratch).toBe(orchestratorScratch(join(root, 'data'), session, root));
     if (process.platform !== 'win32') {
       expect((await stat(dirname(scratch))).mode & 0o077).toBe(0);
