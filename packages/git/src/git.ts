@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { HelixError } from '@helix/contracts';
 
 export type GitResult = { stdout: string; stderr: string; code: number };
+export type GitBinaryResult = { stdout: Buffer; stderr: string; code: number };
 export type GitRunner = (
   cwd: string,
   args: string[],
@@ -41,6 +42,45 @@ export const runGit: GitRunner = async (cwd, args, env) => {
     );
   });
 };
+
+/** Read a bounded Git object without decoding or passing repository content through a shell. */
+export async function runGitBinary(
+  cwd: string,
+  args: string[],
+  maxBuffer: number,
+): Promise<GitBinaryResult> {
+  const binary = await trustedGit(cwd);
+  return new Promise((resolve, reject) => {
+    execFile(
+      binary,
+      args,
+      {
+        cwd,
+        shell: false,
+        windowsHide: true,
+        encoding: 'buffer',
+        maxBuffer,
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0',
+          GCM_INTERACTIVE: 'Never',
+          GIT_OPTIONAL_LOCKS: '0',
+        },
+      },
+      (error, stdout, stderr) => {
+        if (error && typeof error.code !== 'number') {
+          reject(new HelixError('INTERNAL_ERROR', 'Unable to read committed Git object.'));
+        } else {
+          resolve({
+            stdout: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout),
+            stderr: Buffer.isBuffer(stderr) ? stderr.toString('utf8') : stderr,
+            code: typeof error?.code === 'number' ? error.code : 0,
+          });
+        }
+      },
+    );
+  });
+}
 
 export function requireGitVersion(output: string): void {
   const match = /git version (\d+)\.(\d+)/.exec(output);

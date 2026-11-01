@@ -25,7 +25,7 @@ import {
   type WorktreeCreateOptions,
 } from '@helix/contracts';
 import { parseDiffFiles } from './diff.js';
-import { requireGitVersion, runGit, serialize, type GitRunner } from './git.js';
+import { requireGitVersion, runGit, runGitBinary, serialize, type GitRunner } from './git.js';
 
 export interface GitWorktreeManagerOptions {
   dataDir: string;
@@ -43,6 +43,7 @@ export interface LocalBaseFallback {
   reason: 'no-origin';
 }
 type Metadata = { base: string; baseSha: string; sessionId: SessionId };
+const MAX_EXACT_FILE_BYTES = 64 * 1024;
 
 export class DirtyWorktreeError extends HelixError {
   constructor(path: string) {
@@ -58,6 +59,20 @@ function segment(value: string): void {
 function ref(value: string): void {
   if (!value || value.startsWith('-') || /[\0\r\n]/.test(value))
     throw new HelixError('INVALID_REQUEST', 'Invalid Git reference.');
+}
+function literalRepoPath(value: string): void {
+  if (
+    !value ||
+    value.length > 512 ||
+    value !== value.trim() ||
+    value.startsWith('/') ||
+    value.startsWith('!') ||
+    value.startsWith('-') ||
+    ['\\', ':', '*', '?', '[', ']', '{', '}'].some((char) => value.includes(char)) ||
+    Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) ||
+    value.split('/').some((part) => !part || part === '.' || part === '..')
+  )
+    throw new HelixError('INVALID_REQUEST', 'Expected a literal repository-relative file path.');
 }
 
 export class GitWorktreeManager implements GitService {
@@ -304,6 +319,43 @@ export class GitWorktreeManager implements GitService {
   }
   async headSha(path: string): Promise<string> {
     return (await this.git(path, ['rev-parse', '--verify', 'HEAD'])).trim();
+  }
+  async readCommittedFile(
+    path: string,
+    headSha: string,
+    filePath: string,
+  ): Promise<Uint8Array | undefined> {
+    literalRepoPath(filePath);
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(headSha))
+      throw new HelixError('INVALID_REQUEST', 'Expected a full Git commit SHA.');
+    const commit = (
+      await this.git(path, ['rev-parse', '--verify', '--end-of-options', `${headSha}^{commit}`])
+    ).trim();
+    if (commit !== headSha) throw new HelixError('INVALID_REQUEST', 'Commit SHA did not resolve.');
+    const read = async (args: string[], maxBuffer: number): Promise<Buffer> => {
+      const result = await runGitBinary(path, args, maxBuffer);
+      if (result.code !== 0)
+        throw new HelixError('INTERNAL_ERROR', `Git ${args[0]} failed.`, {
+          code: result.code,
+        });
+      return result.stdout;
+    };
+    const tree = (await read(['ls-tree', '-r', '-z', headSha, '--', filePath], 4096)).toString(
+      'utf8',
+    );
+    const entries = tree.split('\0').filter(Boolean);
+    if (entries.length !== 1) return undefined;
+    const entry = /^(100644|100755) blob ([a-f0-9]{40}|[a-f0-9]{64})\t(.+)$/u.exec(entries[0]!);
+    if (!entry || entry[3] !== filePath) return undefined;
+    const size = Number((await this.git(path, ['cat-file', '-s', entry[2]!])).trim());
+    if (!Number.isSafeInteger(size) || size < 0)
+      throw new HelixError('INTERNAL_ERROR', 'Committed blob has an invalid size.');
+    if (size > MAX_EXACT_FILE_BYTES)
+      throw new HelixError('INVALID_REQUEST', 'Committed exact file exceeds 64 KiB.');
+    const content = await read(['cat-file', 'blob', entry[2]!], MAX_EXACT_FILE_BYTES + 1024);
+    if (content.length !== size)
+      throw new HelixError('INTERNAL_ERROR', 'Committed blob size changed while reading.');
+    return content;
   }
   async commitsAhead(path: string, base: string): Promise<number> {
     ref(base);
