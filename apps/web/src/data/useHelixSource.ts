@@ -17,6 +17,7 @@ import {
   selectHistory,
   sourceIdentity,
 } from './sourceHistory';
+import { chooseProject } from './projectSelection';
 
 export type SourceMode = 'connecting' | 'demo' | 'empty' | 'live';
 export type { DemoPreset } from './demoScenarios';
@@ -57,6 +58,23 @@ const params = new URLSearchParams(window.location.search);
 /** `build:demo` builds with `--mode demo`: the static site never calls /api and always replays. */
 const staticBuild = import.meta.env.MODE === 'demo';
 const forceDemo = staticBuild || params.has('demo');
+const selectedProjectKey = 'helix.selectedProjectId';
+
+function rememberedProjectId(): string | undefined {
+  try {
+    return window.localStorage.getItem(selectedProjectKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberProjectId(id: string): void {
+  try {
+    window.localStorage.setItem(selectedProjectKey, id);
+  } catch {
+    // Private browsing can disable storage; project selection still works for this tab.
+  }
+}
 /**
  * `?demo` (or the static build) replays the real multi-agent run; the GitHub CI loop is one click
  * away in the top bar's scenario switch. `?demo=<name>` plays another bundled recording, and `?demo=example`
@@ -134,24 +152,18 @@ export function useHelixSource(): HelixSource {
       setMode('empty');
       return;
     }
-    setProject((prev) => {
-      if (preferredId) {
-        const match = list.find((p) => p.id === preferredId);
-        if (match) return match;
-      }
-      if (prev) {
-        const current = list.find((p) => p.id === prev.id);
-        if (current) return current;
-      }
-      return list[0];
-    });
+    if (preferredId && list.some((p) => p.id === preferredId)) rememberProjectId(preferredId);
+    setProject((prev) => chooseProject(list, preferredId, prev?.id, rememberedProjectId()));
     setMode('live');
   }, []);
 
   const selectProject = useCallback(
     (projectId: string) => {
       const next = projects.find((p) => p.id === projectId);
-      if (next) setProject(next);
+      if (next) {
+        rememberProjectId(next.id);
+        setProject(next);
+      }
     },
     [projects],
   );
