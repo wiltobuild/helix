@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import type { Socket } from 'node:net';
 import {
   fixtures,
+  eventSchemas,
   HelixError,
   projectIdSchema,
   terminalOutputSchema,
@@ -35,6 +36,102 @@ async function setup() {
 }
 const event = fixtures.passwordResetRun[0];
 if (!event) throw new Error('Missing fixture event');
+
+it('serves SSE design rasters by immutable URL while retaining the recorded payload', async () => {
+  const { core, baseUrl, app } = await setup();
+  const image = `data:image/png;base64,${Buffer.from('raster bytes').toString('base64')}`;
+  const referenceImage = `data:image/png;base64,${Buffer.from('reference bytes').toString('base64')}`;
+  const conversationImage = `data:image/png;base64,${Buffer.from('conversation bytes').toString('base64')}`;
+  const design = eventSchemas['design.updated'].parse({
+    ...event,
+    type: 'design.updated',
+    payload: {
+      design: {
+        sessionId: session.id,
+        revision: 1,
+        brief: 'A storefront',
+        status: 'ready',
+        rounds: [
+          {
+            revision: 1,
+            jobId: 'round-one',
+            concepts: [
+              {
+                id: 'one',
+                title: 'First',
+                imageUrl: image,
+                mimeType: 'image/png',
+                prompt: 'Draw',
+                rationale: 'Readable',
+                tradeoffs: [],
+                recommended: true,
+              },
+            ],
+          },
+        ],
+        conversation: [
+          {
+            role: 'user',
+            text: 'Use this detail',
+            revision: 1,
+            references: [{ url: conversationImage, label: 'Detail' }],
+          },
+        ],
+        references: [{ url: referenceImage, label: 'Moodboard' }],
+        receipts: [],
+      },
+    },
+  });
+  await core.events.append([design]);
+  const received: string[] = [];
+  const referenceUrls: string[] = [];
+  const conversationUrls: string[] = [];
+  const subscription = subscribeEvents({
+    baseUrl,
+    onEvent: (next) => {
+      if (next.type === 'design.updated') {
+        received.push(next.payload.design.rounds[0]!.concepts[0]!.imageUrl);
+        referenceUrls.push(next.payload.design.references[0]!.url);
+        conversationUrls.push(next.payload.design.conversation[0]!.references[0]!.url);
+      }
+    },
+  });
+  cleanups.push(() => subscription.close());
+  await vi.waitFor(() => expect(received).toHaveLength(1));
+  const url = received[0]!;
+  expect(url.startsWith(`${baseUrl}/api/replay-assets/`)).toBe(true);
+  expect(new URL(url).pathname).toMatch(
+    new RegExp(`^/api/replay-assets/${project.id}/1/[a-f0-9]{64}$`),
+  );
+  const raster = await fetch(url);
+  expect(raster.status).toBe(200);
+  expect(raster.headers.get('content-type')).toContain('image/png');
+  expect(raster.headers.get('x-content-type-options')).toBe('nosniff');
+  expect(Buffer.from(await raster.arrayBuffer())).toEqual(Buffer.from('raster bytes'));
+  for (const [referenceUrl, expected] of [
+    [referenceUrls[0], 'reference bytes'],
+    [conversationUrls[0], 'conversation bytes'],
+  ] as const) {
+    expect(referenceUrl?.startsWith(`${baseUrl}/api/replay-assets/`)).toBe(true);
+    const response = await fetch(referenceUrl!);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(expected));
+  }
+  expect(core.events.log[0]).toMatchObject({
+    payload: {
+      design: {
+        rounds: [{ concepts: [{ imageUrl: image }] }],
+        references: [{ url: referenceImage }],
+        conversation: [{ references: [{ url: conversationImage }] }],
+      },
+    },
+  });
+  expect((await app.inject(`/api/replay-assets/${project.id}/1/not-a-hash`)).statusCode).toBe(400);
+  expect(
+    (await app.inject(`/api/replay-assets/${project.id}/1/${'0'.repeat(64)}`)).statusCode,
+  ).toBe(404);
+});
 
 it('SSE emits heartbeat comments on the contract interval', async () => {
   const { baseUrl } = await setup();

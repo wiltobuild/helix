@@ -7,6 +7,7 @@ import {
 } from '@helix/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
+import type { ReplayAssets } from './replay-assets.js';
 
 const MAX_BUFFER = 1024 * 1024;
 
@@ -15,6 +16,7 @@ export function openEventStream(
   request: FastifyRequest,
   reply: FastifyReply,
   streams: Set<() => void>,
+  assets: ReplayAssets,
 ) {
   const query = routes.events.query.parse(request.query);
   const headers = routes.events.headers.parse(request.headers);
@@ -88,18 +90,19 @@ export function openEventStream(
     unsubscribe = core.events.subscribe(since, (event) => {
       if (stopped || replayFull) return;
       if (!query.projectId || event.projectId === query.projectId) {
+        const streamed = assets.forStream(event, `http://${request.headers.host}`);
         if (
           process.env.NODE_ENV !== 'production' &&
           !routes.events.response.safeParse({
             id: String(event.seq),
             event: sse.event,
-            data: event,
+            data: streamed,
           }).success
         ) {
           close();
           return;
         }
-        write(`id: ${event.seq}\nevent: ${sse.event}\ndata: ${JSON.stringify(event)}\n\n`);
+        write(`id: ${event.seq}\nevent: ${sse.event}\ndata: ${JSON.stringify(streamed)}\n\n`);
       }
     });
     // A synchronous replay can hit backpressure before subscribe returns its cleanup.
