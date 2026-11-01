@@ -20,10 +20,14 @@ export interface VisualImageProvider {
 }
 export const imageCapabilityBlocker =
   'Raster generation is unavailable: the installed Codex capability probe did not confirm image generation. Update/sign in to a supported Codex installation, then restart Helix and retry; CLI sign-in alone is not image capability. No concepts have been generated.';
+const visualTerm = String.raw`(?:website|web\s*site|landing\s*page|storefront|dashboard|frontend|front-end|user interface|ui|portfolio|web\s*app|homepage|layout|react|css|html|visual)`;
+const negatedVisualTerms = new RegExp(
+  String.raw`\b(?:not|no|without)\s+(?:(?:a|an|any)\s+)?${visualTerm}(?:\s+(?:or|and)\s+(?:(?:a|an|any)\s+)?${visualTerm})*\b`,
+  'gi',
+);
+const visualTerms = new RegExp(String.raw`\b${visualTerm}\b`, 'i');
 export function needsVisualDesign(brief: string): boolean {
-  return /\b(website|web\s*site|landing\s*page|storefront|dashboard|frontend|front-end|user interface|ui|portfolio|web\s*app|homepage|layout|react|css|html|visual)\b/i.test(
-    brief,
-  );
+  return visualTerms.test(brief.replace(negatedVisualTerms, ''));
 }
 export function newVisualDesign(
   sessionId: SessionId,
