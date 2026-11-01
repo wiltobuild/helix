@@ -142,6 +142,43 @@ it('bounds content references while keeping old URLs resolvable from history', a
   ).toEqual(Buffer.from('first'));
 });
 
+it('resolves a second asset when accumulated cached bytes reach the limit', async () => {
+  const otherImage = `data:image/png;base64,${Buffer.from('other').toString('base64')}`;
+  const withTwoImages = eventSchemas['design.updated'].parse({
+    ...event,
+    payload: {
+      design: {
+        ...event.payload.design,
+        rounds: [
+          {
+            ...event.payload.design.rounds[0],
+            concepts: [
+              event.payload.design.rounds[0]!.concepts[0],
+              { ...event.payload.design.rounds[0]!.concepts[0], id: 'two', imageUrl: otherImage },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  const assets = new ReplayAssets(16);
+  const streamed = assets.forStream(withTwoImages, 'http://127.0.0.1:4322');
+  if (streamed.type !== 'design.updated') throw new Error('Wrong type');
+  const [first, second] = streamed.payload.design.rounds[0]!.concepts;
+  const firstHash = first!.imageUrl.split('/').at(-1)!;
+  const secondHash = second!.imageUrl.split('/').at(-1)!;
+  expect(assets.get(firstHash)?.bytes).toEqual(Buffer.from('raster bytes'));
+  expect(assets.get(secondHash)).toBeUndefined();
+  expect(
+    (
+      await assets.resolve(withTwoImages.projectId, withTwoImages.seq, secondHash, {
+        read: () => Promise.resolve([withTwoImages]),
+      })
+    )?.bytes,
+  ).toEqual(Buffer.from('other'));
+  expect(assets.get(secondHash)).toBeUndefined();
+});
+
 it('externalizes mixed-case raster data URLs accepted by the contract', async () => {
   const mixedImage = image.replace('data:image/png;base64,', 'DATA:image/PNG;BASE64,');
   const mixed = eventSchemas['design.updated'].parse({

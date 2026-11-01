@@ -180,6 +180,7 @@ export async function createServer(options: ServerOptions) {
     if (!asset) throw new HelixError('NOT_FOUND', 'Visual asset not found');
     return reply
       .header('Cache-Control', 'private, max-age=31536000, immutable')
+      .header('X-Content-Type-Options', 'nosniff')
       .type(asset.mimeType)
       .send(asset.bytes);
   });
