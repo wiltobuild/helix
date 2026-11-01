@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { fixtures, type IntakeDraft } from '@helix/contracts';
 import { TooltipProvider } from '@helix/ui';
 import {
+  DiscoveryContext,
   DiscoveryDestination,
   IntakeStart,
   IntakeWorkspace,
@@ -19,6 +20,50 @@ const buttonTag = (markup: string, label: string) => {
   return before.slice(before.lastIndexOf('<button'));
 };
 const noop = () => {};
+
+describe('discovery repository navigation', () => {
+  const context = (over: Partial<Parameters<typeof DiscoveryContext>[0]> = {}) =>
+    html(
+      <DiscoveryContext
+        project={project}
+        destinationProjectId="plant"
+        status="launching"
+        busy={false}
+        loaded={true}
+        approvalUnknown={false}
+        onOpenProject={noop}
+        {...over}
+      />,
+    );
+
+  test('offers an explicit enabled action for another repository without replacing discovery', () => {
+    const markup = context();
+    const label = `Open build draft in ${project.name}`;
+    expect(markup).toContain(label);
+    expect(buttonTag(markup, label)).not.toContain('disabled');
+    expect(markup).toContain('Your approved brief stays saved');
+    expect(markup).not.toContain('Start a different build');
+  });
+
+  test.each([
+    { destinationProjectId: project.id },
+    { destinationProjectId: undefined },
+    { busy: true },
+    { loaded: false },
+    { approvalUnknown: true },
+    { status: 'generating' as const },
+  ])('holds the scope lock for %o', (override) => {
+    const markup = context(override);
+    expect(markup).not.toContain('Open build draft in');
+    expect(buttonTag(markup, 'Resume this repository')).toContain('disabled');
+  });
+
+  test('keeps the standard navigation for editable discovery', () => {
+    const markup = context({ status: 'review' });
+    expect(markup).not.toContain('Open build draft in');
+    expect(buttonTag(markup, 'Resume this repository')).not.toContain('disabled');
+  });
+});
 
 describe('start', () => {
   test.each(['generating', 'launching', 'uncertain'] as const)(
@@ -294,6 +339,7 @@ describe('workspace', () => {
       'launching',
     );
     expect(launching).toContain('Retry approved launch');
+    expect(buttonTag(launching, 'Start a different build')).toContain('disabled');
     expect(launching).not.toContain('Stop writing');
   });
 

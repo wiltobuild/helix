@@ -5,6 +5,7 @@ import type { IntakeDraft } from '@helix/contracts';
 import {
   approvalBlockers,
   briefSurvivesRename,
+  canOpenOtherProjectDraft,
   citationLabel,
   clearIfUnchanged,
   editLocks,
@@ -239,4 +240,37 @@ test('completed drafts permit scope changes while active and uncertain operation
   expect(intakeScopeSwitchHeld({ ...idle, status: 'launching' })).toBe(true);
   expect(intakeScopeSwitchHeld({ ...idle, status: 'generating' })).toBe(true);
   expect(intakeScopeSwitchHeld({ ...idle, approvalUnknown: true })).toBe(true);
+});
+
+describe('opening another repository during a saved discovery launch', () => {
+  const savedLaunch = {
+    busy: false,
+    loaded: true,
+    approvalUnknown: false,
+    status: 'launching' as const,
+    selectedProjectId: 'appointment',
+    destinationProjectId: 'plant',
+  };
+
+  test('allows navigation without relaxing the discovery launch lock', () => {
+    expect(canOpenOtherProjectDraft(savedLaunch)).toBe(true);
+    expect(intakeScopeSwitchHeld(savedLaunch)).toBe(true);
+  });
+
+  test.each([
+    { selectedProjectId: 'plant' },
+    { selectedProjectId: undefined },
+    { destinationProjectId: undefined },
+    { busy: true },
+    { loaded: false },
+    { approvalUnknown: true },
+    { status: 'generating' as const },
+    { status: 'review' as const },
+    { status: 'editing' as const },
+    { status: 'failed' as const },
+    { status: 'launched' as const },
+    { status: undefined },
+  ])('does not offer the launch escape for %o', (override) => {
+    expect(canOpenOtherProjectDraft({ ...savedLaunch, ...override })).toBe(false);
+  });
 });

@@ -229,3 +229,21 @@ export function intakeScopeSwitchHeld(input: {
     input.status === 'launching'
   );
 }
+
+/** Opening another repository's draft leaves a saved discovery launch and its retry untouched. */
+export function canOpenOtherProjectDraft(
+  input: Parameters<typeof intakeScopeSwitchHeld>[0] & {
+    selectedProjectId: string | undefined;
+    destinationProjectId: string | undefined;
+  },
+): boolean {
+  return (
+    input.loaded &&
+    !input.busy &&
+    !input.approvalUnknown &&
+    input.status === 'launching' &&
+    !!input.selectedProjectId &&
+    !!input.destinationProjectId &&
+    input.selectedProjectId !== input.destinationProjectId
+  );
+}
