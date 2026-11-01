@@ -90,7 +90,10 @@ export class ClaudeSession extends ProcessSession {
     if (start.session.model) args.push('--model', start.session.model);
     try {
       await session.connect(bin, args);
-      await session.control({ subtype: 'initialize', hooks: null });
+      await session.control(
+        { subtype: 'initialize', hooks: null },
+        options.initializationTimeoutMs ?? 90_000,
+      );
       session.activity('idle');
       return session;
     } catch (error) {
@@ -98,9 +101,9 @@ export class ClaudeSession extends ProcessSession {
       throw error;
     }
   }
-  private control(request: Record<string, unknown>): Promise<unknown> {
+  private control(request: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
     const id = randomUUID();
-    return this.request(id, { type: 'control_request', request_id: id, request });
+    return this.request(id, { type: 'control_request', request_id: id, request }, timeoutMs);
   }
   protected beginTurn(text: string): Promise<void> {
     return this.write({

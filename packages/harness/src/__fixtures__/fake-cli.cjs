@@ -4,12 +4,22 @@ const { spawn } = require('node:child_process');
 const args = process.argv.slice(2);
 const claude = args[0] === 'claude';
 if (args.includes('--version')) {
-  console.log('fixture-cli 1.0.0');
-  process.exit(0);
+  setTimeout(
+    () => {
+      console.log('fixture-cli 1.0.0');
+      process.exit(0);
+    },
+    Number(process.env.HELIX_FAKE_PROBE_DELAY_MS || 0),
+  );
 }
 if (args.includes('status')) {
-  console.log(claude ? JSON.stringify({ loggedIn: true }) : 'Logged in using ChatGPT');
-  process.exit(0);
+  setTimeout(
+    () => {
+      console.log(claude ? JSON.stringify({ loggedIn: true }) : 'Logged in using ChatGPT');
+      process.exit(0);
+    },
+    Number(process.env.HELIX_FAKE_PROBE_DELAY_MS || 0),
+  );
 }
 if (process.env.HELIX_FAKE_CHILD_FILE) {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
@@ -141,24 +151,35 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (message.request.subtype === 'initialize') {
         if (scenario === 'timeout') return;
         if (scenario === 'exit') return process.exit(7);
-        send({
-          type: 'control_response',
-          response: {
-            request_id: message.request_id,
-            subtype: scenario === 'error' ? 'error' : 'success',
-            error: 'Fixture initialization rejected',
-            response: {},
-          },
-        });
+        setTimeout(
+          () =>
+            send({
+              type: 'control_response',
+              response: {
+                request_id: message.request_id,
+                subtype: scenario === 'error' ? 'error' : 'success',
+                error: 'Fixture initialization rejected',
+                response: {},
+              },
+            }),
+          Number(process.env.HELIX_FAKE_INIT_DELAY_MS || 0),
+        );
         const resume = args.find((value) => value.startsWith('--resume='));
         if (resume) thread = resume.slice('--resume='.length);
       } else if (message.request.subtype === 'interrupt') {
         clearTimeout(timer);
-        send({
-          type: 'control_response',
-          response: { subtype: 'success', request_id: message.request_id, response: {} },
-        });
-        finish('interrupted');
+        const respond = () => {
+          send({
+            type: 'control_response',
+            response: { subtype: 'success', request_id: message.request_id, response: {} },
+          });
+          finish('interrupted');
+        };
+        const delay = Number(process.env.HELIX_FAKE_INTERRUPT_DELAY_MS || 0);
+        if (delay) {
+          finish('interrupted');
+          setTimeout(respond, delay);
+        } else respond();
       }
     } else if (message.type === 'user') start(message.message.content);
     else if (
