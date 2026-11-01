@@ -26,6 +26,7 @@ import { Button, Dialog, HelixLogo, TextArea, TextField } from '@helix/ui';
 import {
   approvalBlockers,
   briefSurvivesRename,
+  canOpenOtherProjectDraft,
   citationLabel,
   clearIfUnchanged,
   editLocks,
@@ -425,29 +426,20 @@ function BuildIntake({
     status: draft?.status,
   });
   const context = discovery ? (
-    <section className={s.context} aria-label="Discovery workspace">
-      <div className={s.contextText}>
-        <strong>Saved in Helix</strong>
-        <span className={s.contextHint}>
-          Your conversation is saved independently. No repository is needed to develop the idea.
-        </span>
-      </div>
-      {project && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={scopeSwitchHeld}
-          onClick={() =>
-            void run(async () => {
-              await persistLocal();
-              onDiscovery(false);
-            })
-          }
-        >
-          Resume this repository’s earlier draft
-        </Button>
-      )}
-    </section>
+    <DiscoveryContext
+      {...(project ? { project } : {})}
+      destinationProjectId={draft?.destinationProjectId}
+      status={draft?.status}
+      busy={busy}
+      loaded={loaded}
+      approvalUnknown={approvalUnknown}
+      onOpenProject={() =>
+        void run(async () => {
+          await persistLocal();
+          onDiscovery(false);
+        })
+      }
+    />
   ) : (
     <div>
       <Button
@@ -596,6 +588,45 @@ function BuildIntake({
 /* ------------------------------------------------------------------------------------------ */
 /* Presentational views. Exported for render tests; all state and requests live above.         */
 /* ------------------------------------------------------------------------------------------ */
+
+export function DiscoveryContext({
+  project,
+  onOpenProject,
+  ...state
+}: Parameters<typeof intakeScopeSwitchHeld>[0] & {
+  project?: Project;
+  destinationProjectId: string | undefined;
+  onOpenProject: () => void;
+}) {
+  const otherProject = canOpenOtherProjectDraft({ ...state, selectedProjectId: project?.id });
+  return (
+    <section className={s.context} aria-label="Discovery workspace">
+      <div className={s.contextText}>
+        <strong>Saved in Helix</strong>
+        <span className={s.contextHint}>
+          Your conversation is saved independently. No repository is needed to develop the idea.
+        </span>
+        {otherProject && (
+          <span className={s.contextHint}>
+            Your approved brief stays saved while you work in another repository.
+          </span>
+        )}
+      </div>
+      {project && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={intakeScopeSwitchHeld(state) && !otherProject}
+          onClick={onOpenProject}
+        >
+          {otherProject
+            ? `Open build draft in ${project.name}`
+            : "Resume this repository's earlier draft"}
+        </Button>
+      )}
+    </section>
+  );
+}
 
 export function ProjectContext({
   project,
