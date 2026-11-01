@@ -39,6 +39,7 @@ function opts(kind: KnownAgentKind, env: Record<string, string> = {}): HarnessOp
     extraArgs: [executable, kind === 'codex' ? 'codex' : 'claude'],
     env,
     requestTimeoutMs: 15_000,
+    initializationTimeoutMs: 15_000,
   };
 }
 async function start(
@@ -159,6 +160,23 @@ it('appends the Git ownership instruction to the Claude system prompt', async ()
   expect(args[args.indexOf('--append-system-prompt') + 1]).toBe(HELIX_GIT_INSTRUCTIONS);
 }, 30_000);
 
+it('lets a slow Claude initialize without extending ordinary request deadlines', async () => {
+  const cwd = await directory();
+  const session = await createHarness('claude-code', {
+    ...opts('claude-code', {
+      HELIX_FAKE_INIT_DELAY_MS: '500',
+      HELIX_FAKE_INTERRUPT_DELAY_MS: '500',
+    }),
+    requestTimeoutMs: 100,
+  }).start({ cwd, session: { ...template, agent: 'claude-code' } });
+  sessions.push(session);
+  await session.send('hold', 'queue');
+  await expect(session.interrupt()).rejects.toMatchObject({
+    code: 'HARNESS_UNAVAILABLE',
+    message: 'Harness request timed out',
+  });
+}, 30_000);
+
 describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) => {
   it('replays fixture approvals, errors and unknown messages through the live transport', async () => {
     const path = fileURLToPath(
@@ -277,6 +295,7 @@ describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) 
         createHarness(kind, {
           ...opts(kind, { HELIX_FAKE_SCENARIO: scenario }),
           requestTimeoutMs: scenario === 'timeout' ? 5000 : 15_000,
+          initializationTimeoutMs: scenario === 'timeout' ? 5000 : 15_000,
         }).start({ cwd, session: template }),
       ).rejects.toMatchObject({
         code: 'HARNESS_UNAVAILABLE',
@@ -297,6 +316,7 @@ describe.each(['claude-code', 'codex'] as const)('%s process lifecycle', (kind) 
     const error: unknown = await createHarness(kind, {
       ...opts(kind, { HELIX_FAKE_SCENARIO: 'timeout', HELIX_FAKE_STDERR: '1' }),
       requestTimeoutMs: 5000,
+      initializationTimeoutMs: 5000,
       log: (message) => logs.push(message),
     })
       .start({ cwd, session: template })

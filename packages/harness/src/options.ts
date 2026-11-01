@@ -10,6 +10,8 @@ export interface HarnessOptions {
   /** Default for detection; HarnessStartOptions.cwd takes precedence for sessions. */
   cwd?: string;
   requestTimeoutMs?: number;
+  /** Claude initialization only; defaults to 90 seconds to include Windows supervisor startup. */
+  initializationTimeoutMs?: number;
   /** Receives diagnostics; request timeouts include up to 4096 bytes of child stderr. */
   log?: (message: string) => void;
   /** CONTRACT-REQUEST: HarnessEmission should support explain.note directly. */

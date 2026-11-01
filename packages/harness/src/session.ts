@@ -199,18 +199,21 @@ export abstract class ProcessSession implements ApprovingHarnessSession {
       );
     });
   }
-  protected request(id: string | number, message: unknown): Promise<unknown> {
+  protected request(id: string | number, message: unknown, timeoutMs?: number): Promise<unknown> {
     this.ensureOpen();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.requests.delete(id);
-        const diagnostic = this.stderrTail.toString('utf8').trim();
-        const message = diagnostic
-          ? `Harness request timed out\nChild stderr (last 4096 bytes):\n${diagnostic}`
-          : 'Harness request timed out';
-        this.invalid(message);
-        reject(new HelixError('HARNESS_UNAVAILABLE', message));
-      }, this.options.requestTimeoutMs ?? 30_000);
+      const timer = setTimeout(
+        () => {
+          this.requests.delete(id);
+          const diagnostic = this.stderrTail.toString('utf8').trim();
+          const message = diagnostic
+            ? `Harness request timed out\nChild stderr (last 4096 bytes):\n${diagnostic}`
+            : 'Harness request timed out';
+          this.invalid(message);
+          reject(new HelixError('HARNESS_UNAVAILABLE', message));
+        },
+        timeoutMs ?? this.options.requestTimeoutMs ?? 30_000,
+      );
       this.requests.set(id, { resolve, reject, timer });
       void this.write(message).catch(() =>
         this.response(id, undefined, 'Harness input stream failed'),
