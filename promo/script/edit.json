@@ -43,38 +43,11 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-parallel"
-            }
-          ],
-          "c0": {
-            "x": 478,
-            "y": 430,
-            "w": 1100
-          },
-          "c1": {
-            "x": 650,
-            "y": 430,
-            "w": 900
-          },
-          "callouts": [
-            {
-              "at": 0.8,
-              "text": "Claude Code · Designer",
-              "strand": "claude",
-              "x": 528,
-              "y": 420
-            },
-            {
-              "at": 1.6,
-              "text": "Codex · Product Catalogue Engineer",
-              "strand": "codex",
-              "x": 900,
-              "y": 420
-            }
-          ]
+          "c0": "fit",
+          "c1": "fit",
+          "clock": [11, 24]
         }
       ]
     },
@@ -84,22 +57,9 @@
       "type": "footage",
       "panes": [
         {
-          "rect": "wide",
-          "states": [
-            {
-              "still": "dbw/strip-mid"
-            }
-          ],
-          "c0": {
-            "x": 480,
-            "y": 432,
-            "w": 1480
-          },
-          "c1": {
-            "x": 3000,
-            "y": 432,
-            "w": 1480
-          }
+          "kind": "board",
+          "rect": "full",
+          "clock": [18, 33]
         }
       ]
     },
@@ -309,22 +269,15 @@
       "type": "footage",
       "panes": [
         {
-          "rect": "wide",
-          "states": [
-            {
-              "still": "dbw/strip-done"
-            }
-          ],
-          "c0": {
-            "x": 3000,
-            "y": 432,
-            "w": 1480
-          },
+          "kind": "graph",
+          "rect": "full",
+          "c0": "fit",
           "c1": {
-            "x": 1200,
-            "y": 432,
-            "w": 1480
-          }
+            "x": 300,
+            "y": 60,
+            "w": 1900
+          },
+          "clock": [30, 50]
         }
       ]
     },
@@ -334,28 +287,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-early"
-            }
-          ],
           "c0": {
-            "x": 1590,
-            "y": 430,
-            "w": 720
+            "x": 380,
+            "y": 300,
+            "w": 760
           },
-          "c1": null,
-          "edge": "codex",
-          "callouts": [
-            {
-              "at": 0.3,
-              "text": "Codex · building the shopping bag",
-              "strand": "codex",
-              "x": 1640,
-              "y": 420
-            }
-          ]
+          "c1": {
+            "x": 420,
+            "y": 330,
+            "w": 700
+          },
+          "clock": [20, 29]
         }
       ]
     },
@@ -609,39 +553,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-parallel"
-            }
-          ],
           "c0": {
-            "x": 850,
-            "y": 430,
-            "w": 760
+            "x": 0,
+            "y": 150,
+            "w": 1150
           },
           "c1": {
-            "x": 1550,
-            "y": 430,
-            "w": 760
+            "x": 380,
+            "y": 140,
+            "w": 1150
           },
-          "callouts": [
-            {
-              "at": 0.4,
-              "text": "Product catalogue · in progress",
-              "strand": "codex",
-              "x": 900,
-              "y": 420,
-              "until": "s17+-0.3"
-            },
-            {
-              "at": "s17",
-              "text": "Shopping bag · in progress",
-              "strand": "codex",
-              "x": 1640,
-              "y": 420
-            }
-          ]
+          "clock": [22, 36]
         }
       ]
     },
@@ -651,22 +575,9 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "board",
           "rect": "full",
-          "states": [
-            {
-              "still": "db/tasks-page"
-            }
-          ],
-          "c0": {
-            "x": 244,
-            "y": 100,
-            "w": 1290
-          },
-          "c1": {
-            "x": 250,
-            "y": 104,
-            "w": 1180
-          }
+          "clock": [30, 45]
         }
       ]
     },
@@ -676,27 +587,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-early"
-            }
-          ],
           "c0": {
-            "x": 1962,
-            "y": 430,
-            "w": 720
+            "x": 440,
+            "y": 330,
+            "w": 1000
           },
-          "c1": null,
-          "callouts": [
-            {
-              "at": 0.4,
-              "text": "Checkout waits on the shopping bag",
-              "strand": "claude",
-              "x": 2012,
-              "y": 420
-            }
-          ]
+          "c1": {
+            "x": 470,
+            "y": 340,
+            "w": 960
+          },
+          "clock": [35, 45]
         }
       ]
     },
@@ -706,28 +609,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-mid"
-            }
-          ],
           "c0": {
-            "x": 850,
-            "y": 430,
-            "w": 720
+            "x": 440,
+            "y": 120,
+            "w": 1000
           },
-          "c1": null,
-          "edge": "review",
-          "callouts": [
-            {
-              "at": 0.4,
-              "text": "Reviewed by Claude Code · CI 4/4",
-              "strand": "review",
-              "x": 900,
-              "y": 420
-            }
-          ]
+          "c1": {
+            "x": 470,
+            "y": 130,
+            "w": 960
+          },
+          "clock": [44, 54]
         }
       ]
     },
@@ -737,30 +631,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-early"
-            },
-            {
-              "still": "dbw/strip-mid",
-              "at": "s22"
-            },
-            {
-              "still": "dbw/strip-late",
-              "at": "s22+3.2"
-            }
-          ],
           "c0": {
-            "x": 470,
-            "y": 422,
-            "w": 1000
+            "x": -20,
+            "y": 190,
+            "w": 1700
           },
           "c1": {
-            "x": 4000,
-            "y": 422,
-            "w": 1000
-          }
+            "x": 700,
+            "y": 190,
+            "w": 1700
+          },
+          "clock": [40, 98]
         }
       ]
     },
@@ -770,28 +653,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-mid"
-            }
-          ],
           "c0": {
-            "x": 1220,
-            "y": 430,
-            "w": 720
+            "x": 1360,
+            "y": 330,
+            "w": 900
           },
-          "c1": null,
-          "edge": "claude",
-          "callouts": [
-            {
-              "at": 0.2,
-              "text": "Building · Product detail pages",
-              "strand": "claude",
-              "x": 1270,
-              "y": 420
-            }
-          ]
+          "c1": {
+            "x": 1380,
+            "y": 340,
+            "w": 860
+          },
+          "clock": [56, 61]
         }
       ]
     },
@@ -801,31 +675,19 @@
       "type": "footage",
       "panes": [
         {
-          "rect": "left",
-          "states": [
-            {
-              "still": "db/bag-review-changes"
-            }
-          ],
+          "kind": "graph",
+          "rect": "full",
           "c0": {
-            "x": 1000,
-            "y": 300,
-            "w": 560
-          }
-        },
-        {
-          "rect": "right",
-          "states": [
-            {
-              "still": "db/bag-review-changes"
-            }
-          ],
-          "c0": {
-            "x": 1524,
-            "y": 220,
-            "w": 392
+            "x": 1360,
+            "y": 420,
+            "w": 900
           },
-          "edge": "review"
+          "c1": {
+            "x": 1380,
+            "y": 430,
+            "w": 860
+          },
+          "clock": [74.5, 78.5]
         }
       ]
     },
@@ -835,28 +697,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-mid"
-            }
-          ],
           "c0": {
-            "x": 478,
-            "y": 430,
-            "w": 720
+            "x": 440,
+            "y": 120,
+            "w": 1000
           },
-          "c1": null,
-          "edge": "codex",
-          "callouts": [
-            {
-              "at": 0.2,
-              "text": "Ready · approved, CI passed, merged",
-              "strand": "codex",
-              "x": 528,
-              "y": 420
-            }
-          ]
+          "c1": {
+            "x": 470,
+            "y": 130,
+            "w": 960
+          },
+          "clock": [60, 64]
         }
       ]
     },
@@ -866,28 +719,19 @@
       "type": "footage",
       "panes": [
         {
+          "kind": "graph",
           "rect": "full",
-          "states": [
-            {
-              "still": "dbw/strip-mid"
-            }
-          ],
           "c0": {
-            "x": 3813,
-            "y": 430,
-            "w": 720
+            "x": 1400,
+            "y": 330,
+            "w": 950
           },
-          "c1": null,
-          "edge": "claude",
-          "callouts": [
-            {
-              "at": 0.2,
-              "text": "Waiting · on product pages and checkout",
-              "strand": "claude",
-              "x": 3863,
-              "y": 420
-            }
-          ]
+          "c1": {
+            "x": 1420,
+            "y": 340,
+            "w": 910
+          },
+          "clock": [70, 74]
         }
       ]
     },
@@ -1036,26 +880,9 @@
           ]
         },
         {
+          "kind": "board",
           "rect": "app",
-          "states": [
-            {
-              "still": "dbw/strip-early"
-            },
-            {
-              "still": "dbw/strip-mid",
-              "at": 2.5
-            }
-          ],
-          "c0": {
-            "x": 1600,
-            "y": 430,
-            "w": 1100
-          },
-          "c1": {
-            "x": 2200,
-            "y": 430,
-            "w": 1100
-          }
+          "clock": [34, 58]
         }
       ]
     },
@@ -1090,22 +917,15 @@
       "type": "footage",
       "panes": [
         {
-          "rect": "wide",
-          "states": [
-            {
-              "still": "dbw/strip-done"
-            }
-          ],
+          "kind": "graph",
+          "rect": "full",
           "c0": {
-            "x": 2300,
-            "y": 432,
-            "w": 1300
+            "x": 400,
+            "y": 120,
+            "w": 1500
           },
-          "c1": {
-            "x": 1500,
-            "y": 250,
-            "w": 2600
-          }
+          "c1": "fit",
+          "clock": [92, 100]
         }
       ]
     },

@@ -616,6 +616,288 @@
         top: 0;
         pointer-events: none;
       }
+      /* Live plan graph and Board */
+      .lp-frame {
+        background:
+          radial-gradient(circle at 50% 0%, rgb(77 141 255 / 0.06), transparent 60%),
+          radial-gradient(#1a2230 1px, transparent 1px) 0 0 / 22px 22px,
+          #0b0f16;
+      }
+      .lp-world {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+      }
+      .lp-edges {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+      .lp-card,
+      .lp-helix {
+        position: absolute;
+        border-radius: 16px;
+        background: linear-gradient(180deg, #151b26, #10151e);
+        padding: 16px 18px;
+      }
+      .lp-card {
+        width: 390px;
+        height: 158px;
+      }
+      .lp-helix {
+        box-shadow:
+          0 0 0 2px rgb(77 141 255 / 0.65),
+          0 0 50px rgb(77 141 255 / 0.25);
+        height: 150px;
+      }
+      .lp-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .lp-tile {
+        flex: none;
+        width: 52px;
+        height: 52px;
+        border-radius: 12px;
+        border: 1px solid;
+        display: grid;
+        place-items: center;
+      }
+      .lp-tile.helix {
+        background: rgb(227 165 63 / 0.1);
+        border-color: rgb(227 165 63 / 0.4);
+        width: 64px;
+      }
+      .lp-tile.small {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+      }
+      .lp-names {
+        flex: 1;
+        min-width: 0;
+      }
+      .lp-name {
+        font-weight: 600;
+        font-size: 22px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lp-kind {
+        margin-top: 2px;
+        font-size: 16px;
+        color: var(--text-2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lp-pill {
+        flex: none;
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .lp-pill i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .lp-barrow {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .lp-bar {
+        flex: 1;
+        position: relative;
+        height: 6px;
+        border-radius: 3px;
+        background: #212a38;
+        overflow: hidden;
+      }
+      .lp-bar div {
+        height: 100%;
+        border-radius: 3px;
+      }
+      .lp-shimmer {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 30%;
+        background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+      }
+      .lp-foot {
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .lp-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .lp-chip.ok {
+        color: #8fe3b4;
+        background: rgb(63 196 126 / 0.12);
+      }
+      .lp-chip.rev {
+        color: #d4c7ff;
+        background: rgb(169 140 247 / 0.14);
+      }
+      .lp-chip.merged {
+        color: #a8d8c0;
+        background: rgb(113 184 150 / 0.14);
+      }
+      .lp-wait {
+        font-size: 16px;
+        color: var(--text-2);
+      }
+      .lp-now {
+        margin-top: 14px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 22px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .lp-dot {
+        flex: none;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--orch);
+        box-shadow: 0 0 10px var(--orch);
+      }
+      .lp-metrics {
+        margin-top: 10px;
+        display: flex;
+        gap: 22px;
+        font-size: 15px;
+        color: var(--text-2);
+      }
+      .lb-strip {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        top: 18px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+      .lb-brand {
+        font-family: 'Bricolage', sans-serif;
+        font-size: 32px;
+        font-weight: 600;
+      }
+      .lb-brand span {
+        font-family: 'Plex', sans-serif;
+        font-size: 17px;
+        font-weight: 400;
+        color: var(--text-2);
+        margin-left: 10px;
+      }
+      .lb-now {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid rgb(227 165 63 / 0.35);
+        font-size: 19px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .lb-now b {
+        color: var(--orch);
+      }
+      .lb-merged {
+        font-family: 'PlexMono', monospace;
+        font-size: 18px;
+        color: #8fe3b4;
+      }
+      .lb-col {
+        position: absolute;
+        top: 96px;
+        bottom: 16px;
+        border-radius: 14px;
+        background: rgb(255 255 255 / 0.02);
+        border: 1px solid #1b2330;
+      }
+      .lb-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .lb-head span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .lb-head b {
+        margin-left: auto;
+        font-family: 'PlexMono', monospace;
+        font-weight: 500;
+        color: var(--text-2);
+      }
+      .lb-card {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #151b26, #10151e);
+        overflow: hidden;
+      }
+      .lb-text {
+        flex: 1;
+        min-width: 0;
+      }
+      .lb-task {
+        font-size: 18px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lb-agent {
+        margin-top: 3px;
+        font-size: 13px;
+        color: var(--text-2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lb-state {
+        flex: none;
+        font-size: 13px;
+        font-weight: 600;
+      }
       /* Captions: one consistent band below the footage frame. */
       .caption {
         position: absolute;
@@ -665,5 +947,6 @@
       <div class="proof" id="proof"></div>
     </div>
     <script src="stage.js"></script>
+    <script src="liveplan.js"></script>
   </body>
 </html>

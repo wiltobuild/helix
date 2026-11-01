@@ -53,33 +53,13 @@ const segments = [
     id: 'plan-start',
     from: 's07',
     type: 'footage',
-    panes: [
-      full([dbw('strip-parallel')], close(X.designer, 1100), close(X.catalogue - 200, 900), {
-        callouts: [
-          { at: 0.8, text: 'Claude Code · Designer', strand: 'claude', x: X.designer + 10, y: 420 },
-          {
-            at: 1.6,
-            text: 'Codex · Product Catalogue Engineer',
-            strand: 'codex',
-            x: X.catalogue + 10,
-            y: 420,
-          },
-        ],
-      }),
-    ],
+    panes: [{ kind: 'graph', rect: 'full', c0: 'fit', c1: 'fit', clock: [11, 24] }],
   },
   {
     id: 'many',
     from: 's08',
     type: 'footage',
-    panes: [
-      {
-        rect: 'wide',
-        states: [dbw('strip-mid')],
-        c0: { x: 480, y: 432, w: 1480 },
-        c1: { x: 3000, y: 432, w: 1480 },
-      },
-    ],
+    panes: [{ kind: 'board', rect: 'full', clock: [18, 33] }],
   },
   // V.A.L.E. arrives and takes the brief by voice.
   {
@@ -179,12 +159,7 @@ const segments = [
     from: 't02',
     type: 'footage',
     panes: [
-      {
-        rect: 'wide',
-        states: [dbw('strip-done')],
-        c0: { x: 3000, y: 432, w: 1480 },
-        c1: { x: 1200, y: 432, w: 1480 },
-      },
+      { kind: 'graph', rect: 'full', c0: 'fit', c1: { x: 300, y: 60, w: 1900 }, clock: [30, 50] },
     ],
   },
   {
@@ -192,18 +167,13 @@ const segments = [
     from: 't03',
     type: 'footage',
     panes: [
-      full([dbw('strip-early')], close(X.bag), null, {
-        edge: 'codex',
-        callouts: [
-          {
-            at: 0.3,
-            text: 'Codex · building the shopping bag',
-            strand: 'codex',
-            x: X.bag + 10,
-            y: 420,
-          },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 380, y: 300, w: 760 },
+        c1: { x: 420, y: 330, w: 700 },
+        clock: [20, 29],
+      },
     ],
   },
   {
@@ -325,43 +295,33 @@ const segments = [
     from: 's16',
     type: 'footage',
     panes: [
-      full([dbw('strip-parallel')], close(X.catalogue, 760), close(X.bag - 40, 760), {
-        callouts: [
-          {
-            at: 0.4,
-            text: 'Product catalogue · in progress',
-            strand: 'codex',
-            x: X.catalogue + 10,
-            y: 420,
-            until: 's17+-0.3',
-          },
-          { at: 's17', text: 'Shopping bag · in progress', strand: 'codex', x: X.bag + 10, y: 420 },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 0, y: 150, w: 1150 },
+        c1: { x: 380, y: 140, w: 1150 },
+        clock: [22, 36],
+      },
     ],
   },
   {
     id: 'assignments',
     from: 's18',
     type: 'footage',
-    panes: [full([db('tasks-page')], { x: 244, y: 100, w: 1290 }, { x: 250, y: 104, w: 1180 })],
+    panes: [{ kind: 'board', rect: 'full', clock: [30, 45] }],
   },
   {
     id: 'needs',
     from: 's19',
     type: 'footage',
     panes: [
-      full([dbw('strip-early')], close(X.checkout), null, {
-        callouts: [
-          {
-            at: 0.4,
-            text: 'Checkout waits on the shopping bag',
-            strand: 'claude',
-            x: X.checkout + 10,
-            y: 420,
-          },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 440, y: 330, w: 1000 },
+        c1: { x: 470, y: 340, w: 960 },
+        clock: [35, 45],
+      },
     ],
   },
   {
@@ -369,18 +329,13 @@ const segments = [
     from: 's20',
     type: 'footage',
     panes: [
-      full([dbw('strip-mid')], close(X.catalogue), null, {
-        edge: 'review',
-        callouts: [
-          {
-            at: 0.4,
-            text: 'Reviewed by Claude Code · CI 4/4',
-            strand: 'review',
-            x: X.catalogue + 10,
-            y: 420,
-          },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 440, y: 120, w: 1000 },
+        c1: { x: 470, y: 130, w: 960 },
+        clock: [44, 54],
+      },
     ],
   },
   // Watch the work: a long pan across all twelve agents as their stages advance.
@@ -390,10 +345,11 @@ const segments = [
     type: 'footage',
     panes: [
       {
+        kind: 'graph',
         rect: 'full',
-        states: [dbw('strip-early'), dbw('strip-mid', 's22'), dbw('strip-late', 's22+3.2')],
-        c0: { x: 470, y: 422, w: 1000 },
-        c1: { x: 4000, y: 422, w: 1000 },
+        c0: { x: -20, y: 190, w: 1700 },
+        c1: { x: 700, y: 190, w: 1700 },
+        clock: [40, 98],
       },
     ],
   },
@@ -402,18 +358,13 @@ const segments = [
     from: 's23',
     type: 'footage',
     panes: [
-      full([dbw('strip-mid')], close(X.product), null, {
-        edge: 'claude',
-        callouts: [
-          {
-            at: 0.2,
-            text: 'Building · Product detail pages',
-            strand: 'claude',
-            x: X.product + 10,
-            y: 420,
-          },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 1360, y: 330, w: 900 },
+        c1: { x: 1380, y: 340, w: 860 },
+        clock: [56, 61],
+      },
     ],
   },
   {
@@ -421,8 +372,13 @@ const segments = [
     from: 's24',
     type: 'footage',
     panes: [
-      { rect: 'left', states: [db('bag-review-changes')], c0: { x: 1000, y: 300, w: 560 } },
-      { rect: 'right', states: [db('bag-review-changes')], c0: INSPECTOR(220), edge: 'review' },
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 1360, y: 420, w: 900 },
+        c1: { x: 1380, y: 430, w: 860 },
+        clock: [74.5, 78.5],
+      },
     ],
   },
   {
@@ -430,18 +386,13 @@ const segments = [
     from: 's25',
     type: 'footage',
     panes: [
-      full([dbw('strip-mid')], close(X.designer), null, {
-        edge: 'codex',
-        callouts: [
-          {
-            at: 0.2,
-            text: 'Ready · approved, CI passed, merged',
-            strand: 'codex',
-            x: X.designer + 10,
-            y: 420,
-          },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 440, y: 120, w: 1000 },
+        c1: { x: 470, y: 130, w: 960 },
+        clock: [60, 64],
+      },
     ],
   },
   {
@@ -449,18 +400,13 @@ const segments = [
     from: 's26',
     type: 'footage',
     panes: [
-      full([dbw('strip-mid')], close(X.audit), null, {
-        edge: 'claude',
-        callouts: [
-          {
-            at: 0.2,
-            text: 'Waiting · on product pages and checkout',
-            strand: 'claude',
-            x: X.audit + 10,
-            y: 420,
-          },
-        ],
-      }),
+      {
+        kind: 'graph',
+        rect: 'full',
+        c0: { x: 1400, y: 330, w: 950 },
+        c1: { x: 1420, y: 340, w: 910 },
+        clock: [70, 74],
+      },
     ],
   },
   {
@@ -538,11 +484,7 @@ const segments = [
           },
         ],
       },
-      app(
-        [dbw('strip-early'), dbw('strip-mid', 2.5)],
-        { x: 1600, y: 430, w: 1100 },
-        { x: 2200, y: 430, w: 1100 },
-      ),
+      { kind: 'board', rect: 'app', clock: [34, 58] },
     ],
   },
   {
@@ -557,12 +499,7 @@ const segments = [
     from: 's31',
     type: 'footage',
     panes: [
-      {
-        rect: 'wide',
-        states: [dbw('strip-done')],
-        c0: { x: 2300, y: 432, w: 1300 },
-        c1: { x: 1500, y: 250, w: 2600 },
-      },
+      { kind: 'graph', rect: 'full', c0: { x: 400, y: 120, w: 1500 }, c1: 'fit', clock: [92, 100] },
     ],
   },
   {

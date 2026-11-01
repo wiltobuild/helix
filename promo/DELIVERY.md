@@ -32,5 +32,6 @@
 - **The Daybreak build's events are invented.** `tools/make-recording.ts` writes them, validated against the app's own schemas. The app replays them exactly as it would a real run, so the screens are the real UI, but no agents ran.
 - **Output can't open a preview server during replay.** The capture tool places the first Daybreak design image inside Output's preview frame.
 - **V.A.L.E. is stage graphics:** the orb, waveform, transcript, intake card, live-update feed and light beams. The repo's Dot adapter (`packages/dot-adapter`) is read-only today. It has no write, voice, messaging, plan or approval surface, so V.A.L.E. driving intake, approving the plan and messaging agents is a depiction of the intended product, not shipped behaviour.
+- **The animated plan graph and Board are stage graphics in Helix's design language.** One build schedule drives them (`stage/liveplan.js`). They use the app's own Codex and Claude Code glyph geometry, which animate only while an agent works. Agents finish, go to cross-agent review and hand off along their dependencies, while the Helix card narrates each orchestration step. These are built for the pitch; they aren't screen captures.
 - **There is no audio voice.** V.A.L.E.'s conversation appears as an on-screen transcript.
 - **The score is original and synthesized** (`tools/music.py`).
