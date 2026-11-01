@@ -574,6 +574,12 @@ function reduceInto(
           );
           if (remaining.length) s.acceptanceFailedHeads = remaining;
           else delete s.acceptanceFailedHeads;
+        } else if (
+          e.payload.code === 'acceptance_retry_exhausted' &&
+          s.pr &&
+          !s.acceptanceFailedHeads?.includes(s.pr.headSha)
+        ) {
+          s.acceptanceFailedHeads = [...(s.acceptanceFailedHeads ?? []), s.pr.headSha];
         }
       } else if (e.planNodeId) {
         const plan = planForNode(next, e.planNodeId);

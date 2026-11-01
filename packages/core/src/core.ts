@@ -405,19 +405,14 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     history.set(ctx.projectId, list);
     return event as HelixEvent<T>;
   }
-  function reasonKey(s: Session, prNumber: number, reason: Reason, headSha: string): string {
-    return JSON.stringify(
-      reason === 'acceptance_failed' || reason === 'acceptance_unavailable'
-        ? [s.projectId, prNumber, reason, headSha]
-        : [s.projectId, prNumber, reason],
-    );
+  function reasonKey(s: Session, prNumber: number, reason: Reason): string {
+    return JSON.stringify([s.projectId, prNumber, reason]);
   }
   function feedbackKey(s: Session, prNumber: number, reason: Reason, headSha: string): string {
     return JSON.stringify([s.projectId, prNumber, reason, headSha]);
   }
   function clearUnavailableFeedback(s: Session, prNumber: number, headSha: string): void {
     seenFeedback.delete(feedbackKey(s, prNumber, 'acceptance_unavailable', headSha));
-    attempts.delete(reasonKey(s, prNumber, 'acceptance_unavailable', headSha));
   }
   async function load(): Promise<void> {
     if (loaded) return;
@@ -534,7 +529,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         if (e.type === 'feedback.routed') {
           const s = session(e.payload.toSessionId).session;
           const headSha = heads.get(s.id) ?? 'unknown';
-          const key = reasonKey(s, e.payload.prNumber, e.payload.reason, headSha);
+          const key = reasonKey(s, e.payload.prNumber, e.payload.reason);
           attempts.set(key, (attempts.get(key) ?? 0) + 1);
           seenFeedback.add(feedbackKey(s, e.payload.prNumber, e.payload.reason, headSha));
           if (!(await readMeta(DELIVERY_SCOPE, String(e.seq))))
@@ -999,6 +994,19 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
   function verificationKey(id: SessionId, headSha: string): string {
     return JSON.stringify([id, headSha]);
   }
+  async function verificationState(id: SessionId, headSha: string) {
+    const value = await deps.store.getMeta(VERIFICATION_SCOPE, verificationKey(id, headSha));
+    if (
+      value &&
+      typeof value === 'object' &&
+      'attempts' in value &&
+      typeof value.attempts === 'number' &&
+      Number.isSafeInteger(value.attempts) &&
+      value.attempts >= 0
+    )
+      return { attempts: value.attempts, pending: 'pending' in value && value.pending === true };
+    return { attempts: 0, pending: false };
+  }
   async function scheduleVerificationRetry(
     id: SessionId,
     headSha: string,
@@ -1009,14 +1017,11 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
     const current = verificationRetries.get(id);
     if (current?.exhausted || current?.timer) return;
     const key = verificationKey(id, headSha);
-    const persisted = await deps.store.getMeta(VERIFICATION_SCOPE, key);
-    const attemptsUsed =
-      current?.attempts ??
-      (typeof persisted === 'number' && Number.isSafeInteger(persisted) && persisted >= 0
-        ? persisted
-        : 0);
+    const persisted = await verificationState(id, headSha);
+    const attemptsUsed = current?.attempts ?? persisted.attempts;
     if (attemptsUsed >= 3) {
       verificationRetries.set(id, { headSha, attempts: 3, exhausted: true });
+      await deps.store.setMeta(VERIFICATION_SCOPE, key, { attempts: 3, pending: false });
       const worker = session(id);
       if (
         !eventsFor(worker.session).some(
@@ -1029,7 +1034,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         await emit(
           'explain.note',
           {
-            text: `Exact-file verification could not read PR head ${headSha} after three retries. Human input is required; review and merge remain blocked.`,
+            text: `Exact-file verification could not read PR head ${headSha} after three retries. Restore Git access and refresh the PR checks or push a new head; review and merge remain blocked.`,
             code: 'acceptance_retry_exhausted',
             source: 'helix',
           },
@@ -1037,18 +1042,38 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
         );
       return;
     }
-    const attempts = attemptsUsed + 1;
-    await deps.store.setMeta(VERIFICATION_SCOPE, key, attempts);
+    await deps.store.setMeta(VERIFICATION_SCOPE, key, { attempts: attemptsUsed, pending: true });
     const timer = setTimeout(() => {
       background(id, async () => {
         const retry = verificationRetries.get(id);
-        if (!retry || retry.timer !== timer || retry.headSha !== session(id).pr?.headSha) return;
+        if (!retry || retry.timer !== timer) return;
         delete retry.timer;
+        const worker = session(id);
+        const pr = worker.pr;
+        if (!pr || retry.headSha !== pr.headSha) return;
+        if (
+          closing ||
+          shutdownRequested ||
+          pausedProjects.has(worker.session.projectId) ||
+          worker.session.archivedAt ||
+          worker.activity === 'exited' ||
+          runtimes.get(id)?.stopped ||
+          pr.state !== 'open' ||
+          !pr.checks.total ||
+          pr.checks.failed ||
+          pr.checks.pending
+        )
+          return;
+        retry.attempts += 1;
+        await deps.store.setMeta(VERIFICATION_SCOPE, key, {
+          attempts: retry.attempts,
+          pending: true,
+        });
         await requestReview(id, cause);
       });
     }, acceptanceRetryMs);
     timer.unref();
-    verificationRetries.set(id, { headSha, attempts, timer });
+    verificationRetries.set(id, { headSha, attempts: attemptsUsed, timer });
   }
   async function requestReview(id: SessionId, cause: EventSeq): Promise<void> {
     const worker = session(id);
@@ -1081,11 +1106,20 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       );
       if (exactFailure.kind === 'unavailable')
         await scheduleVerificationRetry(id, pr.headSha, cause);
-      else cancelVerificationRetry(id);
+      else {
+        cancelVerificationRetry(id);
+        await deps.store.setMeta(VERIFICATION_SCOPE, verificationKey(id, pr.headSha), {
+          attempts: 0,
+          pending: false,
+        });
+      }
       return;
     }
     cancelVerificationRetry(id);
-    await deps.store.setMeta(VERIFICATION_SCOPE, verificationKey(id, pr.headSha), 0);
+    await deps.store.setMeta(VERIFICATION_SCOPE, verificationKey(id, pr.headSha), {
+      attempts: 0,
+      pending: false,
+    });
     clearUnavailableFeedback(worker.session, pr.number, pr.headSha);
     if (worker.acceptanceFailedHeads?.includes(pr.headSha))
       await emit(
@@ -1683,7 +1717,7 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
       runtimes.get(id)?.stopped
     )
       return;
-    const key = reasonKey(s.session, pr.number, reason, pr.headSha);
+    const key = reasonKey(s.session, pr.number, reason);
     const seenKey = feedbackKey(s.session, pr.number, reason, pr.headSha);
     if (seenFeedback.has(seenKey)) return;
     if ((attempts.get(key) ?? 0) >= 3) {
@@ -1692,6 +1726,9 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
           'explain.note',
           {
             text: `Automatic ${reason} repairs stopped after 3 attempts for PR #${pr.number}; human input is required.`,
+            ...((reason === 'acceptance_failed' || reason === 'acceptance_unavailable') && {
+              code: 'acceptance_retry_exhausted' as const,
+            }),
           },
           context(s.session, cause),
         );
@@ -2287,7 +2324,8 @@ export function createHelixCore(deps: CoreDeps): HelixCore {
               worker.pr.checks.pending === 0 &&
               worker.pr.checks.failed === 0 &&
               worker.acceptanceFailedHeads?.includes(worker.pr.headSha) &&
-              !pausedProjects.has(worker.session.projectId)
+              !pausedProjects.has(worker.session.projectId) &&
+              (await verificationState(worker.session.id, worker.pr.headSha)).pending
             )
               await scheduleVerificationRetry(
                 worker.session.id,

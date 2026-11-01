@@ -635,7 +635,14 @@ test('temporary Git read failure cannot suppress a later real mismatch on the sa
     f.store.events.filter(
       (e) => e.type === 'feedback.routed' && e.payload.reason === 'acceptance_failed',
     ),
-  ).toHaveLength(4);
+  ).toHaveLength(3);
+  expect(
+    f.store.events.some(
+      (e) =>
+        e.type === 'explain.note' &&
+        e.payload.text.includes('Automatic acceptance_failed repairs stopped after 3 attempts'),
+    ),
+  ).toBe(true);
   expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain('head-4');
 });
 
@@ -681,7 +688,10 @@ test('restart resumes a pending exact-file read with its persisted retry budget'
   });
   await f.drain();
   const retryKey = JSON.stringify([workerId, pr.headSha]);
-  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toBe(1);
+  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toEqual({
+    attempts: 0,
+    pending: true,
+  });
   await f.core.shutdown();
   const last = f.store.events.at(-1)!;
   await f.store.append([
@@ -697,13 +707,68 @@ test('restart resumes a pending exact-file read with its persisted retry budget'
   ]);
   const restarted = createHelixCore(f.deps);
   await restarted.start();
-  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toBe(2);
+  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toEqual({
+    attempts: 0,
+    pending: true,
+  });
   await vi.waitFor(async () => {
     await restarted.health();
     expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toBeUndefined();
   });
-  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toBe(0);
+  expect(await f.store.getMeta('helix:core:exact-file-retries:v1', retryKey)).toEqual({
+    attempts: 0,
+    pending: false,
+  });
   expect(f.store.events.filter((e) => e.type === 'agent_review.requested')).toHaveLength(1);
+  await restarted.shutdown();
+});
+
+test('restart does not retry a committed byte mismatch as a transient Git outage', async () => {
+  const codex = new FakeHarness();
+  const f = fixture({ harnesses: { codex }, acceptanceRetryMs: 50 });
+  const p = await f.add();
+  const orchestrator = await f.core.createSession(
+    p.id,
+    { ...request, title: 'Planner', planWithOrchestrator: true },
+    'restart-mismatch-planner',
+  );
+  const plan = await f.core.submitPlan({
+    projectId: p.id,
+    orchestratorSessionId: orchestrator.id,
+    goal: 'Verify exact bytes',
+    nodes: [
+      {
+        ...nodes[0]!,
+        files: ['CASE-B.md'],
+        exactFiles: [{ path: 'CASE-B.md', content: 'Signal: orchard-17.\n' }],
+      },
+    ],
+  });
+  await f.core.decidePlan(plan.id, { decision: 'approve' });
+  const workerId = f.state(p.id).plans[plan.id]!.nodes[0]!.sessionId!;
+  f.git.ahead = 1;
+  codex.handles.get(workerId)!.emit(activity('idle'));
+  await f.drain();
+  const pr = f.state(p.id).sessions[workerId]!.pr!;
+  f.git.committedFiles.set('head-1:CASE-B.md', new TextEncoder().encode('wrong bytes\n'));
+  f.scm.emit(p.id, pr.number, {
+    type: 'ci.updated',
+    payload: { prNumber: pr.number, checks: green },
+  });
+  await f.drain();
+  expect(f.state(p.id).sessions[workerId]!.acceptanceFailedHeads).toContain(pr.headSha);
+  const reads = f.git.readCommittedFile.mock.calls.length;
+  await f.core.shutdown();
+  const restarted = createHelixCore(f.deps);
+  await restarted.start();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await restarted.health();
+  expect(f.git.readCommittedFile.mock.calls).toHaveLength(reads);
+  expect(
+    f.store.events.some(
+      (e) => e.type === 'explain.note' && e.payload.code === 'acceptance_retry_exhausted',
+    ),
+  ).toBe(false);
   await restarted.shutdown();
 });
 
