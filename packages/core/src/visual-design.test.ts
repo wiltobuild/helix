@@ -414,3 +414,27 @@ test('freeform design conversation reaches the orchestrator and its reply persis
     await f.core.shutdown();
   }
 });
+
+test('filename and identifier mentions do not imply visual intent', () => {
+  for (const brief of [
+    'Do not edit index.html or draft_lyrics',
+    'contract consumed by index.html in a later task',
+    'src/layout.ts',
+    'styles.css',
+    'src\\layout.ts',
+    'my-dashboard-service',
+    'the css_parser helper',
+    'Replace agent.py _generate_vocal_melody_events with syllable-aligned notes. ' +
+      'The event contract is consumed by index.html in a later task. ' +
+      'Do not edit index.html or draft_bar_aligned_lyrics.',
+    'no website or UI',
+  ])
+    expect(needsVisualDesign(brief), brief).toBe(false);
+  for (const brief of [
+    'build the landing page UI',
+    'a dashboard',
+    'a dashboard.',
+    'Build an HTML page.',
+  ])
+    expect(needsVisualDesign(brief), brief).toBe(true);
+});

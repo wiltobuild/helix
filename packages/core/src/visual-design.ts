@@ -25,7 +25,8 @@ const negatedVisualTerms = new RegExp(
   String.raw`\b(?:not|no|without)\s+(?:(?:a|an|any)\s+)?${visualTerm}(?:\s+(?:or|and)\s+(?:(?:a|an|any)\s+)?${visualTerm})*\b`,
   'gi',
 );
-const visualTerms = new RegExp(String.raw`\b${visualTerm}\b`, 'i');
+// A filename or identifier mentioning HTML/CSS is not a request for a visual design.
+const visualTerms = new RegExp(String.raw`(?<![\w./\\-])${visualTerm}(?![\w/\\-]|\.\w)`, 'i');
 export function needsVisualDesign(brief: string): boolean {
   return visualTerms.test(brief.replace(negatedVisualTerms, ''));
 }
